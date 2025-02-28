@@ -22,13 +22,6 @@ export function Viewport() {
     // Initialize transform controls
     initializeTransformControls();
 
-    // Animation loop
-    const animate = () => {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    };
-
     // Handle resize
     const handleResize = () => {
       if (!container) return;
@@ -39,17 +32,26 @@ export function Viewport() {
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
 
-      renderer.setSize(width, height, false);
+      renderer.setSize(width, height);
     };
 
-    // Setup resize handler and start animation
-    window.addEventListener("resize", handleResize);
+    // Animation loop
+    const animate = () => {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+
+    // Initial setup
     handleResize();
+    window.addEventListener("resize", handleResize);
     animate();
 
     // Cleanup
     return () => {
       window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(animate as unknown as number);
+
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }

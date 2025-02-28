@@ -11,7 +11,7 @@ interface SceneState {
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
   controls: OrbitControls;
-  transformControls: TransformControls;
+  transformControls: TransformControls | null;
   models: { name: string; mesh: THREE.Mesh }[];
   selectedModelIndex: number | null;
   transformMode: TransformMode;
@@ -19,6 +19,7 @@ interface SceneState {
   removeModel: (index: number) => void;
   setTransformMode: (mode: TransformMode) => void;
   selectModel: (index: number | null) => void;
+  initializeTransformControls: () => void;
 }
 
 export const useScene = create<SceneState>((set, get) => {
@@ -36,22 +37,10 @@ export const useScene = create<SceneState>((set, get) => {
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
 
-  // Initialize controls
+  // Initialize orbit controls
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
-
-  // Initialize transform controls
-  const transformControls = new TransformControls(camera, renderer.domElement);
-  transformControls.size = 0.75;
-  transformControls.showX = true;
-  transformControls.showY = true;
-  transformControls.showZ = true;
-
-  // Handle control interactions
-  transformControls.addEventListener('dragging-changed', (event) => {
-    controls.enabled = !event.value;
-  });
 
   // Add grid and lights
   const grid = new THREE.GridHelper(10, 10);
@@ -65,32 +54,52 @@ export const useScene = create<SceneState>((set, get) => {
   directionalLight.castShadow = true;
   scene.add(directionalLight);
 
-  // Important: Add transformControls to scene last
-  scene.add(transformControls);
-
   return {
     scene,
     camera,
     renderer,
     controls,
-    transformControls,
+    transformControls: null,
     models: [],
     selectedModelIndex: null,
     transformMode: "translate",
 
+    initializeTransformControls: () => {
+      const { camera, scene, renderer } = get();
+      // Create transform controls with renderer.domElement
+      const transformControls = new TransformControls(camera, renderer.domElement);
+      transformControls.size = 0.75;
+
+      // Make transform controls visible
+      transformControls.showX = true;
+      transformControls.showY = true;
+      transformControls.showZ = true;
+
+      // Handle interaction between orbit and transform controls
+      transformControls.addEventListener('dragging-changed', (event) => {
+        const { controls } = get();
+        controls.enabled = !event.value;
+      });
+
+      // Add to scene and store in state
+      scene.add(transformControls);
+      set({ transformControls });
+
+      // If there's a selected model, attach the controls to it
+      const { selectedModelIndex, models } = get();
+      if (selectedModelIndex !== null && models[selectedModelIndex]) {
+        transformControls.attach(models[selectedModelIndex].mesh);
+      }
+    },
+
     loadSTL: async (file: File) => {
       try {
-        console.log("Starting STL load for file:", file.name);
         const loader = new STLLoader();
         const arrayBuffer = await file.arrayBuffer();
-        console.log("File loaded as ArrayBuffer");
-
         const geometry = loader.parse(arrayBuffer);
-        console.log("STL parsed successfully");
 
         // Center the geometry
         geometry.center();
-        console.log("Geometry centered");
 
         const material = new THREE.MeshStandardMaterial({ 
           color: 0x808080,
@@ -109,7 +118,6 @@ export const useScene = create<SceneState>((set, get) => {
 
         const { scene, models } = get();
         scene.add(mesh);
-        console.log("Mesh added to scene");
 
         const newIndex = models.length;
         set({ 
@@ -117,10 +125,8 @@ export const useScene = create<SceneState>((set, get) => {
           selectedModelIndex: newIndex
         });
 
-        // Important: Select the model after adding it
-        const state = get();
-        state.selectModel(newIndex);
-        console.log("Model loaded and selected successfully");
+        // Select the model after adding it
+        get().selectModel(newIndex);
       } catch (error) {
         console.error('Error loading STL:', error);
         throw new Error('Failed to load STL file');
@@ -131,8 +137,9 @@ export const useScene = create<SceneState>((set, get) => {
       const { scene, models, selectedModelIndex, transformControls } = get();
       const model = models[index];
       if (model) {
-        // Important: Detach before removing
-        transformControls.detach();
+        if (transformControls) {
+          transformControls.detach();
+        }
         scene.remove(model.mesh);
 
         const newModels = [...models];
@@ -154,27 +161,26 @@ export const useScene = create<SceneState>((set, get) => {
 
     setTransformMode: (mode: TransformMode) => {
       const { transformControls, selectedModelIndex, models } = get();
-      transformControls.setMode(mode);
+      if (!transformControls) return;
 
-      // Important: Reattach the transform controls after mode change
+      transformControls.setMode(mode);
+      set({ transformMode: mode });
+
+      // Reattach if there's a selected model
       if (selectedModelIndex !== null && models[selectedModelIndex]) {
         transformControls.attach(models[selectedModelIndex].mesh);
       }
-
-      set({ transformMode: mode });
     },
 
     selectModel: (index: number | null) => {
       const { transformControls, models, transformMode } = get();
+      if (!transformControls) return;
 
-      // Important: Always detach first
       transformControls.detach();
 
-      if (index !== null && index < models.length) {
-        const selectedMesh = models[index].mesh;
-        transformControls.attach(selectedMesh);
+      if (index !== null && models[index]) {
+        transformControls.attach(models[index].mesh);
         transformControls.setMode(transformMode);
-        console.log("Attached transform controls to model:", index);
       }
 
       set({ selectedModelIndex: index });

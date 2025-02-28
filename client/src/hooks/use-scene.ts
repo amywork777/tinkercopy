@@ -48,12 +48,6 @@ export const useScene = create<SceneState>((set, get) => {
   transformControls.showY = true;
   transformControls.showZ = true;
 
-  // Debug logging
-  console.log("TransformControls instance:", transformControls);
-  console.log("Is Object3D?", transformControls instanceof THREE.Object3D);
-  console.log("Camera position:", camera.position);
-  console.log("Renderer:", renderer);
-
   // Handle control interactions
   transformControls.addEventListener('dragging-changed', (event) => {
     controls.enabled = !event.value;
@@ -71,6 +65,7 @@ export const useScene = create<SceneState>((set, get) => {
   directionalLight.castShadow = true;
   scene.add(directionalLight);
 
+  // Important: Add transformControls to scene last
   scene.add(transformControls);
 
   return {
@@ -121,7 +116,10 @@ export const useScene = create<SceneState>((set, get) => {
           models: [...models, { name: file.name, mesh }],
           selectedModelIndex: newIndex
         });
-        get().selectModel(newIndex);
+
+        // Important: Select the model after adding it
+        const state = get();
+        state.selectModel(newIndex);
         console.log("Model loaded and selected successfully");
       } catch (error) {
         console.error('Error loading STL:', error);
@@ -133,13 +131,15 @@ export const useScene = create<SceneState>((set, get) => {
       const { scene, models, selectedModelIndex, transformControls } = get();
       const model = models[index];
       if (model) {
+        // Important: Detach before removing
+        transformControls.detach();
         scene.remove(model.mesh);
+
         const newModels = [...models];
         newModels.splice(index, 1);
 
         let newSelectedIndex = selectedModelIndex;
         if (selectedModelIndex === index) {
-          transformControls.detach();
           newSelectedIndex = null;
         } else if (selectedModelIndex !== null && selectedModelIndex > index) {
           newSelectedIndex = selectedModelIndex - 1;
@@ -155,19 +155,26 @@ export const useScene = create<SceneState>((set, get) => {
     setTransformMode: (mode: TransformMode) => {
       const { transformControls, selectedModelIndex, models } = get();
       transformControls.setMode(mode);
-      if (selectedModelIndex !== null) {
+
+      // Important: Reattach the transform controls after mode change
+      if (selectedModelIndex !== null && models[selectedModelIndex]) {
         transformControls.attach(models[selectedModelIndex].mesh);
       }
+
       set({ transformMode: mode });
     },
 
     selectModel: (index: number | null) => {
       const { transformControls, models, transformMode } = get();
+
+      // Important: Always detach first
       transformControls.detach();
 
       if (index !== null && index < models.length) {
-        transformControls.attach(models[index].mesh);
+        const selectedMesh = models[index].mesh;
+        transformControls.attach(selectedMesh);
         transformControls.setMode(transformMode);
+        console.log("Attached transform controls to model:", index);
       }
 
       set({ selectedModelIndex: index });

@@ -10,10 +10,13 @@ export function Viewport() {
     if (!containerRef.current) return;
 
     const container = containerRef.current;
-    container.appendChild(renderer.domElement);
 
-    console.log("Viewport initialized");
-    console.log("Container size:", container.clientWidth, container.clientHeight);
+    // Clear any existing content
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
+
+    container.appendChild(renderer.domElement);
 
     const animate = () => {
       requestAnimationFrame(animate);
@@ -26,8 +29,6 @@ export function Viewport() {
 
       const width = container.clientWidth;
       const height = container.clientHeight;
-
-      console.log("Resizing viewport:", width, height);
 
       camera.aspect = width / height;
       camera.updateProjectionMatrix();

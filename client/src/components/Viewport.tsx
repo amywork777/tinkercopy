@@ -12,6 +12,9 @@ export function Viewport() {
     const container = containerRef.current;
     container.appendChild(renderer.domElement);
 
+    console.log("Viewport initialized");
+    console.log("Container size:", container.clientWidth, container.clientHeight);
+
     const animate = () => {
       requestAnimationFrame(animate);
       controls.update();
@@ -23,6 +26,8 @@ export function Viewport() {
 
       const width = container.clientWidth;
       const height = container.clientHeight;
+
+      console.log("Resizing viewport:", width, height);
 
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -36,7 +41,9 @@ export function Viewport() {
 
     return () => {
       window.removeEventListener("resize", handleResize);
-      container.removeChild(renderer.domElement);
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
     };
   }, [scene, camera, renderer, controls]);
 

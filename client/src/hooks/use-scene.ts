@@ -32,7 +32,7 @@ export const useScene = create<SceneState>((set, get) => {
   camera.position.set(0, 5, 10);
   camera.lookAt(0, 0, 0);
 
-  // Initialize renderer
+  // Initialize renderer with antialiasing
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
@@ -65,41 +65,49 @@ export const useScene = create<SceneState>((set, get) => {
     transformMode: "translate",
 
     initializeTransformControls: () => {
-      const { camera, scene, renderer } = get();
-      // Create transform controls with renderer.domElement
-      const transformControls = new TransformControls(camera, renderer.domElement);
-      transformControls.size = 0.75;
+      // Remove existing transform controls if any
+      const state = get();
+      if (state.transformControls) {
+        state.scene.remove(state.transformControls);
+      }
 
-      // Make transform controls visible
+      // Create new transform controls
+      const transformControls = new TransformControls(state.camera, state.renderer.domElement);
+
+      // Configure transform controls
+      transformControls.size = 0.75;
       transformControls.showX = true;
       transformControls.showY = true;
       transformControls.showZ = true;
+      transformControls.enabled = true;
 
       // Handle interaction between orbit and transform controls
       transformControls.addEventListener('dragging-changed', (event) => {
-        const { controls } = get();
-        controls.enabled = !event.value;
+        state.controls.enabled = !event.value;
       });
 
-      // Add to scene and store in state
-      scene.add(transformControls);
+      // Add transform controls to scene
+      state.scene.add(transformControls);
       set({ transformControls });
 
-      // If there's a selected model, attach the controls to it
-      const { selectedModelIndex, models } = get();
-      if (selectedModelIndex !== null && models[selectedModelIndex]) {
-        transformControls.attach(models[selectedModelIndex].mesh);
+      // If there's a selected model, attach the controls
+      if (state.selectedModelIndex !== null && state.models[state.selectedModelIndex]) {
+        const selectedMesh = state.models[state.selectedModelIndex].mesh;
+        transformControls.attach(selectedMesh);
+        transformControls.setMode(state.transformMode);
       }
     },
 
     loadSTL: async (file: File) => {
       try {
+        const state = get();
         const loader = new STLLoader();
         const arrayBuffer = await file.arrayBuffer();
         const geometry = loader.parse(arrayBuffer);
 
-        // Center the geometry
+        // Center and prepare the geometry
         geometry.center();
+        geometry.computeVertexNormals();
 
         const material = new THREE.MeshStandardMaterial({ 
           color: 0x808080,
@@ -111,22 +119,25 @@ export const useScene = create<SceneState>((set, get) => {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
-        // Reset transform
-        mesh.position.set(0, 0, 0);
-        mesh.rotation.set(0, 0, 0);
-        mesh.scale.set(1, 1, 1);
+        // Add mesh to scene
+        state.scene.add(mesh);
 
-        const { scene, models } = get();
-        scene.add(mesh);
-
-        const newIndex = models.length;
+        // Update models array and select the new model
+        const newIndex = state.models.length;
         set({ 
-          models: [...models, { name: file.name, mesh }],
+          models: [...state.models, { name: file.name, mesh }],
           selectedModelIndex: newIndex
         });
 
-        // Select the model after adding it
-        get().selectModel(newIndex);
+        // Make sure transform controls are ready and attach to new mesh
+        if (!state.transformControls) {
+          state.initializeTransformControls();
+        }
+
+        if (state.transformControls) {
+          state.transformControls.attach(mesh);
+          state.transformControls.setMode(state.transformMode);
+        }
       } catch (error) {
         console.error('Error loading STL:', error);
         throw new Error('Failed to load STL file');
@@ -134,22 +145,28 @@ export const useScene = create<SceneState>((set, get) => {
     },
 
     removeModel: (index: number) => {
-      const { scene, models, selectedModelIndex, transformControls } = get();
-      const model = models[index];
-      if (model) {
-        if (transformControls) {
-          transformControls.detach();
-        }
-        scene.remove(model.mesh);
+      const state = get();
+      const model = state.models[index];
 
-        const newModels = [...models];
+      if (model) {
+        // Detach transform controls first
+        if (state.transformControls) {
+          state.transformControls.detach();
+        }
+
+        // Remove mesh from scene
+        state.scene.remove(model.mesh);
+
+        // Update models array
+        const newModels = [...state.models];
         newModels.splice(index, 1);
 
-        let newSelectedIndex = selectedModelIndex;
-        if (selectedModelIndex === index) {
+        // Update selection
+        let newSelectedIndex = state.selectedModelIndex;
+        if (state.selectedModelIndex === index) {
           newSelectedIndex = null;
-        } else if (selectedModelIndex !== null && selectedModelIndex > index) {
-          newSelectedIndex = selectedModelIndex - 1;
+        } else if (state.selectedModelIndex !== null && state.selectedModelIndex > index) {
+          newSelectedIndex = state.selectedModelIndex - 1;
         }
 
         set({ 
@@ -160,27 +177,40 @@ export const useScene = create<SceneState>((set, get) => {
     },
 
     setTransformMode: (mode: TransformMode) => {
-      const { transformControls, selectedModelIndex, models } = get();
-      if (!transformControls) return;
+      const state = get();
+      if (!state.transformControls) {
+        state.initializeTransformControls();
+        set({ transformMode: mode });
+        return;
+      }
 
-      transformControls.setMode(mode);
+      state.transformControls.setMode(mode);
       set({ transformMode: mode });
 
-      // Reattach if there's a selected model
-      if (selectedModelIndex !== null && models[selectedModelIndex]) {
-        transformControls.attach(models[selectedModelIndex].mesh);
+      // Re-attach to ensure mode takes effect
+      if (state.selectedModelIndex !== null && state.models[state.selectedModelIndex]) {
+        state.transformControls.attach(state.models[state.selectedModelIndex].mesh);
       }
     },
 
     selectModel: (index: number | null) => {
-      const { transformControls, models, transformMode } = get();
-      if (!transformControls) return;
+      const state = get();
 
-      transformControls.detach();
+      // Initialize transform controls if they don't exist
+      if (!state.transformControls) {
+        state.initializeTransformControls();
+        set({ selectedModelIndex: index });
+        return;
+      }
 
-      if (index !== null && models[index]) {
-        transformControls.attach(models[index].mesh);
-        transformControls.setMode(transformMode);
+      // Detach from current selection
+      state.transformControls.detach();
+
+      // Attach to new selection if valid
+      if (index !== null && state.models[index]) {
+        state.transformControls.attach(state.models[index].mesh);
+        state.transformControls.setMode(state.transformMode);
+        state.transformControls.enabled = true;
       }
 
       set({ selectedModelIndex: index });

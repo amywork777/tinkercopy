@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 
 export function Viewport() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { scene, camera, renderer, controls } = useScene();
+  const { scene, camera, renderer, controls, initializeTransformControls } = useScene();
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -17,6 +17,9 @@ export function Viewport() {
     }
 
     container.appendChild(renderer.domElement);
+
+    // Initialize transform controls after renderer is in the DOM
+    initializeTransformControls();
 
     const animate = () => {
       requestAnimationFrame(animate);
@@ -46,7 +49,7 @@ export function Viewport() {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [scene, camera, renderer, controls]);
+  }, [scene, camera, renderer, controls, initializeTransformControls]);
 
   return (
     <Card className="h-full w-full rounded-none border-0">

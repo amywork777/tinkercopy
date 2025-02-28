@@ -21,7 +21,7 @@ interface SceneState {
   selectModel: (index: number | null) => void;
 }
 
-export const useScene = create<SceneState>(() => {
+export const useScene = create<SceneState>((set, get) => {
   // Initialize scene
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1a1a);
@@ -47,7 +47,12 @@ export const useScene = create<SceneState>(() => {
   transformControls.showX = true;
   transformControls.showY = true;
   transformControls.showZ = true;
-  scene.add(transformControls);
+
+  // Debug logging
+  console.log("TransformControls instance:", transformControls);
+  console.log("Is Object3D?", transformControls instanceof THREE.Object3D);
+  console.log("Camera position:", camera.position);
+  console.log("Renderer:", renderer);
 
   // Handle control interactions
   transformControls.addEventListener('dragging-changed', (event) => {
@@ -66,6 +71,8 @@ export const useScene = create<SceneState>(() => {
   directionalLight.castShadow = true;
   scene.add(directionalLight);
 
+  scene.add(transformControls);
+
   return {
     scene,
     camera,
@@ -77,38 +84,49 @@ export const useScene = create<SceneState>(() => {
     transformMode: "translate",
 
     loadSTL: async (file: File) => {
-      const loader = new STLLoader();
-      const geometry = await new Promise<THREE.BufferGeometry>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const result = loader.parse(e.target?.result as ArrayBuffer);
-            resolve(result);
-          } catch (error) {
-            reject(error);
-          }
-        };
-        reader.readAsArrayBuffer(file);
-      });
+      try {
+        console.log("Starting STL load for file:", file.name);
+        const loader = new STLLoader();
+        const arrayBuffer = await file.arrayBuffer();
+        console.log("File loaded as ArrayBuffer");
 
-      const material = new THREE.MeshStandardMaterial({ 
-        color: 0x808080,
-        metalness: 0.1,
-        roughness: 0.8
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+        const geometry = loader.parse(arrayBuffer);
+        console.log("STL parsed successfully");
 
-      const { scene, models } = get();
-      scene.add(mesh);
+        // Center the geometry
+        geometry.center();
+        console.log("Geometry centered");
 
-      const newIndex = models.length;
-      set({ 
-        models: [...models, { name: file.name, mesh }],
-        selectedModelIndex: newIndex
-      });
-      get().selectModel(newIndex);
+        const material = new THREE.MeshStandardMaterial({ 
+          color: 0x808080,
+          metalness: 0.1,
+          roughness: 0.8
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        // Reset transform
+        mesh.position.set(0, 0, 0);
+        mesh.rotation.set(0, 0, 0);
+        mesh.scale.set(1, 1, 1);
+
+        const { scene, models } = get();
+        scene.add(mesh);
+        console.log("Mesh added to scene");
+
+        const newIndex = models.length;
+        set({ 
+          models: [...models, { name: file.name, mesh }],
+          selectedModelIndex: newIndex
+        });
+        get().selectModel(newIndex);
+        console.log("Model loaded and selected successfully");
+      } catch (error) {
+        console.error('Error loading STL:', error);
+        throw new Error('Failed to load STL file');
+      }
     },
 
     removeModel: (index: number) => {

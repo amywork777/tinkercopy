@@ -13,15 +13,38 @@ export function ModelList() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.name.toLowerCase().endsWith('.stl')) {
+      toast({
+        title: "Invalid file",
+        description: "Please select an STL file",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
+      toast({
+        title: "Loading model",
+        description: "Please wait while we load your model...",
+      });
+
       await loadSTL(file);
+
+      toast({
+        title: "Success",
+        description: "Model loaded successfully",
+      });
     } catch (error) {
+      console.error('Error loading STL:', error);
       toast({
         title: "Error",
-        description: "Failed to load STL file",
+        description: error instanceof Error ? error.message : "Failed to load STL file",
         variant: "destructive",
       });
     }
+
+    // Reset input value to allow loading the same file again
+    e.target.value = '';
   };
 
   return (

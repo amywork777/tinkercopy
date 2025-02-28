@@ -16,17 +16,20 @@ export function Viewport() {
       container.removeChild(container.firstChild);
     }
 
+    // Add renderer to container
     container.appendChild(renderer.domElement);
 
-    // Initialize transform controls after renderer is in the DOM
+    // Initialize transform controls
     initializeTransformControls();
 
+    // Animation loop
     const animate = () => {
       requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
     };
 
+    // Handle resize
     const handleResize = () => {
       if (!container) return;
 
@@ -39,10 +42,12 @@ export function Viewport() {
       renderer.setSize(width, height, false);
     };
 
+    // Setup resize handler and start animation
     window.addEventListener("resize", handleResize);
-    handleResize(); // Initial resize
+    handleResize();
     animate();
 
+    // Cleanup
     return () => {
       window.removeEventListener("resize", handleResize);
       if (container.contains(renderer.domElement)) {

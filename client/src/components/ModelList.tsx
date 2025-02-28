@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useScene } from "@/hooks/use-scene";
 import { Upload, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function ModelList() {
-  const { loadSTL, removeModel, models } = useScene();
+  const { loadSTL, removeModel, models, selectedModelIndex, selectModel } = useScene();
   const { toast } = useToast();
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,12 +43,25 @@ export function ModelList() {
       <ScrollArea className="h-[400px]">
         <div className="space-y-2">
           {models.map((model, index) => (
-            <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+            <div 
+              key={index} 
+              className={cn(
+                "flex items-center justify-between p-2 rounded-md cursor-pointer",
+                selectedModelIndex === index ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"
+              )}
+              onClick={() => selectModel(index)}
+            >
               <span className="truncate">{model.name}</span>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => removeModel(index)}
+                className={cn(
+                  selectedModelIndex === index ? "hover:bg-primary/80" : "hover:bg-muted/80"
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeModel(index);
+                }}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>

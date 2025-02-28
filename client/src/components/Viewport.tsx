@@ -1,6 +1,4 @@
 import { useEffect, useRef } from "react";
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { useScene } from "@/hooks/use-scene";
 import { Card } from "@/components/ui/card";
 
@@ -20,18 +18,21 @@ export function Viewport() {
       renderer.render(scene, camera);
     };
 
-    animate();
-
     const handleResize = () => {
+      if (!container) return;
+
       const width = container.clientWidth;
       const height = container.clientHeight;
+
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
+
+      renderer.setSize(width, height, false);
     };
 
     window.addEventListener("resize", handleResize);
-    handleResize();
+    handleResize(); // Initial resize
+    animate();
 
     return () => {
       window.removeEventListener("resize", handleResize);

@@ -264,16 +264,15 @@ export function TransformControls({ className }: { className?: string }) {
     return unit === 'mm' ? 'mm' : 'in';
   };
   
-  // Add a function to format dimension values based on current unit
+  // Format a value with the appropriate unit
   const formatDimension = (value: number) => {
-    const currentUnit = unit;
-    // Show fewer decimal places for inches
-    return currentUnit === 'mm' 
-      ? value.toFixed(2) 
-      : convertValue(value, 'mm', 'in').toFixed(3);
+    if (unit === 'in') {
+      return `${(value / 25.4).toFixed(3)} in`;
+    }
+    return `${value.toFixed(1)} mm`;
   };
   
-  // Add a function to toggle between units
+  // Toggle between mm and in
   const toggleUnit = () => {
     setUnit(unit === 'mm' ? 'in' : 'mm');
   };
@@ -290,19 +289,6 @@ export function TransformControls({ className }: { className?: string }) {
       <h3 className="text-lg font-semibold mb-4">Transform Controls</h3>
       
       <div className="space-y-4">
-        {/* Add unit toggle */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm">Units</span>
-          <Button 
-            variant="outline"
-            size="sm"
-            onClick={toggleUnit}
-            className="text-xs"
-          >
-            {unit.toUpperCase()}
-          </Button>
-        </div>
-        
         <div className="flex space-x-2">
           <Button
             variant={transformMode === "translate" ? "default" : "outline"}
@@ -327,37 +313,44 @@ export function TransformControls({ className }: { className?: string }) {
           </Button>
         </div>
 
-        {/* Dimensions Display */}
-        {dimensions && (
-          <Card className="p-3 mt-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Box className="h-4 w-4" />
-              <h3 className="text-sm font-medium">Model Dimensions</h3>
+        {/* Model Info and Utilities */}
+        <div className="flex flex-wrap justify-between items-center pt-2 mt-2 border-t border-border gap-2">
+          {/* Model dimensions */}
+          <div className="flex flex-col">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={toggleUnit}
+                className="h-6 text-xs font-normal"
+              >
+                {unit.toUpperCase()}
+              </Button>
+              <div className="flex items-center gap-1">
+                <Box className="h-3 w-3 text-red-500" />
+                <span>W: {formatDimension(dimensions.width)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Box className="h-3 w-3 text-green-500" />
+                <span>H: {formatDimension(dimensions.height)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Box className="h-3 w-3 text-blue-500" />
+                <span>D: {formatDimension(dimensions.depth)}</span>
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Width</p>
-                <p className="text-sm font-medium text-red-500">
-                  {formatDimension(dimensions.width)} {getDimensionUnit()}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Height</p>
-                <p className="text-sm font-medium text-green-500">
-                  {formatDimension(dimensions.height)} {getDimensionUnit()}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Depth</p>
-                <p className="text-sm font-medium text-blue-500">
-                  {formatDimension(dimensions.depth)} {getDimensionUnit()}
-                </p>
-              </div>
-            </div>
-          </Card>
-        )}
+          </div>
 
-        <Separator />
+          {/* Reset transform button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => resetTransform()}
+            className="h-7"
+          >
+            <RefreshCw className="h-3 w-3 mr-1" /> Reset
+          </Button>
+        </div>
 
         {selectedModelIndex === null ? (
           <div className="text-center p-4 text-sm text-muted-foreground">
@@ -560,15 +553,6 @@ export function TransformControls({ className }: { className?: string }) {
             )}
           </>
         )}
-        
-        <Button
-          variant="outline"
-          className="w-full mt-2"
-          onClick={resetTransform}
-          disabled={selectedModelIndex === null}
-        >
-          Reset Transform
-        </Button>
       </div>
     </div>
   );

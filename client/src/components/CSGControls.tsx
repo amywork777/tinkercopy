@@ -4,7 +4,10 @@ import {
   Combine, 
   Scissors, 
   GitMerge,
-  Loader2
+  Loader2,
+  Minus,
+  XCircle,
+  Plus
 } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -19,7 +22,7 @@ import { Label } from "@/components/ui/label";
 
 type CSGOperationType = 'union' | 'subtract' | 'intersect';
 
-export function CSGControls() {
+export function ModelCombiner() {
   const { 
     models, 
     selectedModelIndex, 
@@ -33,7 +36,7 @@ export function CSGControls() {
   
   const handleCSGOperation = async (operationType: CSGOperationType) => {
     if (models.length < 2) {
-      toast.error("You need at least two models to perform CSG operations");
+      toast.error("You need at least two models to combine models");
       return;
     }
     
@@ -53,10 +56,16 @@ export function CSGControls() {
       
       await performCSGOperation(operationType);
       
-      toast.success(`Successfully performed ${operationType} operation`);
+      const operationNames = {
+        'union': 'merge',
+        'subtract': 'subtract',
+        'intersect': 'intersect'
+      };
+      
+      toast.success(`Successfully ${operationNames[operationType]}ed the models`);
     } catch (error) {
-      console.error("CSG operation failed:", error);
-      toast.error("There was an error performing the operation");
+      console.error("Model combining operation failed:", error);
+      toast.error("There was an error combining the models");
     } finally {
       setCurrentOperation(null);
     }
@@ -80,14 +89,39 @@ export function CSGControls() {
     }
   };
 
+  // Better color coding for operation buttons
+  const operationButtons = [
+    { 
+      type: 'union' as CSGOperationType, 
+      label: 'Merge', 
+      description: 'Combine both models into one',
+      icon: <Plus className="h-4 w-4 mr-2" />,
+      color: 'bg-blue-600 hover:bg-blue-700 text-white'
+    },
+    { 
+      type: 'subtract' as CSGOperationType, 
+      label: 'Cut Out', 
+      description: 'Remove secondary from primary',
+      icon: <Minus className="h-4 w-4 mr-2" />,
+      color: 'bg-red-600 hover:bg-red-700 text-white'
+    },
+    { 
+      type: 'intersect' as CSGOperationType, 
+      label: 'Intersect', 
+      description: 'Keep only overlapping parts',
+      icon: <XCircle className="h-4 w-4 mr-2" />,
+      color: 'bg-green-600 hover:bg-green-700 text-white'
+    }
+  ];
+
   return (
     <div className="p-4 border-b">
-      <h3 className="text-lg font-semibold mb-4">CSG Operations</h3>
+      <h3 className="text-lg font-semibold mb-4">Combine Models</h3>
       
       {models.length < 2 ? (
         <div className="text-center p-3">
           <p className="text-sm">
-            You need at least two models to perform CSG operations.
+            You need at least two models to perform combining operations.
           </p>
         </div>
       ) : (
@@ -136,51 +170,24 @@ export function CSGControls() {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => handleCSGOperation('union')}
-              disabled={isCSGOperationLoading || selectedModelIndex === null || secondaryModelIndex === null}
-            >
-              {currentOperation === 'union' && isCSGOperationLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Union
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => handleCSGOperation('subtract')}
-              disabled={isCSGOperationLoading || selectedModelIndex === null || secondaryModelIndex === null}
-            >
-              {currentOperation === 'subtract' && isCSGOperationLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Subtract
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => handleCSGOperation('intersect')}
-              disabled={isCSGOperationLoading || selectedModelIndex === null || secondaryModelIndex === null}
-            >
-              {currentOperation === 'intersect' && isCSGOperationLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Intersect
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => handleCSGOperation('subtract')}
-              disabled={isCSGOperationLoading || selectedModelIndex === null || secondaryModelIndex === null}
-            >
-              {currentOperation === 'subtract' && isCSGOperationLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Difference
-            </Button>
+          <div className="grid grid-cols-1 gap-2">
+            {operationButtons.map(button => (
+              <Button
+                key={button.type}
+                variant="default"
+                className={`w-full ${button.color}`}
+                onClick={() => handleCSGOperation(button.type)}
+                disabled={isCSGOperationLoading || selectedModelIndex === null || secondaryModelIndex === null}
+              >
+                {currentOperation === button.type && isCSGOperationLoading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : button.icon}
+                <div className="flex flex-col items-start">
+                  <span>{button.label}</span>
+                  <span className="text-xs opacity-80">{button.description}</span>
+                </div>
+              </Button>
+            ))}
           </div>
         </div>
       )}

@@ -64,6 +64,10 @@ type SceneState = {
   secondaryModelIndex: number | null; // For CSG operations
   transformMode: "translate" | "rotate" | "scale";
   
+  // Rendering mode
+  renderingMode: 'standard' | 'wireframe' | 'realistic' | 'xray';
+  setRenderingMode: (mode: 'standard' | 'wireframe' | 'realistic' | 'xray') => void;
+  
   // Unit system
   unit: 'mm' | 'in';
   setUnit: (unit: 'mm' | 'in') => void;
@@ -155,6 +159,9 @@ export const useScene = create<SceneState>((set, get) => {
     selectedModelIndex: null,
     secondaryModelIndex: null,
     transformMode: "translate",
+    
+    // Rendering mode
+    renderingMode: 'standard',
 
     // Unit system
     unit: 'mm',
@@ -220,6 +227,7 @@ export const useScene = create<SceneState>((set, get) => {
       renderer.setClearColor(BACKGROUND_COLOR);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       
       // Style canvas
       const canvas = renderer.domElement;
@@ -255,6 +263,7 @@ export const useScene = create<SceneState>((set, get) => {
       const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, 0xFFFFFF, 0x888888);
       gridHelper.name = 'gridHelper';
       gridHelper.visible = get().showGrid;
+      gridHelper.position.y = -1;
       scene.add(gridHelper);
       
       // Add axes helper and give it a name for later reference
@@ -1331,6 +1340,24 @@ export const useScene = create<SceneState>((set, get) => {
       const state = get();
       set({ showAxes: show });
       console.log(`Axes visibility set to: ${show}`);
+    },
+
+    // Add function to set rendering mode
+    setRenderingMode: (mode: 'standard' | 'wireframe' | 'realistic' | 'xray') => {
+      set({ renderingMode: mode });
+      
+      // Update all models with the new rendering mode
+      const { models, scene } = get();
+      
+      models.forEach(model => {
+        updateModelMaterial(model.mesh, mode);
+      });
+      
+      // Force re-render
+      const { renderer, camera } = get();
+      if (renderer && camera) {
+        renderer.render(scene, camera);
+      }
     }
   };
 });
@@ -1701,4 +1728,66 @@ function boxesOverlapInPlane(box1: THREE.Box3, box2: THREE.Box3, plane: 'xy' | '
 // Helper function to check if two lines overlap
 function isLineOverlapping(min1: number, max1: number, min2: number, max2: number): boolean {
   return max1 >= min2 && max2 >= min1;
+}
+
+// Helper function to update model material based on rendering mode
+function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 'realistic' | 'xray') {
+  // Get the current color from the mesh's material
+  let currentColor = new THREE.Color(0x3498db); // Default blue color
+  
+  // Try to get the color from the existing material if possible
+  if (mesh.material instanceof THREE.MeshBasicMaterial || 
+      mesh.material instanceof THREE.MeshStandardMaterial ||
+      mesh.material instanceof THREE.MeshPhysicalMaterial) {
+    currentColor = mesh.material.color;
+  }
+  
+  switch (mode) {
+    case 'standard':
+      if (!(mesh.material instanceof THREE.MeshStandardMaterial)) {
+        const material = new THREE.MeshStandardMaterial({
+          color: currentColor,
+          roughness: 0.7,
+          metalness: 0.2
+        });
+        mesh.material = material;
+      }
+      break;
+      
+    case 'wireframe':
+      if (!(mesh.material instanceof THREE.MeshBasicMaterial) || !(mesh.material as THREE.MeshBasicMaterial).wireframe) {
+        const material = new THREE.MeshBasicMaterial({
+          color: currentColor,
+          wireframe: true
+        });
+        mesh.material = material;
+      }
+      break;
+      
+    case 'realistic':
+      if (!(mesh.material instanceof THREE.MeshPhysicalMaterial)) {
+        const material = new THREE.MeshPhysicalMaterial({
+          color: currentColor,
+          roughness: 0.3,
+          metalness: 0.8,
+          clearcoat: 0.5,
+          clearcoatRoughness: 0.2,
+          reflectivity: 1
+        });
+        mesh.material = material;
+      }
+      break;
+      
+    case 'xray':
+      if (!(mesh.material instanceof THREE.MeshBasicMaterial) || !(mesh.material as THREE.MeshBasicMaterial).transparent) {
+        const material = new THREE.MeshBasicMaterial({
+          color: currentColor,
+          transparent: true,
+          opacity: 0.5,
+          side: THREE.DoubleSide
+        });
+        mesh.material = material;
+      }
+      break;
+  }
 }

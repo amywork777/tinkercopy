@@ -4,6 +4,9 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSG } from 'three-csg-ts';
+import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
+import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
+import { TextGeometry, TextGeometryParameters } from "three/examples/jsm/geometries/TextGeometry.js";
 
 // Scene configuration
 const GRID_SIZE = 20;
@@ -46,6 +49,47 @@ type SnapSettings = {
   snapToEdges: boolean;
   snapThreshold: number;
 };
+
+// Add SVG Result type
+type SVGResult = {
+  paths: Array<{
+    toShapes: (solid: boolean) => THREE.Shape[];
+  }>;
+};
+
+// Utility function to merge Float32Arrays
+const mergeFloat32Arrays = (arrays: Float32Array[]): Float32Array => {
+  // Calculate total length
+  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0);
+  
+  // Create new array with combined length
+  const result = new Float32Array(totalLength);
+  
+  // Copy data
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  
+  return result;
+};
+
+// Text options type
+type TextOptions = {
+  text: string;
+  fontSize?: number;
+  height?: number;
+  curveSegments?: number;
+  bevelEnabled?: boolean;
+  bevelThickness?: number;
+  bevelSize?: number;
+  bevelSegments?: number;
+  color?: THREE.Color | string | number;
+};
+
+// Default font path
+const defaultFontPath = '/fonts/helvetiker_regular.typeface.json';
 
 type SceneState = {
   // Scene components
@@ -99,6 +143,8 @@ type SceneState = {
   
   // Model management
   loadSTL: (file: File) => Promise<void>;
+  loadSVG: (file: File, extrudeDepth?: number) => Promise<void>;
+  loadText: (text: string, options?: TextOptions) => Promise<void>;
   removeModel: (index: number) => void;
   selectModel: (index: number | null) => void;
   selectSecondaryModel: (index: number | null) => void;
@@ -1357,6 +1403,320 @@ export const useScene = create<SceneState>((set, get) => {
       const { renderer, camera } = get();
       if (renderer && camera) {
         renderer.render(scene, camera);
+      }
+    },
+
+    // Load an SVG file and convert to 3D by extruding
+    loadSVG: async (file: File, extrudeDepth = 2) => {
+      const state = get();
+      
+      if (!state.isSceneReady) {
+        console.error("Scene not ready, can't load SVG");
+        return;
+      }
+      
+      try {
+        console.log("Loading SVG file:", file.name);
+        const loader = new SVGLoader();
+        
+        // Load the SVG file
+        const svgData = await new Promise<SVGResult>((resolve, reject) => {
+          const reader = new FileReader();
+          
+          reader.onload = (event) => {
+            try {
+              if (event.target?.result) {
+                const result = event.target.result;
+                const svgData = loader.parse(result as string);
+                resolve(svgData as SVGResult);
+              } else {
+                reject(new Error("Failed to read SVG file"));
+              }
+            } catch (error) {
+              reject(error);
+            }
+          };
+          
+          reader.onerror = () => reject(new Error("Error reading SVG file"));
+          reader.readAsText(file);
+        });
+        
+        // Create material with random color
+        const material = new THREE.MeshStandardMaterial({ 
+          color: getRandomColor(),
+          metalness: 0.1,
+          roughness: 0.8,
+          side: THREE.DoubleSide,
+        });
+        
+        // Create an empty geometry to merge all paths into
+        const group = new THREE.Group();
+        
+        // Extrusion settings
+        const extrudeSettings = {
+          depth: extrudeDepth,
+          bevelEnabled: false
+        };
+        
+        // Process all paths in the SVG
+        svgData.paths.forEach((path) => {
+          const shapes = path.toShapes(true);
+          
+          shapes.forEach((shape) => {
+            // Extrude the shape to create a 3D object
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const mesh = new THREE.Mesh(geometry, material);
+            group.add(mesh);
+          });
+        });
+        
+        // If no valid paths were found, throw an error
+        if (group.children.length === 0) {
+          throw new Error("No valid paths found in SVG");
+        }
+        
+        // Combine all meshes into a single mesh
+        const buffers: THREE.BufferGeometry[] = [];
+        group.children.forEach((child) => {
+          if (child instanceof THREE.Mesh) {
+            buffers.push(child.geometry.clone());
+          }
+        });
+        
+        // Use BufferGeometryUtils to merge geometries
+        let mergedGeometry: THREE.BufferGeometry;
+        if (buffers.length === 1) {
+          mergedGeometry = buffers[0];
+        } else {
+          // Create a manual merged geometry
+          const meshesToMerge: THREE.Mesh[] = [];
+          group.children.forEach((child) => {
+            if (child instanceof THREE.Mesh) {
+              meshesToMerge.push(child);
+            }
+          });
+          
+          const finalGeometry = new THREE.BufferGeometry();
+          let verticesArray: Float32Array[] = [];
+          let normalsArray: Float32Array[] = [];
+          let uvsArray: Float32Array[] = [];
+          let indicesArray: number[][] = [];
+          let vertexOffset = 0;
+          
+          meshesToMerge.forEach((mesh) => {
+            const geo = mesh.geometry;
+            const vertices = geo.attributes.position.array as Float32Array;
+            const normals = geo.attributes.normal?.array as Float32Array;
+            const uvs = geo.attributes.uv?.array as Float32Array;
+            const indices = geo.index ? Array.from(geo.index.array) : [];
+            
+            verticesArray.push(vertices);
+            if (normals) normalsArray.push(normals);
+            if (uvs) uvsArray.push(uvs);
+            
+            // Adjust indices to account for merged vertices
+            if (indices.length > 0) {
+              const adjustedIndices = indices.map(i => i + vertexOffset);
+              indicesArray.push(adjustedIndices);
+            }
+            
+            vertexOffset += vertices.length / 3;
+          });
+          
+          // Merge arrays
+          const mergedVertices = mergeFloat32Arrays(verticesArray);
+          const mergedNormals = normalsArray.length > 0 ? mergeFloat32Arrays(normalsArray) : undefined;
+          const mergedUvs = uvsArray.length > 0 ? mergeFloat32Arrays(uvsArray) : undefined;
+          const mergedIndices = indicesArray.flat();
+          
+          // Set attributes
+          finalGeometry.setAttribute('position', new THREE.BufferAttribute(mergedVertices, 3));
+          if (mergedNormals) finalGeometry.setAttribute('normal', new THREE.BufferAttribute(mergedNormals, 3));
+          if (mergedUvs) finalGeometry.setAttribute('uv', new THREE.BufferAttribute(mergedUvs, 2));
+          if (mergedIndices.length > 0) finalGeometry.setIndex(mergedIndices);
+          
+          finalGeometry.computeVertexNormals();
+          mergedGeometry = finalGeometry;
+        }
+        
+        // Center the geometry
+        mergedGeometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        if (mergedGeometry.boundingBox) {
+          mergedGeometry.boundingBox.getCenter(center);
+          mergedGeometry.translate(-center.x, -center.y, -center.z);
+        }
+        
+        // Normalize size
+        mergedGeometry.computeBoundingSphere();
+        if (mergedGeometry.boundingSphere) {
+          const radius = mergedGeometry.boundingSphere.radius;
+          if (radius > 0) {
+            const scaleFactor = radius > 5 ? 5 / radius : 1;
+            if (scaleFactor !== 1) {
+              mergedGeometry.scale(scaleFactor, scaleFactor, scaleFactor);
+            }
+          }
+        }
+        
+        // Create the final mesh
+        const mesh = new THREE.Mesh(mergedGeometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        
+        // Position mesh slightly above the grid
+        mesh.position.y = 0;
+        
+        // Store original transform
+        const originalPosition = mesh.position.clone();
+        const originalRotation = mesh.rotation.clone();
+        const originalScale = mesh.scale.clone();
+        
+        // Add to scene
+        scene.add(mesh);
+        console.log("Added SVG mesh to scene:", mesh);
+        
+        // Create model object
+        const newModel: Model = {
+          id: `svg-model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: file.name,
+          mesh,
+          originalPosition,
+          originalRotation,
+          originalScale
+        };
+        
+        // Add to models array
+        const models = [...state.models, newModel];
+        set({ models });
+        
+        // Select the new model
+        const newIndex = models.length - 1;
+        get().selectModel(newIndex);
+        
+        // Force a render
+        state.renderer.render(state.scene, state.camera);
+        
+        // Save to history after adding a model
+        get().saveHistoryState();
+        
+      } catch (error) {
+        console.error("Error loading SVG:", error);
+        throw new Error("Failed to load SVG file");
+      }
+    },
+    
+    // Create 3D text
+    loadText: async (text: string, options: TextOptions = { text }) => {
+      const state = get();
+      
+      if (!state.isSceneReady) {
+        console.error("Scene not ready, can't create text");
+        return;
+      }
+      
+      try {
+        console.log("Creating 3D text:", text);
+        
+        // Default text options
+        const defaultOptions = {
+          fontSize: 5,
+          height: 2,
+          curveSegments: 4,
+          bevelEnabled: true,
+          bevelThickness: 0.2,
+          bevelSize: 0.1,
+          bevelSegments: 3,
+        };
+        
+        // Merge defaults with provided options
+        const mergedOptions = { ...defaultOptions, ...options };
+        
+        // Load font
+        const fontLoader = new FontLoader();
+        const font = await new Promise((resolve, reject) => {
+          fontLoader.load(
+            defaultFontPath, 
+            (font) => resolve(font),
+            undefined,
+            (err) => reject(new Error(`Failed to load font: ${(err as Error).message}`))
+          );
+        });
+        
+        // Create text geometry parameters
+        const geometryParams: TextGeometryParameters = {
+          font: font as any,
+          size: mergedOptions.fontSize,
+          depth: mergedOptions.height,
+          curveSegments: mergedOptions.curveSegments,
+          bevelEnabled: mergedOptions.bevelEnabled,
+          bevelThickness: mergedOptions.bevelThickness,
+          bevelSize: mergedOptions.bevelSize,
+          bevelSegments: mergedOptions.bevelSegments,
+        };
+        
+        // Create text geometry
+        const geometry = new TextGeometry(text, geometryParams);
+        
+        // Create material with specified or random color
+        const material = new THREE.MeshStandardMaterial({ 
+          color: mergedOptions.color || getRandomColor(),
+          metalness: 0.1,
+          roughness: 0.8,
+        });
+        
+        // Create mesh
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        
+        // Center the geometry
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        if (geometry.boundingBox) {
+          geometry.boundingBox.getCenter(center);
+          geometry.translate(-center.x, -center.y, -center.z);
+        }
+        
+        // Position mesh slightly above the grid
+        mesh.position.y = 0;
+        
+        // Store original transform
+        const originalPosition = mesh.position.clone();
+        const originalRotation = mesh.rotation.clone();
+        const originalScale = mesh.scale.clone();
+        
+        // Add to scene
+        scene.add(mesh);
+        console.log("Added text mesh to scene:", mesh);
+        
+        // Create model object
+        const newModel: Model = {
+          id: `text-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: `Text: ${text.substring(0, 15)}${text.length > 15 ? '...' : ''}`,
+          mesh,
+          originalPosition,
+          originalRotation,
+          originalScale
+        };
+        
+        // Add to models array
+        const models = [...state.models, newModel];
+        set({ models });
+        
+        // Select the new model
+        const newIndex = models.length - 1;
+        get().selectModel(newIndex);
+        
+        // Force a render
+        state.renderer.render(state.scene, state.camera);
+        
+        // Save to history after adding a model
+        get().saveHistoryState();
+        
+      } catch (error) {
+        console.error("Error creating 3D text:", error);
+        throw new Error("Failed to create 3D text");
       }
     }
   };

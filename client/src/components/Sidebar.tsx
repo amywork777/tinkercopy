@@ -9,16 +9,19 @@ import { ModelCombiner } from "./CSGControls";
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import * as THREE from "three";
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
+import { ModelLibrary } from "./ModelLibrary";
 
 export function Sidebar() {
   const { 
     loadSTL, 
+    loadSVG,
     exportSelectedModelAsSTL, 
     selectedModelIndex,
     removeModel,
     scene,
     selectModel,
-    saveHistoryState
+    saveHistoryState,
   } = useScene();
   const { toast } = useToast();
   
@@ -75,25 +78,41 @@ export function Sidebar() {
     });
   };
   
-  const handleImportModel = () => {
+  const handleImportClick = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.stl';
+    input.accept = '.stl,.svg';
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       
       try {
-        await loadSTL(file);
-        toast({
-          title: "Import Successful",
-          description: `Imported ${file.name}`
-        });
+        const fileExt = file.name.split('.').pop()?.toLowerCase();
+        
+        if (fileExt === 'stl') {
+          await loadSTL(file);
+          toast({
+            title: "Import Successful",
+            description: `Imported STL: ${file.name}`
+          });
+        } else if (fileExt === 'svg') {
+          await loadSVG(file);
+          toast({
+            title: "Import Successful",
+            description: `Converted SVG to 3D: ${file.name}`
+          });
+        } else {
+          toast({
+            title: "Import Failed",
+            description: "Unsupported file format. Please use STL or SVG files.",
+            variant: "destructive",
+          });
+        }
       } catch (error) {
         console.error("Import error:", error);
         toast({
           title: "Import Failed",
-          description: "There was an error importing your STL file",
+          description: "There was an error importing your file",
           variant: "destructive",
         });
       }
@@ -172,10 +191,10 @@ export function Sidebar() {
                 variant="outline"
                 size="sm"
                 className="justify-start"
-                onClick={handleImportModel}
+                onClick={handleImportClick}
               >
                 <Download className="mr-1 h-4 w-4" />
-                Import STL
+                Import STL or SVG
               </Button>
               
               <Button

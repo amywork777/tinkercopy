@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Undo, Redo, Palette } from "lucide-react";
+import { Undo, Redo, Palette, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Separator } from "@/components/ui/separator";
@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { ViewOptions } from "./ViewOptions";
+import { TextDialog } from "./TextDialog";
 
 export const ToolBar = () => {
   const { 
@@ -31,6 +33,7 @@ export const ToolBar = () => {
   } = useScene();
   const { toast } = useToast();
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
+  const [textDialogOpen, setTextDialogOpen] = useState(false);
 
   const handleUndo = () => {
     if (canUndo) {
@@ -195,6 +198,29 @@ export const ToolBar = () => {
           </SelectContent>
         </Select>
       </div>
+
+      <Separator orientation="vertical" className="h-8" />
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2"
+              onClick={() => setTextDialogOpen(true)}
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              <span className="text-white text-xs font-medium">Add Text</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Create 3D text</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TextDialog open={textDialogOpen} onOpenChange={setTextDialogOpen} />
     </div>
   );
 };

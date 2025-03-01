@@ -14,6 +14,8 @@ const getRandomColor = () => new THREE.Color(Math.random() * 0.5 + 0.5, Math.ran
 const TRANSFORM_STEP = 0.5; // Movement step size in units
 const ROTATION_STEP = Math.PI / 18; // 10 degrees in radians
 const SCALE_STEP = 0.1; // 10% scale step
+const SNAP_THRESHOLD = 0.5; // Distance in units to trigger snapping
+const SNAP_GRID_SIZE = 0.5; // Grid size for snapping
 
 // Type for our 3D models
 type Model = {
@@ -36,6 +38,15 @@ type HistoryRecord = {
   selectedModelIndex: number | null;
 };
 
+// Type for our snap settings
+type SnapSettings = {
+  enabled: boolean;
+  snapToGrid: boolean;
+  snapToFaces: boolean;
+  snapToEdges: boolean;
+  snapThreshold: number;
+};
+
 type SceneState = {
   // Scene components
   scene: THREE.Scene;
@@ -53,6 +64,19 @@ type SceneState = {
   secondaryModelIndex: number | null; // For CSG operations
   transformMode: "translate" | "rotate" | "scale";
   
+  // Unit system
+  unit: 'mm' | 'in';
+  setUnit: (unit: 'mm' | 'in') => void;
+  convertValue: (value: number, from: 'mm' | 'in', to: 'mm' | 'in') => number;
+  
+  // View options
+  cameraView: 'top' | 'front' | 'side' | 'isometric';
+  showGrid: boolean;
+  showAxes: boolean;
+  setCameraView: (view: 'top' | 'front' | 'side' | 'isometric') => void;
+  setShowGrid: (show: boolean) => void;
+  setShowAxes: (show: boolean) => void;
+  
   // Loading states
   isCSGOperationLoading: boolean;
   
@@ -61,6 +85,10 @@ type SceneState = {
   currentHistoryIndex: number;
   canUndo: boolean;
   canRedo: boolean;
+  
+  // Snap settings
+  snapSettings: SnapSettings;
+  snapIndicators: THREE.Object3D[];
   
   // Scene initialization
   initializeScene: (container: HTMLDivElement) => () => void;
@@ -84,13 +112,18 @@ type SceneState = {
   // CSG operations
   performCSGOperation: (operationType: 'union' | 'subtract' | 'intersect') => Promise<void>;
   
-  // Undo/Redo
+  // History operations
   saveHistoryState: () => void;
   undo: () => void;
   redo: () => void;
   
+  // Snap operations
+  toggleSnap: () => void;
+  updateSnapSettings: (settings: Partial<SnapSettings>) => void;
+  clearSnapIndicators: () => void;
+  
   // Export
-  exportSelectedModelAsSTL: () => void;
+  exportSelectedModelAsSTL: () => Blob | null;
 };
 
 export const useScene = create<SceneState>((set, get) => {
@@ -105,7 +138,7 @@ export const useScene = create<SceneState>((set, get) => {
   });
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
-  
+
   return {
     // Scene components
     scene,
@@ -122,7 +155,32 @@ export const useScene = create<SceneState>((set, get) => {
     selectedModelIndex: null,
     secondaryModelIndex: null,
     transformMode: "translate",
-    
+
+    // Unit system
+    unit: 'mm',
+    setUnit: (unit: 'mm' | 'in') => {
+      set({ unit });
+      console.log(`Changed unit system to ${unit}`);
+    },
+    convertValue: (value: number, from: 'mm' | 'in', to: 'mm' | 'in'): number => {
+      if (from === to) return value;
+      
+      if (from === 'mm' && to === 'in') {
+        // Convert mm to inches (1 inch = 25.4 mm)
+        return value / 25.4;
+      } else if (from === 'in' && to === 'mm') {
+        // Convert inches to mm
+        return value * 25.4;
+      }
+      
+      return value; // Fallback
+    },
+
+    // View options
+    cameraView: 'top',
+    showGrid: true,
+    showAxes: true,
+
     // Loading states
     isCSGOperationLoading: false,
     
@@ -132,11 +190,21 @@ export const useScene = create<SceneState>((set, get) => {
     canUndo: false,
     canRedo: false,
     
+    // Snap settings
+    snapSettings: {
+      enabled: false,
+      snapToGrid: true,
+      snapToFaces: true,
+      snapToEdges: true,
+      snapThreshold: SNAP_THRESHOLD
+    },
+    snapIndicators: [],
+    
     // Initialize the 3D scene
     initializeScene: (container: HTMLDivElement) => {
       console.log("Initializing scene with container:", container);
       const state = get();
-      
+
       if (state.isSceneInitialized) {
         console.log("Scene already initialized, skipping");
         return () => {};
@@ -183,9 +251,17 @@ export const useScene = create<SceneState>((set, get) => {
       orbitControls.minDistance = 1;
       orbitControls.maxDistance = 50;
       
-      // Add a grid helper
+      // Add a grid helper and give it a name for later reference
       const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, 0xFFFFFF, 0x888888);
+      gridHelper.name = 'gridHelper';
+      gridHelper.visible = get().showGrid;
       scene.add(gridHelper);
+      
+      // Add axes helper and give it a name for later reference
+      const axesHelper = new THREE.AxesHelper(5);
+      axesHelper.name = 'axesHelper';
+      axesHelper.visible = get().showAxes;
+      scene.add(axesHelper);
       
       // Add lights
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -296,7 +372,7 @@ export const useScene = create<SceneState>((set, get) => {
     
     // Load an STL file
     loadSTL: async (file: File) => {
-      const state = get();
+        const state = get();
       
       if (!state.isSceneReady) {
         console.error("Scene not ready, can't load model");
@@ -350,18 +426,18 @@ export const useScene = create<SceneState>((set, get) => {
         }
         
         // Create material with random color
-        const material = new THREE.MeshStandardMaterial({
+        const material = new THREE.MeshStandardMaterial({ 
           color: getRandomColor(),
           metalness: 0.1,
           roughness: 0.8,
           side: THREE.DoubleSide,
         });
-        
+
         // Create mesh
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        
+
         // Position mesh slightly above the grid
         mesh.position.y = 0;
         
@@ -403,7 +479,7 @@ export const useScene = create<SceneState>((set, get) => {
         throw new Error("Failed to load STL file");
       }
     },
-    
+
     // Remove a model
     removeModel: (index: number) => {
       const state = get();
@@ -440,39 +516,63 @@ export const useScene = create<SceneState>((set, get) => {
     
     // Select a model
     selectModel: (index: number | null) => {
-      const state = get();
+      const { models, selectedModelIndex, clearSnapIndicators } = get();
       
-      // Reset highlighting on all models
-      state.models.forEach(model => {
-        const material = model.mesh.material as THREE.MeshStandardMaterial;
-        material.emissive.set(0x000000); // Reset emissive to black (no glow)
-      });
-      
-      // Update selected model index
-      set({ selectedModelIndex: index });
-      
-      // If selecting a model, highlight it
-      if (index !== null && state.models[index]) {
-        const selectedModel = state.models[index];
-        
-        // Highlight selected model with emissive glow
-        const material = selectedModel.mesh.material as THREE.MeshStandardMaterial;
-        material.emissive.set(0x444444);
-        
-        console.log("Selected model:", selectedModel.name);
-        console.log("Position:", selectedModel.mesh.position);
-        console.log("Rotation:", selectedModel.mesh.rotation);
-        console.log("Scale:", selectedModel.mesh.scale);
+      // If there was a previously selected model, reset its appearance
+      if (selectedModelIndex !== null && models[selectedModelIndex]) {
+        const model = models[selectedModelIndex];
+        model.mesh.material = new THREE.MeshStandardMaterial({
+          color: model.mesh.material instanceof THREE.MeshStandardMaterial 
+            ? model.mesh.material.color 
+            : new THREE.Color(0x888888),
+          roughness: 0.7,
+          metalness: 0.2
+        });
       }
       
+      // If selecting a new model, highlight it
+      if (index !== null && models[index]) {
+        const model = models[index];
+        model.mesh.material = new THREE.MeshStandardMaterial({
+          color: model.mesh.material instanceof THREE.MeshStandardMaterial 
+            ? model.mesh.material.color 
+            : new THREE.Color(0x888888),
+          roughness: 0.3,
+          metalness: 0.7,
+          emissive: new THREE.Color(0x222222)
+        });
+      }
+      
+      // Reset highlighting on all models
+      models.forEach(model => {
+        if (model.mesh.material instanceof THREE.MeshStandardMaterial) {
+          model.mesh.material.emissive.set(0x000000); // Reset emissive to black (no glow)
+        }
+      });
+      
+      // If selecting a model, highlight it
+      if (index !== null && models[index]) {
+        const selectedModel = models[index];
+        
+        // Highlight selected model with emissive glow
+        if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial) {
+          selectedModel.mesh.material.emissive.set(0x222222); // Slight glow
+        }
+      }
+      
+      clearSnapIndicators(); // Clear indicators when selecting a new model
+      
       // Force a render to show changes
-      state.renderer.render(state.scene, state.camera);
+      const { scene, camera, renderer } = get();
+      renderer.render(scene, camera);
+      
+      set({ selectedModelIndex: index });
     },
     
     // Select a secondary model for CSG operations
     selectSecondaryModel: (index: number | null) => {
       const state = get();
-      
+
       // Reset secondary highlighting on all models
       state.models.forEach(model => {
         // Only reset secondary highlight, not the primary selected model
@@ -508,34 +608,39 @@ export const useScene = create<SceneState>((set, get) => {
     
     // Set transform mode (affects how applyTransform works)
     setTransformMode: (mode: "translate" | "rotate" | "scale") => {
+      const { clearSnapIndicators } = get();
+      clearSnapIndicators();
       set({ transformMode: mode });
       console.log(`Transform mode set to: ${mode}`);
     },
-    
+
     // Apply transformation directly to the selected model
     applyTransform: (operation: TransformOperation, direction: 1 | -1) => {
       const state = get();
-      const { selectedModelIndex, models } = state;
+      const { selectedModelIndex, models, snapSettings } = state;
       
       if (selectedModelIndex === null || !models[selectedModelIndex]) {
-        console.warn("No model selected for transformation");
+        console.warn("No model selected for transform");
         return;
       }
       
       const model = models[selectedModelIndex];
       const mesh = model.mesh;
       
-      // Apply the transformation based on operation type
+      // Apply the requested transform
       switch(operation) {
         // Translation operations
         case 'translateX':
           mesh.position.x += TRANSFORM_STEP * direction;
+          if (snapSettings.enabled) snapModelPosition(selectedModelIndex);
           break;
         case 'translateY':
           mesh.position.y += TRANSFORM_STEP * direction;
+          if (snapSettings.enabled) snapModelPosition(selectedModelIndex);
           break;
         case 'translateZ':
           mesh.position.z += TRANSFORM_STEP * direction;
+          if (snapSettings.enabled) snapModelPosition(selectedModelIndex);
           break;
           
         // Rotation operations
@@ -549,7 +654,7 @@ export const useScene = create<SceneState>((set, get) => {
           mesh.rotation.z += ROTATION_STEP * direction;
           break;
           
-        // Scale operations
+        // Scale operations  
         case 'scaleX':
           mesh.scale.x = Math.max(0.1, mesh.scale.x + SCALE_STEP * direction);
           break;
@@ -564,25 +669,11 @@ export const useScene = create<SceneState>((set, get) => {
       // Update the matrix
       mesh.updateMatrix();
       
-      // Log the change
-      console.log(`Applied ${operation} with direction ${direction} to model:`, model.name);
-      console.log("New position:", mesh.position);
-      console.log("New rotation:", mesh.rotation);
-      console.log("New scale:", mesh.scale);
-      
-      // Render to show changes
-      state.renderer.render(state.scene, state.camera);
-      
-      // Save history state after significant transforms
-      // To avoid flooding history with every small movement, we'll only save
-      // after a small delay
-      clearTimeout(window.transformHistoryTimeout);
-      window.transformHistoryTimeout = setTimeout(() => {
-        get().saveHistoryState();
-      }, 500) as unknown as number;
+      // Save history state after transformation
+      get().saveHistoryState();
     },
     
-    // Set model position directly from input values
+    // Set direct position for the selected model
     setModelPosition: (x: number, y: number, z: number) => {
       const state = get();
       const { selectedModelIndex, models } = state;
@@ -593,20 +684,14 @@ export const useScene = create<SceneState>((set, get) => {
       }
       
       const model = models[selectedModelIndex];
-      const mesh = model.mesh;
+      model.mesh.position.set(x, y, z);
       
-      // Set the new position
-      mesh.position.set(x, y, z);
+      // Apply snapping if enabled
+      if (state.snapSettings.enabled) {
+        snapModelPosition(selectedModelIndex);
+      }
       
-      // Update the matrix
-      mesh.updateMatrix();
-      
-      console.log(`Set position for model ${model.name}:`, { x, y, z });
-      
-      // Render to show changes
-      state.renderer.render(state.scene, state.camera);
-      
-      // Save history state after direct position change
+      model.mesh.updateMatrix();
       get().saveHistoryState();
     },
     
@@ -678,32 +763,17 @@ export const useScene = create<SceneState>((set, get) => {
     
     // Reset the selected model to its original transform
     resetTransform: () => {
-      const state = get();
-      const { selectedModelIndex, models } = state;
+      const { selectedModelIndex, models, clearSnapIndicators } = get();
       
-      if (selectedModelIndex === null || !models[selectedModelIndex]) {
-        console.warn("No model selected for reset");
-        return;
+      if (selectedModelIndex !== null) {
+        const model = models[selectedModelIndex];
+        model.mesh.position.copy(model.originalPosition);
+        model.mesh.rotation.copy(model.originalRotation);
+        model.mesh.scale.copy(model.originalScale);
+        
+        clearSnapIndicators();
+        get().saveHistoryState();
       }
-      
-      const model = models[selectedModelIndex];
-      const mesh = model.mesh;
-      
-      // Reset to original values
-      mesh.position.copy(model.originalPosition);
-      mesh.rotation.copy(model.originalRotation);
-      mesh.scale.copy(model.originalScale);
-      
-      // Update the matrix
-      mesh.updateMatrix();
-      
-      console.log(`Reset transformation for model: ${model.name}`);
-      
-      // Render to show changes
-      state.renderer.render(state.scene, state.camera);
-      
-      // Save history state after reset
-      get().saveHistoryState();
     },
     
     // Perform CSG operations between selected and secondary models
@@ -1173,7 +1243,7 @@ export const useScene = create<SceneState>((set, get) => {
       
       if (selectedModelIndex === null || !models[selectedModelIndex]) {
         console.warn("No model selected for export");
-        return;
+        return null;
       }
       
       try {
@@ -1191,20 +1261,76 @@ export const useScene = create<SceneState>((set, get) => {
         // Create a blob from the result
         const blob = new Blob([result], { type: 'application/octet-stream' });
         
-        // Create a download link
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `${selectedModel.name.replace(/\.[^/.]+$/, '') || 'model'}_exported.stl`;
-        link.click();
+        // Return the blob instead of handling the download here
+        return blob;
         
-        // Clean up the URL object
-        URL.revokeObjectURL(link.href);
-        
-        console.log(`Exported model '${selectedModel.name}' as STL`);
       } catch (error) {
         console.error("Error exporting STL:", error);
         throw new Error("Failed to export STL file");
       }
+    },
+    
+    // Toggle snap on/off
+    toggleSnap: () => {
+      const { snapSettings, clearSnapIndicators } = get();
+      
+      // Toggle the enabled state
+      const newEnabledState = !snapSettings.enabled;
+      
+      set({
+        snapSettings: {
+          ...snapSettings,
+          enabled: newEnabledState
+        }
+      });
+      
+      // If turning off snap mode, clear indicators
+      if (!newEnabledState) {
+        clearSnapIndicators();
+      }
+      
+      console.log(`Snap mode ${newEnabledState ? 'enabled' : 'disabled'}`);
+    },
+    
+    // Update snap settings
+    updateSnapSettings: (settings: Partial<SnapSettings>) => {
+      const { snapSettings } = get();
+      set({ 
+        snapSettings: { 
+          ...snapSettings, 
+          ...settings
+        } 
+      });
+      console.log("Updated snap settings:", { ...snapSettings, ...settings });
+    },
+    
+    // Clear snap indicators
+    clearSnapIndicators: () => {
+      const { scene, snapIndicators } = get();
+      
+      // Remove all existing snap indicators from the scene
+      snapIndicators.forEach(indicator => {
+        scene.remove(indicator);
+      });
+      
+      set({ snapIndicators: [] });
+    },
+
+    // View options
+    setCameraView: (view: 'top' | 'front' | 'side' | 'isometric') => {
+      const state = get();
+      set({ cameraView: view });
+      console.log(`Camera view set to: ${view}`);
+    },
+    setShowGrid: (show: boolean) => {
+      const state = get();
+      set({ showGrid: show });
+      console.log(`Grid visibility set to: ${show}`);
+    },
+    setShowAxes: (show: boolean) => {
+      const state = get();
+      set({ showAxes: show });
+      console.log(`Axes visibility set to: ${show}`);
     }
   };
 });
@@ -1308,4 +1434,271 @@ function mergeGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeomet
   mergedGeometry.computeBoundingSphere();
   
   return mergedGeometry;
+}
+
+// Helper function to snap a model's position based on snap settings
+function snapModelPosition(modelIndex: number) {
+  const state = useScene.getState();
+  const { models, snapSettings, scene, clearSnapIndicators } = state;
+  
+  // Clear any previous snap indicators
+  clearSnapIndicators();
+  
+  if (!snapSettings.enabled || modelIndex === null || !models[modelIndex]) {
+    return;
+  }
+  
+  const selectedModel = models[modelIndex];
+  const selectedMesh = selectedModel.mesh;
+  
+  // Create a list to store potential snap points for visualization
+  const potentialSnapPoints: { position: THREE.Vector3, distance: number }[] = [];
+  
+  // 1. Snap to grid if enabled
+  if (snapSettings.snapToGrid) {
+    // Snap position to grid
+    selectedMesh.position.x = Math.round(selectedMesh.position.x / SNAP_GRID_SIZE) * SNAP_GRID_SIZE;
+    selectedMesh.position.y = Math.round(selectedMesh.position.y / SNAP_GRID_SIZE) * SNAP_GRID_SIZE;
+    selectedMesh.position.z = Math.round(selectedMesh.position.z / SNAP_GRID_SIZE) * SNAP_GRID_SIZE;
+  }
+  
+  // Only check face/edge snapping if enabled and there are other models
+  if ((snapSettings.snapToFaces || snapSettings.snapToEdges) && models.length > 1) {
+    // Get the bounding box of the selected model
+    selectedMesh.geometry.computeBoundingBox();
+    if (!selectedMesh.geometry.boundingBox) {
+      console.warn("Selected mesh has no bounding box, skipping snap");
+      return;
+    }
+    
+    const selectedBox = selectedMesh.geometry.boundingBox.clone();
+    selectedBox.applyMatrix4(selectedMesh.matrixWorld);
+    
+    // Find closest snap point
+    let closestDistance = snapSettings.snapThreshold;
+    let closestSnapPoint = null;
+    
+    // Check against all other models
+    models.forEach((otherModel, idx) => {
+      if (idx === modelIndex) return; // Skip the model we're moving
+      
+      const otherMesh = otherModel.mesh;
+      
+      // Get the bounding box of the other model
+      otherMesh.geometry.computeBoundingBox();
+      if (!otherMesh.geometry.boundingBox) {
+        return; // Skip this model if it has no bounding box
+      }
+      
+      const otherBox = otherMesh.geometry.boundingBox.clone();
+      otherBox.applyMatrix4(otherMesh.matrixWorld);
+      
+      // FACE SNAPPING
+      if (snapSettings.snapToFaces) {
+        // Check Y axis: bottom face of selected model with top face of other model
+        const bottomDistance = Math.abs(selectedBox.min.y - otherBox.max.y);
+        if (bottomDistance < snapSettings.snapThreshold) {
+          if (boxesOverlapInPlane(selectedBox, otherBox, 'xz')) {
+            const snapPoint = new THREE.Vector3(
+              selectedMesh.position.x,
+              otherBox.max.y + (selectedBox.min.y - selectedMesh.position.y),
+              selectedMesh.position.z
+            );
+            
+            potentialSnapPoints.push({ position: snapPoint, distance: bottomDistance });
+            
+            if (bottomDistance < closestDistance) {
+              closestDistance = bottomDistance;
+              closestSnapPoint = snapPoint;
+            }
+          }
+        }
+        
+        // Check Y axis: top face of selected model with bottom face of other model
+        const topDistance = Math.abs(selectedBox.max.y - otherBox.min.y);
+        if (topDistance < snapSettings.snapThreshold) {
+          if (boxesOverlapInPlane(selectedBox, otherBox, 'xz')) {
+            const snapPoint = new THREE.Vector3(
+              selectedMesh.position.x,
+              otherBox.min.y - (selectedBox.max.y - selectedMesh.position.y),
+              selectedMesh.position.z
+            );
+            
+            potentialSnapPoints.push({ position: snapPoint, distance: topDistance });
+            
+            if (topDistance < closestDistance) {
+              closestDistance = topDistance;
+              closestSnapPoint = snapPoint;
+            }
+          }
+        }
+        
+        // Check X axis: left face of selected model with right face of other model
+        const leftDistance = Math.abs(selectedBox.min.x - otherBox.max.x);
+        if (leftDistance < snapSettings.snapThreshold) {
+          if (boxesOverlapInPlane(selectedBox, otherBox, 'yz')) {
+            const snapPoint = new THREE.Vector3(
+              otherBox.max.x + (selectedBox.min.x - selectedMesh.position.x),
+              selectedMesh.position.y,
+              selectedMesh.position.z
+            );
+            
+            potentialSnapPoints.push({ position: snapPoint, distance: leftDistance });
+            
+            if (leftDistance < closestDistance) {
+              closestDistance = leftDistance;
+              closestSnapPoint = snapPoint;
+            }
+          }
+        }
+        
+        // Check X axis: right face of selected model with left face of other model
+        const rightDistance = Math.abs(selectedBox.max.x - otherBox.min.x);
+        if (rightDistance < snapSettings.snapThreshold) {
+          if (boxesOverlapInPlane(selectedBox, otherBox, 'yz')) {
+            const snapPoint = new THREE.Vector3(
+              otherBox.min.x - (selectedBox.max.x - selectedMesh.position.x),
+              selectedMesh.position.y,
+              selectedMesh.position.z
+            );
+            
+            potentialSnapPoints.push({ position: snapPoint, distance: rightDistance });
+            
+            if (rightDistance < closestDistance) {
+              closestDistance = rightDistance;
+              closestSnapPoint = snapPoint;
+            }
+          }
+        }
+        
+        // Check Z axis: front face of selected model with back face of other model
+        const frontDistance = Math.abs(selectedBox.min.z - otherBox.max.z);
+        if (frontDistance < snapSettings.snapThreshold) {
+          if (boxesOverlapInPlane(selectedBox, otherBox, 'xy')) {
+            const snapPoint = new THREE.Vector3(
+              selectedMesh.position.x,
+              selectedMesh.position.y,
+              otherBox.max.z + (selectedBox.min.z - selectedMesh.position.z)
+            );
+            
+            potentialSnapPoints.push({ position: snapPoint, distance: frontDistance });
+            
+            if (frontDistance < closestDistance) {
+              closestDistance = frontDistance;
+              closestSnapPoint = snapPoint;
+            }
+          }
+        }
+        
+        // Check Z axis: back face of selected model with front face of other model
+        const backDistance = Math.abs(selectedBox.max.z - otherBox.min.z);
+        if (backDistance < snapSettings.snapThreshold) {
+          if (boxesOverlapInPlane(selectedBox, otherBox, 'xy')) {
+            const snapPoint = new THREE.Vector3(
+              selectedMesh.position.x,
+              selectedMesh.position.y,
+              otherBox.min.z - (selectedBox.max.z - selectedMesh.position.z)
+            );
+            
+            potentialSnapPoints.push({ position: snapPoint, distance: backDistance });
+            
+            if (backDistance < closestDistance) {
+              closestDistance = backDistance;
+              closestSnapPoint = snapPoint;
+            }
+          }
+        }
+      }
+      
+      // EDGE SNAPPING
+      if (snapSettings.snapToEdges) {
+        // For simplicity, we'll check a few common edge alignments
+        // We consider edges as the lines where two faces meet
+        
+        // Bottom X edges alignment (bottom edge of selected aligned with top edge of other)
+        if (Math.abs(selectedBox.min.y - otherBox.max.y) < closestDistance) {
+          // Check if X edges overlap
+          if (isLineOverlapping(
+              selectedBox.min.x, selectedBox.max.x,
+              otherBox.min.x, otherBox.max.x
+          )) {
+            const midX = (Math.max(selectedBox.min.x, otherBox.min.x) + 
+                          Math.min(selectedBox.max.x, otherBox.max.x)) / 2;
+            
+            const offsetX = midX - selectedMesh.position.x;
+            
+            closestDistance = Math.abs(selectedBox.min.y - otherBox.max.y);
+            closestSnapPoint = new THREE.Vector3(
+              selectedMesh.position.x + offsetX,
+              otherBox.max.y + (selectedBox.min.y - selectedMesh.position.y),
+              selectedMesh.position.z
+            );
+          }
+        }
+        
+        // Check for alignment in Z direction as well (similar to above)
+        // This can be expanded for more edge alignment cases as needed
+      }
+    });
+    
+    // Create visual indicators for potential snap points
+    const snapIndicators: THREE.Object3D[] = [];
+    
+    potentialSnapPoints.forEach(({ position, distance }) => {
+      // Create a visual indicator for this snap point
+      const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+      const material = new THREE.MeshBasicMaterial({ 
+        color: distance === closestDistance ? 0x00ff00 : 0xffaa00,
+        transparent: true,
+        opacity: 0.7
+      });
+      const indicator = new THREE.Mesh(geometry, material);
+      indicator.position.copy(position);
+      
+      // Add to scene and track it
+      scene.add(indicator);
+      snapIndicators.push(indicator);
+    });
+    
+    // Update the state with the new indicators
+    state.snapIndicators = snapIndicators;
+    
+    // Apply the snap if we found a good snap point
+    if (closestSnapPoint) {
+      console.log("Snapping to point, distance:", closestDistance);
+      selectedMesh.position.copy(closestSnapPoint);
+    }
+  }
+}
+
+// Helper function to check if two boxes overlap in a specified plane
+function boxesOverlapInPlane(box1: THREE.Box3, box2: THREE.Box3, plane: 'xy' | 'xz' | 'yz'): boolean {
+  switch (plane) {
+    case 'xy':
+      return (
+        box1.max.x > box2.min.x &&
+        box1.min.x < box2.max.x &&
+        box1.max.y > box2.min.y &&
+        box1.min.y < box2.max.y
+      );
+    case 'xz':
+      return (
+        box1.max.x > box2.min.x &&
+        box1.min.x < box2.max.x &&
+        box1.max.z > box2.min.z &&
+        box1.min.z < box2.max.z
+      );
+    case 'yz':
+      return (
+        box1.max.y > box2.min.y &&
+        box1.min.y < box2.max.y &&
+        box1.max.z > box2.min.z &&
+        box1.min.z < box2.max.z
+      );
+  }
+}
+
+// Helper function to check if two lines overlap
+function isLineOverlapping(min1: number, max1: number, min2: number, max2: number): boolean {
+  return max1 >= min2 && max2 >= min1;
 }

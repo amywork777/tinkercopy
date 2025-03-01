@@ -99,10 +99,6 @@ export function ModelList() {
         </Button>
       </div>
       
-      <div className="text-xs text-muted-foreground mb-1">
-        <span>Tip: Ctrl+click to set a secondary model for CSG operations</span>
-      </div>
-      
       {models.length === 0 ? (
         <Card className="p-3 bg-muted/40 text-xs text-center">
           <p>No models imported yet</p>

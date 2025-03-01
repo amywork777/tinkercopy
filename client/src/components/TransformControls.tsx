@@ -3,635 +3,573 @@ import { useScene } from "@/hooks/use-scene";
 import { 
   MoveIcon, 
   RotateCcwIcon, 
-  ZoomInIcon, 
-  Info, 
-  ArrowUp, 
-  ArrowDown, 
-  ArrowLeft, 
-  ArrowRight, 
-  RotateCw, 
-  RefreshCw, 
-  Maximize, 
-  Minimize,
-  BoxIcon
+  BoxIcon, 
+  ArrowUpIcon, 
+  ArrowDownIcon, 
+  ArrowLeftIcon, 
+  ArrowRightIcon,
+  GridIcon, 
+  MagnetIcon,
+  RotateCw,
+  RefreshCw,
+  MaximizeIcon,
+  MinimizeIcon,
+  Move,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  MousePointer,
+  Ruler,
+  Box
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
+import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Box3, Vector3 } from "three";
+import { cn } from "@/lib/utils";
 
 const TRANSFORM_MODES = [
-  { name: "Move", icon: MoveIcon, mode: "translate", description: "Use the arrows to move the model" },
-  { name: "Rotate", icon: RotateCcwIcon, mode: "rotate", description: "Use the buttons to rotate the model" },
-  { name: "Scale", icon: ZoomInIcon, mode: "scale", description: "Use the buttons to resize the model" },
+  { id: "translate", label: "Move", icon: MoveIcon },
+  { id: "rotate", label: "Rotate", icon: RotateCcwIcon },
+  { id: "scale", label: "Scale", icon: BoxIcon },
 ] as const;
 
-export function TransformControls() {
+// Units constants
+const POSITION_UNIT = "mm";
+const ROTATION_UNIT = "°";
+const SCALE_UNIT = "";
+const DIMENSION_UNIT = "mm";
+
+export function TransformControls({ className }: { className?: string }) {
   const { 
     transformMode, 
     setTransformMode, 
-    selectedModelIndex, 
-    models,
-    applyTransform,
+    applyTransform, 
     resetTransform,
+    selectedModelIndex,
+    models,
     setModelPosition,
     setModelRotation,
-    setModelScale
+    setModelScale,
+    snapSettings,
+    toggleSnap,
+    updateSnapSettings,
+    unit,
+    setUnit,
+    convertValue
   } = useScene();
   
-  const isModelSelected = selectedModelIndex !== null && selectedModelIndex >= 0;
-  const selectedModel = isModelSelected ? models[selectedModelIndex] : null;
-  
   // State for direct input values
-  const [positionValues, setPositionValues] = useState({ x: "0", y: "0", z: "0" });
-  const [rotationValues, setRotationValues] = useState({ x: "0", y: "0", z: "0" });
-  const [scaleValues, setScaleValues] = useState({ x: "1", y: "1", z: "1" });
+  const [positionValues, setPositionValues] = useState({ x: 0, y: 0, z: 0 });
+  const [rotationValues, setRotationValues] = useState({ x: 0, y: 0, z: 0 });
+  const [scaleValues, setScaleValues] = useState({ x: 1, y: 1, z: 1 });
+  const [uniformScale, setUniformScale] = useState(1);
+  const [useUniformScale, setUseUniformScale] = useState(false);
+  
+  // State for slider controls
+  const [xPosition, setXPosition] = useState(0);
+  const [yPosition, setYPosition] = useState(0);
+  const [zPosition, setZPosition] = useState(0);
+  const [xRotation, setXRotation] = useState(0);
+  const [yRotation, setYRotation] = useState(0);
+  const [zRotation, setZRotation] = useState(0);
+  const [xScale, setXScale] = useState(1);
+  const [yScale, setYScale] = useState(1);
+  const [zScale, setZScale] = useState(1);
+  
+  // State for dimensions of the selected model
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0, depth: 0 });
   
   // Update input fields when selected model changes
   useEffect(() => {
-    if (selectedModel) {
-      const mesh = selectedModel.mesh;
-      setPositionValues({
-        x: mesh.position.x.toFixed(2),
-        y: mesh.position.y.toFixed(2),
-        z: mesh.position.z.toFixed(2)
-      });
+    if (selectedModelIndex !== null && models[selectedModelIndex]) {
+      const model = models[selectedModelIndex];
       
-      // Convert radians to degrees for UI
-      setRotationValues({
-        x: (mesh.rotation.x * 180 / Math.PI).toFixed(1),
-        y: (mesh.rotation.y * 180 / Math.PI).toFixed(1),
-        z: (mesh.rotation.z * 180 / Math.PI).toFixed(1)
-      });
+      // Position values
+      const posX = parseFloat(model.mesh.position.x.toFixed(2));
+      const posY = parseFloat(model.mesh.position.y.toFixed(2));
+      const posZ = parseFloat(model.mesh.position.z.toFixed(2));
       
-      setScaleValues({
-        x: mesh.scale.x.toFixed(2),
-        y: mesh.scale.y.toFixed(2),
-        z: mesh.scale.z.toFixed(2)
-      });
-    }
-  }, [selectedModel, selectedModelIndex]);
-  
-  const handleTransform = (operation: string, direction: 1 | -1) => {
-    applyTransform(operation as any, direction);
-    
-    // Update values after transform is applied
-    setTimeout(() => {
-      if (!selectedModel) return;
+      setPositionValues({ x: posX, y: posY, z: posZ });
+      setXPosition(posX);
+      setYPosition(posY);
+      setZPosition(posZ);
       
-      const mesh = selectedModel.mesh;
+      // Rotation values
+      const rotX = parseFloat(model.mesh.rotation.x.toFixed(2));
+      const rotY = parseFloat(model.mesh.rotation.y.toFixed(2));
+      const rotZ = parseFloat(model.mesh.rotation.z.toFixed(2));
       
-      if (operation.startsWith('translate')) {
-        setPositionValues({
-          x: mesh.position.x.toFixed(2),
-          y: mesh.position.y.toFixed(2),
-          z: mesh.position.z.toFixed(2)
-        });
-      } else if (operation.startsWith('rotate')) {
-        setRotationValues({
-          x: (mesh.rotation.x * 180 / Math.PI).toFixed(1),
-          y: (mesh.rotation.y * 180 / Math.PI).toFixed(1),
-          z: (mesh.rotation.z * 180 / Math.PI).toFixed(1)
-        });
-      } else if (operation.startsWith('scale')) {
-        setScaleValues({
-          x: mesh.scale.x.toFixed(2),
-          y: mesh.scale.y.toFixed(2),
-          z: mesh.scale.z.toFixed(2)
-        });
+      setRotationValues({ x: rotX, y: rotY, z: rotZ });
+      setXRotation(rotX);
+      setYRotation(rotY);
+      setZRotation(rotZ);
+      
+      // Scale values
+      const sclX = parseFloat(model.mesh.scale.x.toFixed(2));
+      const sclY = parseFloat(model.mesh.scale.y.toFixed(2));
+      const sclZ = parseFloat(model.mesh.scale.z.toFixed(2));
+      
+      setScaleValues({ x: sclX, y: sclY, z: sclZ });
+      setXScale(sclX);
+      setYScale(sclY);
+      setZScale(sclZ);
+      
+      // Use the average of all scales for uniform scale
+      setUniformScale(
+        parseFloat(((sclX + sclY + sclZ) / 3).toFixed(2))
+      );
+
+      // Calculate and update dimensions
+      if (model.mesh.geometry) {
+        model.mesh.geometry.computeBoundingBox();
+        const bbox = model.mesh.geometry.boundingBox || new Box3();
+        const size = new Vector3();
+        bbox.getSize(size);
+        
+        // Apply scale to get actual dimensions
+        const width = parseFloat((size.x * sclX).toFixed(2));
+        const height = parseFloat((size.y * sclY).toFixed(2));
+        const depth = parseFloat((size.z * sclZ).toFixed(2));
+        
+        setDimensions({ width, height, depth });
       }
-    }, 10);
+    }
+  }, [selectedModelIndex, models]);
+  
+  // Handle transform operations
+  const handleTransform = (operation: string, direction: number) => {
+    applyTransform(operation as any, direction as any);
   };
   
-  const handlePositionInput = (axis: 'x' | 'y' | 'z', value: string) => {
-    setPositionValues(prev => ({ ...prev, [axis]: value }));
-  };
-  
-  const handleRotationInput = (axis: 'x' | 'y' | 'z', value: string) => {
-    setRotationValues(prev => ({ ...prev, [axis]: value }));
-  };
-  
-  const handleScaleInput = (axis: 'x' | 'y' | 'z', value: string) => {
-    setScaleValues(prev => ({ ...prev, [axis]: value }));
-  };
-  
-  const applyPositionInput = () => {
-    if (!selectedModel) return;
+  // Handle slider position change
+  const handlePositionSliderChange = (axis: 'x' | 'y' | 'z', value: number) => {
+    if (selectedModelIndex === null) return;
     
-    try {
-      const x = parseFloat(positionValues.x);
-      const y = parseFloat(positionValues.y);
-      const z = parseFloat(positionValues.z);
-      
-      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
-        setModelPosition(x, y, z);
+    let newPosition = { ...positionValues };
+    
+    if (axis === 'x') {
+      newPosition.x = value;
+      setXPosition(value);
+    } else if (axis === 'y') {
+      newPosition.y = value;
+      setYPosition(value);
+    } else {
+      newPosition.z = value;
+      setZPosition(value);
+    }
+    
+    setPositionValues(newPosition);
+    setModelPosition(newPosition.x, newPosition.y, newPosition.z);
+  };
+  
+  // Handle slider rotation change
+  const handleRotationSliderChange = (axis: 'x' | 'y' | 'z', value: number) => {
+    if (selectedModelIndex === null) return;
+    
+    let newRotation = { ...rotationValues };
+    
+    if (axis === 'x') {
+      newRotation.x = value;
+      setXRotation(value);
+    } else if (axis === 'y') {
+      newRotation.y = value;
+      setYRotation(value);
+    } else {
+      newRotation.z = value;
+      setZRotation(value);
+    }
+    
+    setRotationValues(newRotation);
+    setModelRotation(newRotation.x, newRotation.y, newRotation.z);
+  };
+  
+  // Handle slider scale change
+  const handleScaleSliderChange = (axis: 'x' | 'y' | 'z', value: number) => {
+    if (selectedModelIndex === null) return;
+    
+    let newScale = { ...scaleValues };
+    
+    if (axis === 'x') {
+      newScale.x = value;
+      setXScale(value);
+    } else if (axis === 'y') {
+      newScale.y = value;
+      setYScale(value);
+    } else {
+      newScale.z = value;
+      setZScale(value);
+    }
+    
+    setScaleValues(newScale);
+    setModelScale(newScale.x, newScale.y, newScale.z);
+
+    // Update dimensions after scale change
+    if (selectedModelIndex !== null && models[selectedModelIndex]) {
+      const model = models[selectedModelIndex];
+      if (model.mesh.geometry && model.mesh.geometry.boundingBox) {
+        const size = new Vector3();
+        model.mesh.geometry.boundingBox.getSize(size);
+        
+        const width = parseFloat((size.x * newScale.x).toFixed(2));
+        const height = parseFloat((size.y * newScale.y).toFixed(2));
+        const depth = parseFloat((size.z * newScale.z).toFixed(2));
+        
+        setDimensions({ width, height, depth });
       }
-    } catch (e) {
-      console.error("Invalid position input:", e);
     }
   };
   
-  const applyRotationInput = () => {
-    if (!selectedModel) return;
+  // Handle uniform scale slider change
+  const handleUniformScaleSliderChange = (value: number) => {
+    if (selectedModelIndex === null) return;
     
-    try {
-      // Convert degrees to radians for Three.js
-      const x = parseFloat(rotationValues.x) * Math.PI / 180;
-      const y = parseFloat(rotationValues.y) * Math.PI / 180;
-      const z = parseFloat(rotationValues.z) * Math.PI / 180;
-      
-      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
-        setModelRotation(x, y, z);
+    setUniformScale(value);
+    setScaleValues({ x: value, y: value, z: value });
+    setXScale(value);
+    setYScale(value);
+    setZScale(value);
+    setModelScale(value, value, value);
+
+    // Update dimensions after uniform scale change
+    if (selectedModelIndex !== null && models[selectedModelIndex]) {
+      const model = models[selectedModelIndex];
+      if (model.mesh.geometry && model.mesh.geometry.boundingBox) {
+        const size = new Vector3();
+        model.mesh.geometry.boundingBox.getSize(size);
+        
+        const width = parseFloat((size.x * value).toFixed(2));
+        const height = parseFloat((size.y * value).toFixed(2));
+        const depth = parseFloat((size.z * value).toFixed(2));
+        
+        setDimensions({ width, height, depth });
       }
-    } catch (e) {
-      console.error("Invalid rotation input:", e);
     }
   };
   
-  const applyScaleInput = () => {
-    if (!selectedModel) return;
-    
-    try {
-      const x = parseFloat(scaleValues.x);
-      const y = parseFloat(scaleValues.y);
-      const z = parseFloat(scaleValues.z);
-      
-      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
-        setModelScale(x, y, z);
-      }
-    } catch (e) {
-      console.error("Invalid scale input:", e);
-    }
+  const getAxisColor = (axis: 'x' | 'y' | 'z') => {
+    return axis === 'x' ? "bg-red-500" : axis === 'y' ? "bg-green-500" : "bg-blue-500";
   };
   
-  // Handle uniform scaling (all axes together)
-  const handleUniformScale = (direction: 1 | -1) => {
-    if (!selectedModel) return;
-    
-    // Apply scale to all axes
-    applyTransform('scaleX', direction);
-    applyTransform('scaleY', direction);
-    applyTransform('scaleZ', direction);
-    
-    // Update UI values
-    setTimeout(() => {
-      if (!selectedModel) return;
-      
-      const mesh = selectedModel.mesh;
-      setScaleValues({
-        x: mesh.scale.x.toFixed(2),
-        y: mesh.scale.y.toFixed(2),
-        z: mesh.scale.z.toFixed(2)
-      });
-    }, 10);
+  // Add a function to get the dimension unit
+  const getDimensionUnit = () => {
+    return unit === 'mm' ? 'mm' : 'in';
+  };
+  
+  // Add a function to format dimension values based on current unit
+  const formatDimension = (value: number) => {
+    const currentUnit = unit;
+    // Show fewer decimal places for inches
+    return currentUnit === 'mm' 
+      ? value.toFixed(2) 
+      : convertValue(value, 'mm', 'in').toFixed(3);
+  };
+  
+  // Add a function to toggle between units
+  const toggleUnit = () => {
+    setUnit(unit === 'mm' ? 'in' : 'mm');
+  };
+  
+  // Add a function to format position values based on current unit
+  const formatPosition = (value: number) => {
+    return unit === 'mm' 
+      ? value.toFixed(2) 
+      : convertValue(value, 'mm', 'in').toFixed(3);
   };
   
   return (
-    <TooltipProvider>
-      <div className="flex flex-col gap-2 w-full p-2 bg-card rounded-md border shadow-sm">
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-medium">Transform Tools</h3>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-            </TooltipTrigger>
-            <TooltipContent side="right" className="max-w-[300px]">
-              <p>Select a model first, then use the transform tools to modify it.</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        
-        <div className="flex gap-1">
-          {TRANSFORM_MODES.map(({ name, icon: Icon, mode, description }) => (
-            <Button
-              key={mode}
-              size="sm"
-              variant={transformMode === mode ? "default" : "outline"}
-              className={`h-8 flex-1 ${transformMode === mode ? "bg-primary/90" : ""}`}
-              onClick={() => setTransformMode(mode as any)}
-              disabled={!isModelSelected}
-              title={name}
-            >
-              <Icon className="h-4 w-4 mr-1" />
-              <span className="text-xs hidden sm:inline">{name}</span>
-            </Button>
-          ))}
-        </div>
-        
-        {isModelSelected && (
-          <Tabs defaultValue="controls" className="w-full mt-2">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="controls">Controls</TabsTrigger>
-              <TabsTrigger value="direct">Direct Input</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="controls" className="mt-2">
-              {transformMode === "translate" && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="text-xs font-medium" style={{ width: '20px' }}>X:</div>
-                    <Button 
-                      size="sm" 
-                      variant="default"
-                      onClick={() => handleTransform('translateX', -1)}
-                      className="flex-1 bg-red-500/80 hover:bg-red-600"
-                    >
-                      <ArrowLeft className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Left</span>
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="default"
-                      onClick={() => handleTransform('translateX', 1)}
-                      className="flex-1 bg-red-500/80 hover:bg-red-600"
-                    >
-                      <span className="text-xs mr-1">Right</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="text-xs font-medium" style={{ width: '20px' }}>Y:</div>
-                    <Button 
-                      size="sm" 
-                      variant="default"
-                      onClick={() => handleTransform('translateY', 1)}
-                      className="flex-1 bg-green-500/80 hover:bg-green-600"
-                    >
-                      <ArrowUp className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Up</span>
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="default"
-                      onClick={() => handleTransform('translateY', -1)}
-                      className="flex-1 bg-green-500/80 hover:bg-green-600"
-                    >
-                      <span className="text-xs mr-1">Down</span>
-                      <ArrowDown className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="text-xs font-medium" style={{ width: '20px' }}>Z:</div>
-                    <Button 
-                      size="sm" 
-                      variant="default"
-                      onClick={() => handleTransform('translateZ', 1)}
-                      className="flex-1 bg-blue-500/80 hover:bg-blue-600"
-                    >
-                      <RefreshCw className="h-4 w-4 mr-1 rotate-[-45deg]" />
-                      <span className="text-xs">Forward</span>
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="default"
-                      onClick={() => handleTransform('translateZ', -1)}
-                      className="flex-1 bg-blue-500/80 hover:bg-blue-600"
-                    >
-                      <span className="text-xs mr-1">Back</span>
-                      <RefreshCw className="h-4 w-4 rotate-[135deg]" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-              
-              {transformMode === "rotate" && (
-                <div className="grid grid-cols-3 gap-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => handleTransform('rotateX', 1)}
-                    className="h-8 p-0"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-1" />
-                    <span className="text-xs">X+</span>
-                  </Button>
-                  
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => handleTransform('rotateY', 1)}
-                    className="h-8 p-0"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-1" />
-                    <span className="text-xs">Y+</span>
-                  </Button>
-                  
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => handleTransform('rotateZ', 1)}
-                    className="h-8 p-0"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-1" />
-                    <span className="text-xs">Z+</span>
-                  </Button>
-                  
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => handleTransform('rotateX', -1)}
-                    className="h-8 p-0"
-                  >
-                    <RotateCw className="h-4 w-4 mr-1" />
-                    <span className="text-xs">X-</span>
-                  </Button>
-                  
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => handleTransform('rotateY', -1)}
-                    className="h-8 p-0"
-                  >
-                    <RotateCw className="h-4 w-4 mr-1" />
-                    <span className="text-xs">Y-</span>
-                  </Button>
-                  
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => handleTransform('rotateZ', -1)}
-                    className="h-8 p-0"
-                  >
-                    <RotateCw className="h-4 w-4 mr-1" />
-                    <span className="text-xs">Z-</span>
-                  </Button>
-                </div>
-              )}
-              
-              {transformMode === "scale" && (
-                <div className="flex flex-col gap-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => handleTransform('scaleX', 1)}
-                      className="h-8 p-0"
-                    >
-                      <Maximize className="h-4 w-4 mr-1" />
-                      <span className="text-xs">X+</span>
-                    </Button>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => handleTransform('scaleY', 1)}
-                      className="h-8 p-0"
-                    >
-                      <Maximize className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Y+</span>
-                    </Button>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => handleTransform('scaleZ', 1)}
-                      className="h-8 p-0"
-                    >
-                      <Maximize className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Z+</span>
-                    </Button>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => handleTransform('scaleX', -1)}
-                      className="h-8 p-0"
-                    >
-                      <Minimize className="h-4 w-4 mr-1" />
-                      <span className="text-xs">X-</span>
-                    </Button>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => handleTransform('scaleY', -1)}
-                      className="h-8 p-0"
-                    >
-                      <Minimize className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Y-</span>
-                    </Button>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => handleTransform('scaleZ', -1)}
-                      className="h-8 p-0"
-                    >
-                      <Minimize className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Z-</span>
-                    </Button>
-                  </div>
-                  
-                  {/* Uniform scaling controls */}
-                  <div className="flex gap-2 mt-2">
-                    <Button 
-                      size="sm" 
-                      variant="default" 
-                      onClick={() => handleUniformScale(1)}
-                      className="flex-1 bg-purple-500/80 hover:bg-purple-600"
-                    >
-                      <BoxIcon className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Scale All +</span>
-                    </Button>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="default" 
-                      onClick={() => handleUniformScale(-1)}
-                      className="flex-1 bg-purple-500/80 hover:bg-purple-600"
-                    >
-                      <BoxIcon className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Scale All -</span>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-            
-            <TabsContent value="direct" className="mt-2">
-              {transformMode === "translate" && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="pos-x" className="w-10 text-xs">X:</Label>
-                    <Input
-                      id="pos-x"
-                      type="number"
-                      step="0.1"
-                      value={positionValues.x}
-                      onChange={(e) => handlePositionInput('x', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="pos-y" className="w-10 text-xs">Y:</Label>
-                    <Input
-                      id="pos-y"
-                      type="number"
-                      step="0.1"
-                      value={positionValues.y}
-                      onChange={(e) => handlePositionInput('y', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="pos-z" className="w-10 text-xs">Z:</Label>
-                    <Input
-                      id="pos-z"
-                      type="number"
-                      step="0.1"
-                      value={positionValues.z}
-                      onChange={(e) => handlePositionInput('z', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <Button 
-                    size="sm"
-                    onClick={applyPositionInput}
-                    className="mt-1"
-                  >
-                    Apply Position
-                  </Button>
-                </div>
-              )}
-              
-              {transformMode === "rotate" && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="rot-x" className="w-10 text-xs">X (°):</Label>
-                    <Input
-                      id="rot-x"
-                      type="number"
-                      step="5"
-                      value={rotationValues.x}
-                      onChange={(e) => handleRotationInput('x', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="rot-y" className="w-10 text-xs">Y (°):</Label>
-                    <Input
-                      id="rot-y"
-                      type="number"
-                      step="5"
-                      value={rotationValues.y}
-                      onChange={(e) => handleRotationInput('y', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="rot-z" className="w-10 text-xs">Z (°):</Label>
-                    <Input
-                      id="rot-z"
-                      type="number"
-                      step="5"
-                      value={rotationValues.z}
-                      onChange={(e) => handleRotationInput('z', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <Button 
-                    size="sm"
-                    onClick={applyRotationInput}
-                    className="mt-1"
-                  >
-                    Apply Rotation
-                  </Button>
-                </div>
-              )}
-              
-              {transformMode === "scale" && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="scale-x" className="w-10 text-xs">X:</Label>
-                    <Input
-                      id="scale-x"
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      value={scaleValues.x}
-                      onChange={(e) => handleScaleInput('x', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="scale-y" className="w-10 text-xs">Y:</Label>
-                    <Input
-                      id="scale-y"
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      value={scaleValues.y}
-                      onChange={(e) => handleScaleInput('y', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="scale-z" className="w-10 text-xs">Z:</Label>
-                    <Input
-                      id="scale-z"
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      value={scaleValues.z}
-                      onChange={(e) => handleScaleInput('z', e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Button 
-                      size="sm"
-                      onClick={applyScaleInput}
-                      className="mt-1 flex-1"
-                    >
-                      Apply Scale
-                    </Button>
-                    
-                    <Button 
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const value = scaleValues.x;
-                        setScaleValues({ x: value, y: value, z: value });
-                        setTimeout(applyScaleInput, 10);
-                      }}
-                      className="mt-1 flex-1"
-                      title="Make all dimensions equal to X value"
-                    >
-                      <BoxIcon className="h-4 w-4 mr-1" />
-                      <span className="text-xs">Uniform</span>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        )}
-        
-        {isModelSelected && (
-          <Button
-            size="sm"
+    <div className={cn("p-4", className)}>
+      <h3 className="text-lg font-semibold mb-4">Transform Controls</h3>
+      
+      <div className="space-y-4">
+        {/* Add unit toggle */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm">Units</span>
+          <Button 
             variant="outline"
-            onClick={resetTransform}
-            className="mt-1"
+            size="sm"
+            onClick={toggleUnit}
+            className="text-xs"
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Reset Transform
+            {unit.toUpperCase()}
           </Button>
+        </div>
+        
+        <div className="flex space-x-2">
+          <Button
+            variant={transformMode === "translate" ? "default" : "outline"}
+            className="flex-1"
+            onClick={() => setTransformMode("translate")}
+          >
+            Move
+          </Button>
+          <Button
+            variant={transformMode === "rotate" ? "default" : "outline"}
+            className="flex-1"
+            onClick={() => setTransformMode("rotate")}
+          >
+            Rotate
+          </Button>
+          <Button
+            variant={transformMode === "scale" ? "default" : "outline"}
+            className="flex-1"
+            onClick={() => setTransformMode("scale")}
+          >
+            Scale
+          </Button>
+        </div>
+
+        {/* Dimensions Display */}
+        {dimensions && (
+          <Card className="p-3 mt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Box className="h-4 w-4" />
+              <h3 className="text-sm font-medium">Model Dimensions</h3>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Width</p>
+                <p className="text-sm font-medium text-red-500">
+                  {formatDimension(dimensions.width)} {getDimensionUnit()}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Height</p>
+                <p className="text-sm font-medium text-green-500">
+                  {formatDimension(dimensions.height)} {getDimensionUnit()}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Depth</p>
+                <p className="text-sm font-medium text-blue-500">
+                  {formatDimension(dimensions.depth)} {getDimensionUnit()}
+                </p>
+              </div>
+            </div>
+          </Card>
         )}
+
+        <Separator />
+
+        {selectedModelIndex === null ? (
+          <div className="text-center p-4 text-sm text-muted-foreground">
+            Select a model to transform it
+          </div>
+        ) : (
+          <>
+            {transformMode === "translate" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="x-position" className="text-red-500">X Position</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {formatPosition(xPosition)} {getDimensionUnit()}
+                    </span>
+                  </div>
+                  <Slider 
+                    id="x-position"
+                    min={-10} 
+                    max={10} 
+                    step={0.1} 
+                    value={[xPosition]} 
+                    onValueChange={(values) => handlePositionSliderChange('x', values[0])}
+                    className="slider-red"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="y-position" className="text-green-500">Y Position</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {formatPosition(yPosition)} {getDimensionUnit()}
+                    </span>
+                  </div>
+                  <Slider 
+                    id="y-position"
+                    min={-10} 
+                    max={10} 
+                    step={0.1} 
+                    value={[yPosition]} 
+                    onValueChange={(values) => handlePositionSliderChange('y', values[0])}
+                    className="slider-green"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="z-position" className="text-blue-500">Z Position</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {formatPosition(zPosition)} {getDimensionUnit()}
+                    </span>
+                  </div>
+                  <Slider 
+                    id="z-position"
+                    min={-10} 
+                    max={10} 
+                    step={0.1} 
+                    value={[zPosition]} 
+                    onValueChange={(values) => handlePositionSliderChange('z', values[0])}
+                    className="slider-blue"
+                  />
+                </div>
+              </div>
+            )}
+            
+            {transformMode === "rotate" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="x-rotation" className="text-red-500">X Rotation</Label>
+                    <span className="text-xs text-muted-foreground">{(xRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                  </div>
+                  <Slider 
+                    id="x-rotation"
+                    min={-Math.PI} 
+                    max={Math.PI} 
+                    step={Math.PI / 180} 
+                    value={[xRotation]} 
+                    onValueChange={(values) => handleRotationSliderChange('x', values[0])}
+                    className="slider-red"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="y-rotation" className="text-green-500">Y Rotation</Label>
+                    <span className="text-xs text-muted-foreground">{(yRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                  </div>
+                  <Slider 
+                    id="y-rotation"
+                    min={-Math.PI} 
+                    max={Math.PI} 
+                    step={Math.PI / 180} 
+                    value={[yRotation]} 
+                    onValueChange={(values) => handleRotationSliderChange('y', values[0])}
+                    className="slider-green"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="z-rotation" className="text-blue-500">Z Rotation</Label>
+                    <span className="text-xs text-muted-foreground">{(zRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                  </div>
+                  <Slider 
+                    id="z-rotation"
+                    min={-Math.PI} 
+                    max={Math.PI} 
+                    step={Math.PI / 180} 
+                    value={[zRotation]} 
+                    onValueChange={(values) => handleRotationSliderChange('z', values[0])}
+                    className="slider-blue"
+                  />
+                </div>
+              </div>
+            )}
+            
+            {transformMode === "scale" && (
+              <div className="space-y-4">
+                {/* Uniform scale toggle */}
+                <div className="flex items-center space-x-2 mb-2">
+                  <Checkbox 
+                    id="uniform-scale" 
+                    checked={useUniformScale}
+                    onCheckedChange={(checked) => setUseUniformScale(!!checked)}
+                  />
+                  <Label htmlFor="uniform-scale">Use uniform scale</Label>
+                </div>
+
+                {useUniformScale ? (
+                  // Uniform scaling slider
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="uniform-scale" className="text-purple-500">Uniform Scale</Label>
+                      <span className="text-xs text-muted-foreground">{uniformScale.toFixed(2)}{SCALE_UNIT}</span>
+                    </div>
+                    <Slider 
+                      id="uniform-scale"
+                      min={0.1} 
+                      max={5} 
+                      step={0.1} 
+                      value={[uniformScale]} 
+                      onValueChange={(values) => handleUniformScaleSliderChange(values[0])}
+                      className="slider-purple"
+                    />
+                  </div>
+                ) : (
+                  // Per-axis scale sliders
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="x-scale" className="text-red-500">X Scale</Label>
+                        <span className="text-xs text-muted-foreground">{xScale.toFixed(2)}{SCALE_UNIT}</span>
+                      </div>
+                      <Slider 
+                        id="x-scale"
+                        min={0.1} 
+                        max={5} 
+                        step={0.1} 
+                        value={[xScale]} 
+                        onValueChange={(values) => handleScaleSliderChange('x', values[0])}
+                        className="slider-red"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="y-scale" className="text-green-500">Y Scale</Label>
+                        <span className="text-xs text-muted-foreground">{yScale.toFixed(2)}{SCALE_UNIT}</span>
+                      </div>
+                      <Slider 
+                        id="y-scale"
+                        min={0.1} 
+                        max={5} 
+                        step={0.1} 
+                        value={[yScale]} 
+                        onValueChange={(values) => handleScaleSliderChange('y', values[0])}
+                        className="slider-green"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="z-scale" className="text-blue-500">Z Scale</Label>
+                        <span className="text-xs text-muted-foreground">{zScale.toFixed(2)}{SCALE_UNIT}</span>
+                      </div>
+                      <Slider 
+                        id="z-scale"
+                        min={0.1} 
+                        max={5} 
+                        step={0.1} 
+                        value={[zScale]} 
+                        onValueChange={(values) => handleScaleSliderChange('z', values[0])}
+                        className="slider-blue"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        )}
+        
+        <Button
+          variant="outline"
+          className="w-full mt-2"
+          onClick={resetTransform}
+          disabled={selectedModelIndex === null}
+        >
+          Reset Transform
+        </Button>
       </div>
-    </TooltipProvider>
+    </div>
   );
 }

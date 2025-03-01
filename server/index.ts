@@ -56,14 +56,16 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  // Use a single port for simplicity
+  const PORT = 4000;
+  
+  try {
+    // Use localhost instead of 0.0.0.0 to avoid ENOTSUP errors on macOS
+    server.listen(PORT, 'localhost', () => {
+      log(`Server running at http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
 })();

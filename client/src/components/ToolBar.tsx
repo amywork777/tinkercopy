@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Undo, Redo, Palette, FileText } from "lucide-react";
+import { Undo, Redo, Palette, FileText, Box, Circle, Cylinder, Triangle, CircleDot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Separator } from "@/components/ui/separator";
@@ -14,7 +14,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ViewOptions } from "./ViewOptions";
-import { TextDialog } from "./TextDialog";
+import { TextDialog } from "@/components/TextDialog";
+import * as THREE from "three";
 
 export const ToolBar = () => {
   const { 
@@ -29,11 +30,13 @@ export const ToolBar = () => {
     showGrid, 
     setShowGrid, 
     showAxes, 
-    setShowAxes
+    setShowAxes,
+    scene
   } = useScene();
   const { toast } = useToast();
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [textDialogOpen, setTextDialogOpen] = useState(false);
+  const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
 
   const handleUndo = () => {
     if (canUndo) {
@@ -61,6 +64,90 @@ export const ToolBar = () => {
       title: `Rendering mode: ${value}`,
       duration: 2000,
     });
+  };
+
+  // Helper function to add a shape to the scene
+  const addShape = (shape: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus') => {
+    let geometry: THREE.BufferGeometry;
+    let shapeName: string;
+    
+    // Create geometry based on shape type
+    switch (shape) {
+      case 'cube':
+        geometry = new THREE.BoxGeometry(5, 5, 5);
+        shapeName = 'Cube';
+        break;
+      case 'sphere':
+        geometry = new THREE.SphereGeometry(3, 32, 32);
+        shapeName = 'Sphere';
+        break;
+      case 'cylinder':
+        geometry = new THREE.CylinderGeometry(2.5, 2.5, 5, 32);
+        shapeName = 'Cylinder';
+        break;
+      case 'cone':
+        geometry = new THREE.ConeGeometry(3, 5, 32);
+        shapeName = 'Cone';
+        break;
+      case 'torus':
+        geometry = new THREE.TorusGeometry(3, 1, 16, 50);
+        shapeName = 'Torus';
+        break;
+    }
+
+    // Create material with random color
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    // Create mesh
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    
+    // Position mesh slightly above the grid
+    mesh.position.y = 2.5;
+    
+    // Store original transform
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    // Add to scene
+    scene.add(mesh);
+    
+    // Create model object
+    const newModel = {
+      id: `${shape}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `${shapeName} ${Date.now()}`,
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    // Add to models array
+    const { models, saveHistoryState, selectModel } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    // Select the new model
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    // Save to history
+    saveHistoryState();
+    
+    toast({
+      title: `${shapeName} added`,
+      description: `A new ${shapeName.toLowerCase()} has been added to the scene`,
+      duration: 2000,
+    });
+
+    // Close the shapes menu after adding a shape
+    setShapesMenuOpen(false);
   };
 
   return (
@@ -175,6 +262,79 @@ export const ToolBar = () => {
           </TooltipTrigger>
           <TooltipContent>
             <p>View Options</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <Separator orientation="vertical" className="h-8" />
+
+      {/* Add Shapes Popover */}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Popover open={shapesMenuOpen} onOpenChange={setShapesMenuOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="px-2">
+                  <Box className="h-4 w-4 mr-1" />
+                  <span className="text-white text-xs font-medium">Add Shapes</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[200px] p-0" align="center">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold mb-3">Add Shape</h3>
+                  <div className="grid gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="justify-start" 
+                      onClick={() => addShape('cube')}
+                    >
+                      <Box className="mr-2 h-4 w-4" />
+                      Cube
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="justify-start"
+                      onClick={() => addShape('sphere')}
+                    >
+                      <Circle className="mr-2 h-4 w-4" />
+                      Sphere
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="justify-start"
+                      onClick={() => addShape('cylinder')}
+                    >
+                      <Cylinder className="mr-2 h-4 w-4" />
+                      Cylinder
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="justify-start"
+                      onClick={() => addShape('cone')}
+                    >
+                      <Triangle className="mr-2 h-4 w-4" />
+                      Cone
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="justify-start"
+                      onClick={() => addShape('torus')}
+                    >
+                      <CircleDot className="mr-2 h-4 w-4" />
+                      Torus
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Add 3D Shapes</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

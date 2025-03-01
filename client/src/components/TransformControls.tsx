@@ -283,34 +283,34 @@ export function TransformControls({ className }: { className?: string }) {
       ? value.toFixed(2) 
       : convertValue(value, 'mm', 'in').toFixed(3);
   };
-  
+
   return (
     <div className={cn("p-4", className)}>
       <h3 className="text-lg font-semibold mb-4">Transform Controls</h3>
       
       <div className="space-y-4">
-        <div className="flex space-x-2">
-          <Button
-            variant={transformMode === "translate" ? "default" : "outline"}
+      <div className="flex space-x-2">
+        <Button
+          variant={transformMode === "translate" ? "default" : "outline"}
             className="flex-1"
-            onClick={() => setTransformMode("translate")}
-          >
-            Move
-          </Button>
-          <Button
-            variant={transformMode === "rotate" ? "default" : "outline"}
+          onClick={() => setTransformMode("translate")}
+        >
+          Move
+        </Button>
+        <Button
+          variant={transformMode === "rotate" ? "default" : "outline"}
             className="flex-1"
-            onClick={() => setTransformMode("rotate")}
-          >
-            Rotate
-          </Button>
-          <Button
-            variant={transformMode === "scale" ? "default" : "outline"}
+          onClick={() => setTransformMode("rotate")}
+        >
+          Rotate
+        </Button>
+        <Button
+          variant={transformMode === "scale" ? "default" : "outline"}
             className="flex-1"
-            onClick={() => setTransformMode("scale")}
-          >
-            Scale
-          </Button>
+          onClick={() => setTransformMode("scale")}
+        >
+          Scale
+        </Button>
         </div>
 
         {/* Model Info and Utilities */}

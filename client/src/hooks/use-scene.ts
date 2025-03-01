@@ -205,7 +205,7 @@ export const useScene = create<SceneState>((set, get) => {
     selectedModelIndex: null,
     secondaryModelIndex: null,
     transformMode: "translate",
-    
+
     // Rendering mode
     renderingMode: 'standard',
 

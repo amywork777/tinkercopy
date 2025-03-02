@@ -86,6 +86,7 @@ type TextOptions = {
   bevelSize?: number;
   bevelSegments?: number;
   color?: THREE.Color | string | number;
+  fontPath?: string;
 };
 
 // Default font path
@@ -1416,7 +1417,7 @@ export const useScene = create<SceneState>((set, get) => {
       }
       
       try {
-        console.log("Loading SVG file:", file.name);
+        console.log("Loading SVG file:", file.name, "with extrusion depth:", extrudeDepth);
         const loader = new SVGLoader();
         
         // Load the SVG file
@@ -1609,7 +1610,7 @@ export const useScene = create<SceneState>((set, get) => {
     // Create 3D text
     loadText: async (text: string, options: TextOptions = { text }) => {
       const state = get();
-      
+
       if (!state.isSceneReady) {
         console.error("Scene not ready, can't create text");
         return;
@@ -1627,6 +1628,7 @@ export const useScene = create<SceneState>((set, get) => {
           bevelThickness: 0.2,
           bevelSize: 0.1,
           bevelSegments: 3,
+          fontPath: defaultFontPath
         };
         
         // Merge defaults with provided options
@@ -1635,11 +1637,26 @@ export const useScene = create<SceneState>((set, get) => {
         // Load font
         const fontLoader = new FontLoader();
         const font = await new Promise((resolve, reject) => {
+          console.log("Loading font from:", mergedOptions.fontPath);
           fontLoader.load(
-            defaultFontPath, 
+            mergedOptions.fontPath, 
             (font) => resolve(font),
             undefined,
-            (err) => reject(new Error(`Failed to load font: ${(err as Error).message}`))
+            (err) => {
+              console.error("Error loading font:", err);
+              // If the specified font fails, try the default as fallback
+              if (mergedOptions.fontPath !== defaultFontPath) {
+                console.log("Trying fallback font:", defaultFontPath);
+                fontLoader.load(
+                  defaultFontPath,
+                  (font) => resolve(font),
+                  undefined,
+                  (fallbackErr) => reject(new Error(`Failed to load both specified and fallback fonts`))
+                );
+              } else {
+                reject(new Error(`Failed to load font: ${(err as Error).message}`));
+              }
+            }
           );
         });
         

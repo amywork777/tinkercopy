@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Undo, Redo, Palette, FileText, Box, Circle, Cylinder, Triangle, CircleDot } from "lucide-react";
+import { Undo, Redo, Combine, Plus, Minus, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Separator } from "@/components/ui/separator";
@@ -14,8 +14,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ViewOptions } from "./ViewOptions";
-import { TextDialog } from "@/components/TextDialog";
-import * as THREE from "three";
 
 export const ToolBar = () => {
   const { 
@@ -31,12 +29,19 @@ export const ToolBar = () => {
     setShowGrid, 
     showAxes, 
     setShowAxes,
-    scene
+    scene,
+    models,
+    selectedModelIndex,
+    secondaryModelIndex,
+    selectModel,
+    selectSecondaryModel,
+    performCSGOperation,
+    isCSGOperationLoading
   } = useScene();
   const { toast } = useToast();
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
-  const [textDialogOpen, setTextDialogOpen] = useState(false);
-  const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
+  const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
+  const [combineOptionsOpen, setCombineOptionsOpen] = useState(false);
 
   const handleUndo = () => {
     if (canUndo) {
@@ -66,88 +71,77 @@ export const ToolBar = () => {
     });
   };
 
-  // Helper function to add a shape to the scene
-  const addShape = (shape: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus') => {
-    let geometry: THREE.BufferGeometry;
-    let shapeName: string;
-    
-    // Create geometry based on shape type
-    switch (shape) {
-      case 'cube':
-        geometry = new THREE.BoxGeometry(5, 5, 5);
-        shapeName = 'Cube';
-        break;
-      case 'sphere':
-        geometry = new THREE.SphereGeometry(3, 32, 32);
-        shapeName = 'Sphere';
-        break;
-      case 'cylinder':
-        geometry = new THREE.CylinderGeometry(2.5, 2.5, 5, 32);
-        shapeName = 'Cylinder';
-        break;
-      case 'cone':
-        geometry = new THREE.ConeGeometry(3, 5, 32);
-        shapeName = 'Cone';
-        break;
-      case 'torus':
-        geometry = new THREE.TorusGeometry(3, 1, 16, 50);
-        shapeName = 'Torus';
-        break;
-    }
-
-    // Create material with random color
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
-    // Create mesh
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    
-    // Position mesh slightly above the grid
-    mesh.position.y = 2.5;
-    
-    // Store original transform
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
-    // Add to scene
-    scene.add(mesh);
-    
-    // Create model object
-    const newModel = {
-      id: `${shape}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `${shapeName} ${Date.now()}`,
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    // Add to models array
-    const { models, saveHistoryState, selectModel } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    // Select the new model
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
-    // Save to history
-    saveHistoryState();
-    
+  // Handle model selection
+  const handlePrimaryModelSelect = (modelIndex: string) => {
+    const index = parseInt(modelIndex, 10);
+    selectModel(index);
     toast({
-      title: `${shapeName} added`,
-      description: `A new ${shapeName.toLowerCase()} has been added to the scene`,
+      title: "Primary model selected",
       duration: 2000,
     });
+  };
 
-    // Close the shapes menu after adding a shape
-    setShapesMenuOpen(false);
+  const handleSecondaryModelSelect = (modelIndex: string) => {
+    const index = parseInt(modelIndex, 10);
+    selectSecondaryModel(index);
+    toast({
+      title: "Secondary model selected",
+      duration: 2000,
+    });
+  };
+
+  // Handle CSG operations from the toolbar
+  const handleCSGOperation = async (operationType: 'union' | 'subtract' | 'intersect') => {
+    if (models.length < 2) {
+      toast({
+        title: "Not enough models",
+        description: "You need at least two models to combine",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (selectedModelIndex === null) {
+      toast({
+        title: "No primary model",
+        description: "Please select a primary model first",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (secondaryModelIndex === null) {
+      toast({
+        title: "No secondary model",
+        description: "Please select a secondary model first",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      await performCSGOperation(operationType);
+      
+      const operationLabels = {
+        'union': 'Merged',
+        'subtract': 'Subtracted',
+        'intersect': 'Intersected'
+      };
+      
+      toast({
+        title: `${operationLabels[operationType]} models`,
+        description: "Operation completed successfully",
+      });
+      
+      // Close the popover after operation
+      setCombineOptionsOpen(false);
+    } catch (error) {
+      toast({
+        title: "Operation failed",
+        description: "There was an error combining the models",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -161,7 +155,7 @@ export const ToolBar = () => {
               onClick={handleUndo}
               disabled={!canUndo}
             >
-              <Undo className={canUndo ? "text-primary" : "text-muted-foreground"} size={18} />
+              <Undo className={canUndo ? "text-white" : "text-muted-foreground"} size={18} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -177,7 +171,7 @@ export const ToolBar = () => {
               onClick={handleRedo}
               disabled={!canRedo}
             >
-              <Redo className={canRedo ? "text-primary" : "text-muted-foreground"} size={18} />
+              <Redo className={canRedo ? "text-white" : "text-muted-foreground"} size={18} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
@@ -192,8 +186,8 @@ export const ToolBar = () => {
           <TooltipTrigger asChild>
             <Popover open={viewOptionsOpen} onOpenChange={setViewOptionsOpen}>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <span className="text-white text-xs font-medium">Views</span>
+                <Button variant="ghost" size="sm" className="px-3">
+                  <span className="text-white text-sm">Views</span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-[220px] p-0" align="center">
@@ -264,69 +258,117 @@ export const ToolBar = () => {
             <p>View Options</p>
           </TooltipContent>
         </Tooltip>
-      </TooltipProvider>
 
-      <Separator orientation="vertical" className="h-8" />
-
-      {/* Add Shapes Popover */}
-      <TooltipProvider>
+        {/* New Combine Models Popover */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Popover open={shapesMenuOpen} onOpenChange={setShapesMenuOpen}>
+            <Popover open={combineOptionsOpen} onOpenChange={setCombineOptionsOpen}>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="px-2">
-                  <Box className="h-4 w-4 mr-1" />
-                  <span className="text-white text-xs font-medium">Add Shapes</span>
+                <Button variant="ghost" size="sm" className="px-3">
+                  <span className="text-white text-sm">Combine</span>
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-[200px] p-0" align="center">
-                <div className="p-3">
-                  <h3 className="text-sm font-semibold mb-3">Add Shape</h3>
-                  <div className="grid gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="justify-start" 
-                      onClick={() => addShape('cube')}
+              <PopoverContent className="w-[320px] p-0" align="center">
+                <div className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">Combine Models</h3>
+                  
+                  {models.length < 2 ? (
+                    <div className="bg-muted/50 rounded-md p-2 mb-4">
+                      <p className="text-sm text-muted-foreground">
+                        You need at least two models to combine
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 mb-4">
+                      {/* Primary Model Selection */}
+                      <div>
+                        <Label htmlFor="primary-model" className="text-sm font-medium mb-1.5 block">
+                          Primary Model
+                        </Label>
+                        <Select 
+                          value={selectedModelIndex !== null ? selectedModelIndex.toString() : undefined}
+                          onValueChange={handlePrimaryModelSelect}
+                          disabled={models.length === 0}
+                        >
+                          <SelectTrigger id="primary-model" className="w-full">
+                            <SelectValue placeholder="Select primary model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {models.map((model, index) => (
+                              <SelectItem key={`primary-${index}`} value={index.toString()}>
+                                {model.name || `Model ${index + 1}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      {/* Secondary Model Selection */}
+                      <div>
+                        <Label htmlFor="secondary-model" className="text-sm font-medium mb-1.5 block">
+                          Secondary Model
+                        </Label>
+                        <Select 
+                          value={secondaryModelIndex !== null ? secondaryModelIndex.toString() : undefined}
+                          onValueChange={handleSecondaryModelSelect}
+                          disabled={models.length === 0}
+                        >
+                          <SelectTrigger id="secondary-model" className="w-full">
+                            <SelectValue placeholder="Select secondary model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {models.map((model, index) => (
+                              <SelectItem key={`secondary-${index}`} value={index.toString()}>
+                                {model.name || `Model ${index + 1}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-3">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className="justify-start h-auto py-2 w-full"
+                      onClick={() => handleCSGOperation('union')}
+                      disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
                     >
-                      <Box className="mr-2 h-4 w-4" />
-                      Cube
+                      <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium">Merge</span>
+                        <span className="text-xs text-muted-foreground mt-0.5">Combine both models</span>
+                      </div>
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="justify-start"
-                      onClick={() => addShape('sphere')}
+                    
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className="justify-start h-auto py-2 w-full"
+                      onClick={() => handleCSGOperation('subtract')}
+                      disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
                     >
-                      <Circle className="mr-2 h-4 w-4" />
-                      Sphere
+                      <Minus className="h-5 w-5 mr-3 flex-shrink-0" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium">Cut Out</span>
+                        <span className="text-xs text-muted-foreground mt-0.5">Remove secondary from primary</span>
+                      </div>
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="justify-start"
-                      onClick={() => addShape('cylinder')}
+                    
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className="justify-start h-auto py-2 w-full"
+                      onClick={() => handleCSGOperation('intersect')}
+                      disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
                     >
-                      <Cylinder className="mr-2 h-4 w-4" />
-                      Cylinder
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="justify-start"
-                      onClick={() => addShape('cone')}
-                    >
-                      <Triangle className="mr-2 h-4 w-4" />
-                      Cone
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="justify-start"
-                      onClick={() => addShape('torus')}
-                    >
-                      <CircleDot className="mr-2 h-4 w-4" />
-                      Torus
+                      <XCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-sm font-medium">Intersect</span>
+                        <span className="text-xs text-muted-foreground mt-0.5">Keep overlapping parts</span>
+                      </div>
                     </Button>
                   </div>
                 </div>
@@ -334,53 +376,29 @@ export const ToolBar = () => {
             </Popover>
           </TooltipTrigger>
           <TooltipContent>
-            <p>Add 3D Shapes</p>
+            <p>Combine Models</p>
           </TooltipContent>
         </Tooltip>
+
+        <Separator orientation="vertical" className="h-8" />
+
+        <div className="flex items-center gap-2">
+          <Select 
+            value={renderingMode} 
+            onValueChange={handleRenderingModeChange}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Select mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard">Standard</SelectItem>
+              <SelectItem value="wireframe">Wireframe</SelectItem>
+              <SelectItem value="realistic">Realistic</SelectItem>
+              <SelectItem value="xray">X-Ray</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </TooltipProvider>
-
-      <Separator orientation="vertical" className="h-8" />
-
-      <div className="flex items-center gap-2">
-        <Palette className="h-4 w-4 text-muted-foreground" />
-        <Select 
-          value={renderingMode} 
-          onValueChange={handleRenderingModeChange}
-        >
-          <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Select mode" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="standard">Standard</SelectItem>
-            <SelectItem value="wireframe">Wireframe</SelectItem>
-            <SelectItem value="realistic">Realistic</SelectItem>
-            <SelectItem value="xray">X-Ray</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Separator orientation="vertical" className="h-8" />
-
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="px-2"
-              onClick={() => setTextDialogOpen(true)}
-            >
-              <FileText className="h-4 w-4 mr-1" />
-              <span className="text-white text-xs font-medium">Add Text</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Create 3D text</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      <TextDialog open={textDialogOpen} onOpenChange={setTextDialogOpen} />
     </div>
   );
 };

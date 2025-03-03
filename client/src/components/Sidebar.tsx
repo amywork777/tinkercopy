@@ -566,6 +566,395 @@ export function Sidebar() {
     });
   };
   
+  const handleAddTorusKnot = () => {
+    const geometry = new THREE.TorusKnotGeometry(2, 0.6, 100, 16);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `torusknot-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Torus Knot ${Date.now()}`,
+      type: 'torusknot',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Torus Knot added",
+      description: "A new torus knot has been added to the scene",
+    });
+  };
+
+  const handleAddOctahedron = () => {
+    const geometry = new THREE.OctahedronGeometry(3);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `octahedron-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Octahedron ${Date.now()}`,
+      type: 'octahedron',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Octahedron added",
+      description: "A new octahedron has been added to the scene",
+    });
+  };
+
+  const handleAddIcosahedron = () => {
+    const geometry = new THREE.IcosahedronGeometry(3);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `icosahedron-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Icosahedron ${Date.now()}`,
+      type: 'icosahedron',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Icosahedron added",
+      description: "A new icosahedron has been added to the scene",
+    });
+  };
+
+  const handleAddDodecahedron = () => {
+    const geometry = new THREE.DodecahedronGeometry(3);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `dodecahedron-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Dodecahedron ${Date.now()}`,
+      type: 'dodecahedron',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Dodecahedron added",
+      description: "A new dodecahedron has been added to the scene",
+    });
+  };
+
+  const handleAddCapsule = () => {
+    const geometry = new THREE.CapsuleGeometry(2, 4, 20, 20);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `capsule-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Capsule ${Date.now()}`,
+      type: 'capsule',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Capsule added",
+      description: "A new capsule has been added to the scene",
+    });
+  };
+
+  const handleAddPyramid = () => {
+    // Create a pyramid using a custom geometry
+    const geometry = new THREE.ConeGeometry(3, 5, 4);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `pyramid-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Pyramid ${Date.now()}`,
+      type: 'pyramid',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Pyramid added",
+      description: "A new pyramid has been added to the scene",
+    });
+  };
+
+  const handleAddTube = () => {
+    // Create a curved path for the tube
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-2, 0, 0),
+      new THREE.Vector3(-1, 1, 1),
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(1, -1, 1),
+      new THREE.Vector3(2, 0, 0)
+    ]);
+    
+    const geometry = new THREE.TubeGeometry(curve, 64, 0.4, 16, false);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `tube-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Tube ${Date.now()}`,
+      type: 'tube',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Tube added",
+      description: "A new tube has been added to the scene",
+    });
+  };
+
+  const handleAddPrism = () => {
+    // Create a triangular prism using BufferGeometry
+    const vertices = new Float32Array([
+      // Front face
+      -1.5, -1.5, 1.5,
+      1.5, -1.5, 1.5,
+      0, 1.5, 1.5,
+      // Back face
+      -1.5, -1.5, -1.5,
+      1.5, -1.5, -1.5,
+      0, 1.5, -1.5,
+    ]);
+
+    const indices = new Uint16Array([
+      0, 1, 2, // front
+      3, 5, 4, // back
+      0, 3, 1, // bottom
+      1, 3, 4, // bottom
+      1, 4, 2, // right side
+      2, 4, 5, // right side
+      0, 2, 3, // left side
+      2, 5, 3, // left side
+    ]);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshStandardMaterial({ 
+      color: Math.random() * 0xffffff,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 2.5;
+    
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+    
+    scene.add(mesh);
+    
+    const newModel = {
+      id: `prism-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `Prism ${Date.now()}`,
+      type: 'prism',
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale
+    };
+    
+    const { models } = useScene.getState();
+    const newModels = [...models, newModel];
+    useScene.setState({ models: newModels });
+    
+    const newIndex = newModels.length - 1;
+    selectModel(newIndex);
+    
+    saveHistoryState();
+    
+    toast({
+      title: "Prism added",
+      description: "A new triangular prism has been added to the scene",
+    });
+  };
+  
   const handleImportClick = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -780,6 +1169,7 @@ export function Sidebar() {
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#000';
       
       // Redraw existing lines
       sketchLines.forEach(line => {
@@ -1085,17 +1475,6 @@ export function Sidebar() {
             {/* AI Model Generator Tab */}
             <TabsContent value="ai" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-6">
-                {/* Import Button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleImportClick}
-                >
-                  <Upload className="mr-1 h-4 w-4" />
-                  Import STL or SVG
-                </Button>
-
                 {/* MagicFish AI Card */}
                 <Card>
                   <CardHeader>
@@ -1133,6 +1512,17 @@ export function Sidebar() {
                     </Button>
                   </CardContent>
                 </Card>
+
+                {/* Import Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleImportClick}
+                >
+                  <Upload className="mr-1 h-4 w-4" />
+                  Import STL or SVG
+                </Button>
               </div>
             </TabsContent>
             
@@ -1146,7 +1536,6 @@ export function Sidebar() {
                   className="justify-start"
                   onClick={handleAddCube}
                 >
-                  <Box className="mr-1 h-4 w-4" />
                   Add Cube
                 </Button>
                 
@@ -1156,7 +1545,6 @@ export function Sidebar() {
                   className="justify-start"
                   onClick={handleAddSphere}
                 >
-                  <Circle className="mr-1 h-4 w-4" />
                   Add Sphere
                 </Button>
                 
@@ -1166,9 +1554,6 @@ export function Sidebar() {
                   className="justify-start"
                   onClick={handleAddCylinder}
                 >
-                  <div className="mr-1 h-4 w-4 flex items-center justify-center">
-                    <div className="h-4 w-3 rounded-sm bg-current"></div>
-                  </div>
                   Add Cylinder
                 </Button>
                 
@@ -1178,7 +1563,6 @@ export function Sidebar() {
                   className="justify-start"
                   onClick={handleAddCone}
                 >
-                  <Triangle className="mr-1 h-4 w-4" />
                   Add Cone
                 </Button>
                 
@@ -1188,8 +1572,63 @@ export function Sidebar() {
                   className="justify-start"
                   onClick={handleAddTorus}
                 >
-                  <CircleDot className="mr-1 h-4 w-4" />
                   Add Torus
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleAddCapsule}
+                >
+                  Add Capsule
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleAddPyramid}
+                >
+                  Add Pyramid
+                </Button>
+
+                <h3 className="text-lg font-medium mt-4 mb-2">Advanced Shapes</h3>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleAddTorusKnot}
+                >
+                  Add Torus Knot
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleAddOctahedron}
+                >
+                  Add Octahedron
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleAddIcosahedron}
+                >
+                  Add Icosahedron
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleAddDodecahedron}
+                >
+                  Add Dodecahedron
                 </Button>
               </div>
             </TabsContent>

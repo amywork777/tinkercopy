@@ -2399,14 +2399,4 @@ type TextProps = {
   fontPath: string;
 };
 
-type Model = {
-  id: string;
-  name: string;
-  type: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'text' | 'model' | 'torusknot' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'capsule' | 'pyramid';
-  mesh: THREE.Mesh;
-  originalPosition: THREE.Vector3;
-  originalRotation: THREE.Euler;
-  originalScale: THREE.Vector3;
-  textProps?: TextProps;
-};
-// ... existing code ...
+export {};

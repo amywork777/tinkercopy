@@ -1,0 +1,11 @@
+{
+  "projectId": "prj_your_project_id",
+  "orgId": "your_org_id",
+  "settings": {
+    "framework": null,
+    "buildCommand": "npm run build",
+    "outputDirectory": "dist",
+    "devCommand": "npm run dev",
+    "installCommand": "npm install"
+  }
+} 

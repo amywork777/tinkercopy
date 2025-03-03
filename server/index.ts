@@ -36,8 +36,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// Initialize routes
+let server: any;
 (async () => {
-  const server = await registerRoutes(app);
+  server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -47,25 +49,21 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
+  if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // Use a single port for simplicity
-  const PORT = 4000;
-  
-  try {
-    // Use localhost instead of 0.0.0.0 to avoid ENOTSUP errors on macOS
-    server.listen(PORT, 'localhost', () => {
+  // Use port from environment variable for Vercel
+  const PORT = process.env.PORT || 4000;
+
+  if (process.env.NODE_ENV !== "production") {
+    server.listen(PORT, () => {
       log(`Server running at http://localhost:${PORT}`);
     });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
   }
 })();
+
+// Export the Express app for Vercel
+export default app;

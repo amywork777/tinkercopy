@@ -65,7 +65,8 @@ export default defineConfig({
           ]
         },
         chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]'
+        assetFileNames: 'assets/[name]-[hash][extname]',
+        entryFileNames: 'assets/[name]-[hash].js'
       }
     },
     chunkSizeWarningLimit: 1000

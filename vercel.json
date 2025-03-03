@@ -14,15 +14,16 @@
       "dest": "/api/$1"
     },
     {
-      "src": "^/assets/(.*)",
-      "dest": "/assets/$1"
+      "src": "/assets/(.*)",
+      "dest": "/dist/public/assets/$1"
     },
     {
-      "handle": "filesystem"
+      "src": "/(.*)\\.(?:js|css|ico|png|jpg|jpeg|svg|gif)$",
+      "dest": "/dist/public/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "/dist/public/index.html"
     }
   ]
 } 

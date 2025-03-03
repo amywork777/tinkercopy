@@ -2,9 +2,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useScene } from "@/hooks/use-scene";
-import { TrashIcon, ImportIcon, Layers, Check } from "lucide-react";
+import { TrashIcon, ImportIcon, Layers, Check, Copy, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import * as THREE from "three";
 
 export function ModelList() {
   const { 
@@ -14,8 +16,10 @@ export function ModelList() {
     selectModel, 
     selectedModelIndex,
     secondaryModelIndex,
-    selectSecondaryModel
+    selectSecondaryModel,
+    saveHistoryState
   } = useScene();
+  const { toast } = useToast();
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -72,20 +76,67 @@ export function ModelList() {
     );
   };
 
-  const handleDeleteModel = (index: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const modelName = models[index]?.name || 'Model';
-    
-    // Ensure we deselect this model first
-    if (selectedModelIndex === index) {
-      selectModel(null);
-    }
-    if (secondaryModelIndex === index) {
-      selectSecondaryModel(null);
-    }
-    
+  const handleCopyModel = (index: number) => {
+    const modelToCopy = models[index];
+    if (!modelToCopy || !modelToCopy.mesh) return;
+
+    // Clone the geometry and material
+    const geometry = modelToCopy.mesh.geometry.clone();
+    const material = modelToCopy.mesh.material instanceof Array
+      ? modelToCopy.mesh.material.map(m => m.clone())
+      : modelToCopy.mesh.material.clone();
+
+    // Create new mesh
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Position slightly offset from original
+    mesh.position.copy(modelToCopy.mesh.position);
+    mesh.position.x += 50; // Offset by 50mm
+    mesh.rotation.copy(modelToCopy.mesh.rotation);
+    mesh.scale.copy(modelToCopy.mesh.scale);
+
+    // Store original transform
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+
+    // Create new model object
+    const newModel = {
+      id: `${modelToCopy.type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `${modelToCopy.name} (Copy)`,
+      type: modelToCopy.type,
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale,
+      ...(modelToCopy.textProps ? { textProps: { ...modelToCopy.textProps } } : {})
+    };
+
+    // Add to scene and state
+    useScene.getState().scene.add(mesh);
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
+    saveHistoryState();
+
+    toast({
+      title: "Model Copied",
+      description: `Created copy of ${modelToCopy.name}`,
+      duration: 2000,
+    });
+  };
+
+  const handleDeleteModel = (index: number) => {
+    const modelName = models[index].name;
     removeModel(index);
-    toast.info(`Deleted ${modelName}`);
+    
+    toast({
+      title: "Model Deleted",
+      description: `Removed ${modelName}`,
+      duration: 2000,
+    });
   };
 
   return (
@@ -139,9 +190,23 @@ export function ModelList() {
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 ml-1 hover:bg-destructive/10"
-                        onClick={(e) => handleDeleteModel(index, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopyModel(index);
+                        }}
                       >
-                        <TrashIcon className="h-3 w-3" />
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 ml-1 hover:bg-destructive/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteModel(index);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>

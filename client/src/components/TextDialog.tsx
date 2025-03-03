@@ -25,12 +25,12 @@ export function TextDialog({ open, onOpenChange }: TextDialogProps) {
   const { loadText } = useScene();
   
   const [text, setText] = useState("Text");
-  const [fontSize, setFontSize] = useState(5);
-  const [height, setHeight] = useState(2);
+  const [fontSize, setFontSize] = useState(152.4);
+  const [height, setHeight] = useState(76.2);
   const [curveSegments, setCurveSegments] = useState(4);
   const [bevelEnabled, setBevelEnabled] = useState(true);
-  const [bevelThickness, setBevelThickness] = useState(0.2);
-  const [bevelSize, setBevelSize] = useState(0.1);
+  const [bevelThickness, setBevelThickness] = useState(12.7);
+  const [bevelSize, setBevelSize] = useState(6.35);
   const [bevelSegments, setBevelSegments] = useState(3);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -103,14 +103,14 @@ export function TextDialog({ open, onOpenChange }: TextDialogProps) {
             <div className="col-span-3 flex items-center gap-2">
               <Slider
                 value={[fontSize]}
-                min={1}
-                max={20}
-                step={0.5}
+                min={25.4}
+                max={304.8}
+                step={25.4}
                 onValueChange={(value) => setFontSize(value[0])}
                 className="flex-1"
               />
-              <span className="w-12 text-sm text-muted-foreground">
-                {fontSize}
+              <span className="w-16 text-sm text-muted-foreground">
+                {(fontSize / 25.4).toFixed(1)}"
               </span>
             </div>
           </div>
@@ -120,14 +120,14 @@ export function TextDialog({ open, onOpenChange }: TextDialogProps) {
             <div className="col-span-3 flex items-center gap-2">
               <Slider
                 value={[height]}
-                min={0.1}
-                max={10}
-                step={0.1}
+                min={25.4}
+                max={152.4}
+                step={25.4}
                 onValueChange={(value) => setHeight(value[0])}
                 className="flex-1"
               />
-              <span className="w-12 text-sm text-muted-foreground">
-                {height}
+              <span className="w-16 text-sm text-muted-foreground">
+                {(height / 25.4).toFixed(1)}"
               </span>
             </div>
           </div>

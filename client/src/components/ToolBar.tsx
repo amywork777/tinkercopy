@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Undo, Redo, Combine, Plus, Minus, XCircle } from "lucide-react";
+import { Undo, Redo, Combine, Plus, Minus, XCircle, Copy, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Separator } from "@/components/ui/separator";
@@ -14,6 +14,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ViewOptions } from "./ViewOptions";
+import * as THREE from "three";
 
 export const ToolBar = () => {
   const { 
@@ -36,7 +37,9 @@ export const ToolBar = () => {
     selectModel,
     selectSecondaryModel,
     performCSGOperation,
-    isCSGOperationLoading
+    isCSGOperationLoading,
+    saveHistoryState,
+    removeModel
   } = useScene();
   const { toast } = useToast();
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
@@ -144,6 +147,86 @@ export const ToolBar = () => {
     }
   };
 
+  const handleCopyModel = () => {
+    if (selectedModelIndex === null || !models[selectedModelIndex]) {
+      toast({
+        title: "No model selected",
+        description: "Please select a model to copy",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const modelToCopy = models[selectedModelIndex];
+    
+    // Clone the geometry and material
+    const geometry = modelToCopy.mesh.geometry.clone();
+    const material = modelToCopy.mesh.material instanceof Array
+      ? modelToCopy.mesh.material.map(m => m.clone())
+      : modelToCopy.mesh.material.clone();
+
+    // Create new mesh
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Position slightly offset from original
+    mesh.position.copy(modelToCopy.mesh.position);
+    mesh.position.x += 50; // Offset by 50mm
+    mesh.rotation.copy(modelToCopy.mesh.rotation);
+    mesh.scale.copy(modelToCopy.mesh.scale);
+
+    // Store original transform
+    const originalPosition = mesh.position.clone();
+    const originalRotation = mesh.rotation.clone();
+    const originalScale = mesh.scale.clone();
+
+    // Create new model object
+    const newModel = {
+      id: `${modelToCopy.type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: `${modelToCopy.name} (Copy)`,
+      type: modelToCopy.type,
+      mesh,
+      originalPosition,
+      originalRotation,
+      originalScale,
+      ...(modelToCopy.textProps ? { textProps: { ...modelToCopy.textProps } } : {})
+    };
+
+    // Add to scene and state
+    scene.add(mesh);
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
+    saveHistoryState();
+
+    toast({
+      title: "Model Copied",
+      description: `Created copy of ${modelToCopy.name}`,
+      duration: 2000,
+    });
+  };
+
+  const handleDeleteModel = () => {
+    if (selectedModelIndex === null) {
+      toast({
+        title: "No model selected",
+        description: "Please select a model to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const modelName = models[selectedModelIndex].name;
+    removeModel(selectedModelIndex);
+    
+    toast({
+      title: "Model Deleted",
+      description: `Removed ${modelName}`,
+      duration: 2000,
+    });
+  };
+
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-background/90 backdrop-blur-sm rounded-lg shadow-lg p-2 flex items-center space-x-2 border border-border">
       <TooltipProvider>
@@ -176,6 +259,38 @@ export const ToolBar = () => {
           </TooltipTrigger>
           <TooltipContent>
             <p>Redo (Ctrl+Y)</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={handleCopyModel}
+              disabled={selectedModelIndex === null}
+            >
+              <Copy className={selectedModelIndex !== null ? "text-white" : "text-muted-foreground"} size={18} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Copy Model (Ctrl+C)</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={handleDeleteModel}
+              disabled={selectedModelIndex === null}
+            >
+              <Trash2 className={selectedModelIndex !== null ? "text-white" : "text-muted-foreground"} size={18} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Delete Model (Delete)</p>
           </TooltipContent>
         </Tooltip>
 
@@ -283,17 +398,44 @@ export const ToolBar = () => {
                           className={`flex items-center justify-between p-2 rounded-md ${
                             index === selectedModelIndex ? 'bg-accent' : 'hover:bg-accent/50'
                           }`}
-                          onClick={() => selectModel(index)}
-                          style={{ cursor: "pointer" }}
                         >
-                          <span className="text-sm truncate flex-1">
+                          <span 
+                            className="text-sm truncate flex-1 cursor-pointer"
+                            onClick={() => selectModel(index)}
+                          >
                             {model.name || `Model ${index + 1}`}
                           </span>
-                          {index === selectedModelIndex && (
-                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
-                              Selected
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {index === selectedModelIndex && (
+                              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded mr-2">
+                                Selected
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                selectModel(index);
+                                handleCopyModel();
+                              }}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                selectModel(index);
+                                handleDeleteModel();
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>

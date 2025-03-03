@@ -82,7 +82,7 @@ export function Sidebar() {
   const [sketchLines, setSketchLines] = useState<Array<{points: {x: number, y: number}[]}>>([]); 
   const [currentLine, setCurrentLine] = useState<{x: number, y: number}[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [extrusionDepth, setExtrusionDepth] = useState(10);
+  const [extrusionDepth, setExtrusionDepth] = useState(50.8); // Default to 2 inches
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
   // Add keyboard event handler for copy, paste, and delete
@@ -111,6 +111,32 @@ export function Sidebar() {
       // Delete with Delete key
       if (e.key === 'Delete' || e.key === 'Backspace') {
         handleDeleteSelectedModel();
+      }
+
+      // Undo with Ctrl+Z or Command+Z
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        const { canUndo, undo } = useScene.getState();
+        if (canUndo) {
+          undo();
+          toast({
+            title: "Action undone",
+            duration: 2000,
+          });
+        }
+      }
+      
+      // Redo with Ctrl+Y or Ctrl+Shift+Z or Command+Shift+Z
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+        e.preventDefault();
+        const { canRedo, redo } = useScene.getState();
+        if (canRedo) {
+          redo();
+          toast({
+            title: "Action redone",
+            duration: 2000,
+          });
+        }
       }
     };
     
@@ -358,7 +384,7 @@ export function Sidebar() {
   };
 
   const handleAddCube = () => {
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const geometry = new THREE.BoxGeometry(50.8, 50.8, 50.8);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -378,7 +404,7 @@ export function Sidebar() {
   };
 
   const handleAddSphere = () => {
-    const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+    const geometry = new THREE.SphereGeometry(25.4, 32, 32);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -398,7 +424,7 @@ export function Sidebar() {
   };
 
   const handleAddCylinder = () => {
-    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+    const geometry = new THREE.CylinderGeometry(25.4, 25.4, 50.8, 32);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -418,7 +444,7 @@ export function Sidebar() {
   };
 
   const handleAddCone = () => {
-    const geometry = new THREE.ConeGeometry(0.5, 1, 32);
+    const geometry = new THREE.ConeGeometry(25.4, 50.8, 32);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -438,7 +464,7 @@ export function Sidebar() {
   };
 
   const handleAddTorus = () => {
-    const geometry = new THREE.TorusGeometry(0.5, 0.2, 16, 100);
+    const geometry = new THREE.TorusGeometry(25.4, 8, 16, 100);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -458,7 +484,7 @@ export function Sidebar() {
   };
 
   const handleAddTorusKnot = () => {
-    const geometry = new THREE.TorusKnotGeometry(0.5, 0.2, 100, 16);
+    const geometry = new THREE.TorusKnotGeometry(25.4, 8, 100, 16); // Main radius 1 inch, tube radius ~0.3 inch
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -478,7 +504,7 @@ export function Sidebar() {
   };
 
   const handleAddOctahedron = () => {
-    const geometry = new THREE.OctahedronGeometry(0.5);
+    const geometry = new THREE.OctahedronGeometry(25.4); // 1 inch radius
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -498,7 +524,7 @@ export function Sidebar() {
   };
 
   const handleAddIcosahedron = () => {
-    const geometry = new THREE.IcosahedronGeometry(0.5);
+    const geometry = new THREE.IcosahedronGeometry(25.4); // 1 inch radius
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -518,7 +544,7 @@ export function Sidebar() {
   };
 
   const handleAddDodecahedron = () => {
-    const geometry = new THREE.DodecahedronGeometry(0.5);
+    const geometry = new THREE.DodecahedronGeometry(25.4); // 1 inch radius
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -538,7 +564,7 @@ export function Sidebar() {
   };
 
   const handleAddCapsule = () => {
-    const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
+    const geometry = new THREE.CapsuleGeometry(25.4, 50.8, 4, 8);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -558,7 +584,7 @@ export function Sidebar() {
   };
 
   const handleAddPyramid = () => {
-    const geometry = new THREE.ConeGeometry(0.5, 1, 4);
+    const geometry = new THREE.ConeGeometry(25.4, 50.8, 4);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -580,11 +606,11 @@ export function Sidebar() {
   const handleAddTube = () => {
     // Create a curved path for the tube
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.5, -0.5, 0),
-      new THREE.Vector3(0, 0.5, 0),
-      new THREE.Vector3(0.5, -0.5, 0)
+      new THREE.Vector3(-25.4, -25.4, 0),    // -1 inch, -1 inch, 0
+      new THREE.Vector3(0, 25.4, 0),         // 0, 1 inch, 0
+      new THREE.Vector3(25.4, -25.4, 0)      // 1 inch, -1 inch, 0
     ]);
-    const geometry = new THREE.TubeGeometry(curve, 20, 0.2, 8, false);
+    const geometry = new THREE.TubeGeometry(curve, 20, 8, 8, false); // tube radius ~0.3 inch
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -607,14 +633,14 @@ export function Sidebar() {
     // Create a triangular prism using custom geometry
     const geometry = new THREE.BufferGeometry();
     const vertices = new Float32Array([
-      // Front face
-      -0.5, -0.5, 0.5,
-      0.5, -0.5, 0.5,
-      0, 0.5, 0.5,
+      // Front face (scaled to ~2 inches)
+      -25.4, -25.4, 25.4,    // Bottom left
+      25.4, -25.4, 25.4,     // Bottom right
+      0, 25.4, 25.4,         // Top
       // Back face
-      -0.5, -0.5, -0.5,
-      0.5, -0.5, -0.5,
-      0, 0.5, -0.5,
+      -25.4, -25.4, -25.4,   // Bottom left
+      25.4, -25.4, -25.4,    // Bottom right
+      0, 25.4, -25.4,        // Top
     ]);
     const indices = new Uint16Array([
       0, 1, 2, // front
@@ -1141,7 +1167,7 @@ export function Sidebar() {
             <TabsContent value="library" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  The 3D Library offers both ready-made designs and customizable models. Simply add any model to your workspace for quick adjustments—like positioning, scaling, or printing.
+                  The 3D Library offers both ready-made designs and customizable models.
                 </p>
                 <Button
                   variant="default"
@@ -1349,19 +1375,19 @@ export function Sidebar() {
                 <div className="border rounded-md p-4 space-y-4">
                   <h4 className="text-sm font-medium mb-2">Extrusion Settings</h4>
                   
-                  <div className="flex items-center gap-4">
-                    <Label className="w-20 text-sm">Depth</Label>
-                    <div className="flex-1 flex items-center gap-3">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right">Depth</Label>
+                    <div className="col-span-3 flex items-center gap-2">
                       <Slider
                         value={[extrusionDepth]}
-                        min={1}
-                        max={50}
-                        step={1}
+                        min={6.35}
+                        max={101.6}
+                        step={3.175}
                         onValueChange={(value) => setExtrusionDepth(value[0])}
                         className="flex-1"
                       />
-                      <span className="w-8 text-sm text-center">
-                        {extrusionDepth}
+                      <span className="w-16 text-sm text-muted-foreground">
+                        {(extrusionDepth / 25.4).toFixed(2)}"
                       </span>
                     </div>
                   </div>

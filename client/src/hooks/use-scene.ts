@@ -9,7 +9,8 @@ import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry, TextGeometryParameters } from "three/examples/jsm/geometries/TextGeometry.js";
 
 // Scene configuration
-const GRID_SIZE = 100; // Increased from 50 to 100 to provide more workspace for 10-inch models
+const GRID_SIZE = 500; // Much larger grid for better visibility
+const GRID_DIVISIONS = 100; // More divisions for finer grid
 const BACKGROUND_COLOR = 0x333333; // Dark gray
 const getRandomColor = () => new THREE.Color(Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5);
 
@@ -181,6 +182,9 @@ type SceneState = {
   
   // Export
   exportSelectedModelAsSTL: () => Blob | null;
+
+  // Add function to update grid position based on models
+  updateGridPosition: () => void;
 };
 
 export const useScene = create<SceneState>((set, get) => {
@@ -314,10 +318,10 @@ export const useScene = create<SceneState>((set, get) => {
       set({ orbitControls });
       
       // Add a grid helper and give it a name for later reference
-      const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE / 2);
+      const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS);
       gridHelper.name = 'gridHelper';
       gridHelper.visible = get().showGrid;
-      gridHelper.position.y = -1;
+      gridHelper.position.y = -25; // Start grid lower initially
       scene.add(gridHelper);
       
       // Add axes helper
@@ -433,205 +437,115 @@ export const useScene = create<SceneState>((set, get) => {
       };
     },
     
+    // Add function to update grid position based on models
+    updateGridPosition: () => {
+      const state = get();
+      const gridHelper = state.scene.children.find(child => child.name === 'gridHelper');
+      if (!gridHelper) return;
+
+      // Find the lowest point among all models
+      let lowestY = 0;
+      let hasModels = false;
+
+      state.models.forEach(model => {
+        if (!model.mesh) return;
+        
+        // Create a new bounding box for the entire mesh in world space
+        const bbox = new THREE.Box3();
+        bbox.setFromObject(model.mesh); // This handles all transformations automatically
+
+        if (!hasModels) {
+          lowestY = bbox.min.y;
+          hasModels = true;
+        } else {
+          lowestY = Math.min(lowestY, bbox.min.y);
+        }
+      });
+
+      // Position grid 50mm below the lowest point or at -50 if no models
+      const gridY = hasModels ? lowestY - 50 : -50;
+      gridHelper.position.y = gridY;
+
+      // Force scene update
+      if (state.renderer && state.camera) {
+        state.renderer.render(state.scene, state.camera);
+      }
+    },
+    
     // Load an STL file
     loadSTL: async (file: File) => {
-        const state = get();
+      const loader = new STLLoader();
+      const arrayBuffer = await file.arrayBuffer();
+      const geometry = loader.parse(arrayBuffer);
       
-      if (!state.isSceneReady) {
-        console.error("Scene not ready, can't load model");
-        return;
-      }
-      
-      try {
-        console.log("[MODEL IMPORT] Loading STL file:", file.name);
-        const loader = new STLLoader();
-        
-        // Load the STL file
-        const geometry = await new Promise<THREE.BufferGeometry>((resolve, reject) => {
-          const reader = new FileReader();
-          
-          reader.onload = (event) => {
-            try {
-              if (event.target?.result) {
-                const result = event.target.result;
-                const geometry = loader.parse(result as ArrayBuffer);
-                resolve(geometry);
-              } else {
-                reject(new Error("Failed to read file"));
-              }
-            } catch (error) {
-              reject(error);
-            }
-          };
-          
-          reader.onerror = () => reject(new Error("Error reading file"));
-          reader.readAsArrayBuffer(file);
-        });
-        
-        // Center the geometry
-        geometry.computeBoundingBox();
-        const center = new THREE.Vector3();
-        if (geometry.boundingBox) {
-          geometry.boundingBox.getCenter(center);
-          geometry.translate(-center.x, -center.y, -center.z);
-        }
+      // Create mesh with random color
+      const material = new THREE.MeshStandardMaterial({ 
+        color: getRandomColor(),
+        metalness: 0.5,
+        roughness: 0.5,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
 
-        // IMPORTANT: Preserve the original dimensions of models
-        // Calculate dimensions and report extensively
-        geometry.computeBoundingSphere();
-        geometry.computeBoundingBox();
-        
-        if (geometry.boundingSphere && geometry.boundingBox) {
-          const radius = geometry.boundingSphere.radius;
-          const size = new THREE.Vector3();
-          geometry.boundingBox.getSize(size);
-          
-          const width = size.x;
-          const height = size.y;
-          const depth = size.z;
-          
-          const inchWidth = width / MM_PER_INCH;
-          const inchHeight = height / MM_PER_INCH;
-          const inchDepth = depth / MM_PER_INCH;
-          
-          console.log(`[MODEL IMPORT] Original dimensions: ${width.toFixed(2)}mm × ${height.toFixed(2)}mm × ${depth.toFixed(2)}mm`);
-          console.log(`[MODEL IMPORT] Original dimensions: ${inchWidth.toFixed(2)}in × ${inchHeight.toFixed(2)}in × ${inchDepth.toFixed(2)}in`);
-          console.log(`[MODEL IMPORT] Radius: ${radius.toFixed(2)} units (${(radius/MM_PER_INCH).toFixed(2)} inches)`);
-          
-          // Calculate max dimension in inches
-          const maxDimension = Math.max(inchWidth, inchHeight, inchDepth);
-          console.log(`[MODEL IMPORT] Max dimension: ${maxDimension.toFixed(2)} inches`);
-          
-          // Only scale down extremely large models that would be difficult to work with
-          // Use consistent scaling to preserve aspect ratio
-          if (radius > 500) { 
-            const scaleFactor = 100 / radius;
-            geometry.scale(scaleFactor, scaleFactor, scaleFactor);
-            
-            // Report new dimensions after scaling
-            geometry.computeBoundingBox();
-            if (geometry.boundingBox) {
-              const newSize = new THREE.Vector3();
-              geometry.boundingBox.getSize(newSize);
-              
-              console.log(`[MODEL IMPORT] Very large model detected. Scaled down by factor: ${scaleFactor.toFixed(4)}`);
-              console.log(`[MODEL IMPORT] New dimensions: ${newSize.x.toFixed(2)}mm × ${newSize.y.toFixed(2)}mm × ${newSize.z.toFixed(2)}mm`);
-              console.log(`[MODEL IMPORT] New dimensions: ${(newSize.x/MM_PER_INCH).toFixed(2)}in × ${(newSize.y/MM_PER_INCH).toFixed(2)}in × ${(newSize.z/MM_PER_INCH).toFixed(2)}in`);
-            }
-          } else {
-            // If our model is very small, scale it up to make it easier to see 
-            // but still leave room to scale it more if needed
-            if (maxDimension < 1.0) {
-              // Scale up small models to be more visible but still under 5 inches
-              const targetSize = 2.0; // Target 2 inches for the largest dimension
-              const scaleFactor = (targetSize * MM_PER_INCH) / (maxDimension * MM_PER_INCH);
-              
-              geometry.scale(scaleFactor, scaleFactor, scaleFactor);
-              
-              console.log(`[MODEL IMPORT] Very small model detected. Scaled up by factor: ${scaleFactor.toFixed(4)}`);
-              
-              // Report new dimensions
-              geometry.computeBoundingBox();
-              if (geometry.boundingBox) {
-                const newSize = new THREE.Vector3();
-                geometry.boundingBox.getSize(newSize);
-                
-                console.log(`[MODEL IMPORT] New dimensions: ${newSize.x.toFixed(2)}mm × ${newSize.y.toFixed(2)}mm × ${newSize.z.toFixed(2)}mm`);
-                console.log(`[MODEL IMPORT] New dimensions: ${(newSize.x/MM_PER_INCH).toFixed(2)}in × ${(newSize.y/MM_PER_INCH).toFixed(2)}in × ${(newSize.z/MM_PER_INCH).toFixed(2)}in`);
-              }
-            } else {
-              console.log(`[MODEL IMPORT] Model within reasonable size range. No auto-scaling applied.`);
-            }
-          }
-        }
-        
-        // Create material with random color
-        const material = new THREE.MeshStandardMaterial({ 
-          color: getRandomColor(),
-          metalness: 0.1,
-          roughness: 0.8,
-          side: THREE.DoubleSide,
-        });
+      // Center geometry
+      geometry.computeBoundingBox();
+      const center = new THREE.Vector3();
+      geometry.boundingBox!.getCenter(center);
+      geometry.center();
 
-        // Create mesh
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+      // Find suitable position
+      const box = new THREE.Box3().setFromObject(mesh);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const position = findSuitablePosition(get().models, size);
+      mesh.position.copy(position);
 
-        // Position mesh slightly above the grid
-        mesh.position.y = 0;
-        
-        // Store original transform
-        const originalPosition = mesh.position.clone();
-        const originalRotation = mesh.rotation.clone();
-        const originalScale = mesh.scale.clone();
-        
-        // Add to scene
-        scene.add(mesh);
-        console.log("[MODEL IMPORT] Added mesh to scene");
-        
-        // Create model object
-        const newModel: Model = {
-          id: `model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: file.name,
-          type: 'model',
-          mesh,
-          originalPosition,
-          originalRotation,
-          originalScale
-        };
-        
-        // Add to models array
-        const models = [...state.models, newModel];
-        set({ models });
-        
-        // Select the new model
-        const newIndex = models.length - 1;
-        get().selectModel(newIndex);
-        
-        // Force a render
-        state.renderer.render(state.scene, state.camera);
-        
-        // Save to history after adding a model
-        get().saveHistoryState();
-        
-      } catch (error) {
-        console.error("Error loading STL:", error);
-        throw new Error("Failed to load STL file");
-      }
+      // Add to scene
+      scene.add(mesh);
+
+      // Store original transform
+      const originalPosition = mesh.position.clone();
+      const originalRotation = mesh.rotation.clone();
+      const originalScale = mesh.scale.clone();
+
+      // Create model object
+      const model: Model = {
+        id: `model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        name: file.name,
+        type: 'model',
+        mesh,
+        originalPosition,
+        originalRotation,
+        originalScale
+      };
+
+      // Update state
+      const updatedModels = [...get().models, model];
+      set({ 
+        models: updatedModels,
+        selectedModelIndex: updatedModels.length - 1 
+      });
+      get().saveHistoryState();
+      get().updateGridPosition();
     },
 
     // Remove a model
     removeModel: (index: number) => {
       const state = get();
-      
-      if (index < 0 || index >= state.models.length) {
-        return;
-      }
-      
-      // Remove from scene
-      scene.remove(state.models[index].mesh);
-      
-      // Remove from models array
-      const models = state.models.filter((_, i) => i !== index);
-      
-      // Update selected model
-      let selectedModelIndex = state.selectedModelIndex;
-      
-      if (selectedModelIndex === index) {
-        // If we're removing the selected model
-        selectedModelIndex = null;
-      } else if (selectedModelIndex !== null && selectedModelIndex > index) {
-        // If we're removing a model before the selected one, decrement the index
-        selectedModelIndex--;
-      }
-      
-      set({ models, selectedModelIndex });
-      
-      // Force a render
-      state.renderer.render(state.scene, state.camera);
-      
-      // Save to history after removing a model
+      if (index < 0 || index >= state.models.length) return;
+
+      const model = state.models[index];
+      scene.remove(model.mesh);
+
+      const newModels = [...state.models];
+      newModels.splice(index, 1);
+      set({ models: newModels, selectedModelIndex: null });
+
+      // Update grid position after removing model
+      get().updateGridPosition();
+
+      // Save to history
       get().saveHistoryState();
     },
     
@@ -872,6 +786,11 @@ export const useScene = create<SceneState>((set, get) => {
       
       // Save history state after transformation
       get().saveHistoryState();
+
+      // After applying transform
+      if (operation.startsWith('translate') || operation.startsWith('scale')) {
+        get().updateGridPosition();
+      }
     },
     
     // Set direct position for the selected model
@@ -1807,6 +1726,9 @@ export const useScene = create<SceneState>((set, get) => {
         const models = [...state.models, newModel];
         set({ models });
         
+        // Update grid position
+        get().updateGridPosition();
+        
         // Select the new model
         const newIndex = models.length - 1;
         get().selectModel(newIndex);
@@ -1837,14 +1759,15 @@ export const useScene = create<SceneState>((set, get) => {
         
         // Default text options
         const defaultOptions = {
-          fontSize: 5,
-          height: 2,
+          text: "Text",
+          fontSize: 152.4, // 6 inches
+          height: 76.2, // 3 inches
           curveSegments: 4,
           bevelEnabled: true,
-          bevelThickness: 0.2,
-          bevelSize: 0.1,
+          bevelThickness: 12.7, // 0.5 inches
+          bevelSize: 6.35, // 0.25 inches
           bevelSegments: 3,
-          fontPath: defaultFontPath
+          fontPath: "/fonts/helvetiker_regular.typeface.json" // Using local font path
         };
         
         // Merge defaults with provided options
@@ -1931,12 +1854,16 @@ export const useScene = create<SceneState>((set, get) => {
           mesh,
           originalPosition,
           originalRotation,
-          originalScale
+          originalScale,
+          textProps: mergedOptions
         };
         
         // Add to models array
         const models = [...state.models, newModel];
         set({ models });
+        
+        // Update grid position
+        get().updateGridPosition();
         
         // Select the new model
         const newIndex = models.length - 1;
@@ -2397,6 +2324,25 @@ type TextProps = {
   bevelSize: number;
   bevelSegments: number;
   fontPath: string;
+};
+
+// Helper function to find a suitable position for a new model
+const findSuitablePosition = (models: Model[], newModelSize: THREE.Vector3): THREE.Vector3 => {
+  if (models.length === 0) {
+    return new THREE.Vector3(0, 0, 0);
+  }
+
+  // Find the rightmost point of all models
+  let maxX = -Infinity;
+  models.forEach(model => {
+    const box = new THREE.Box3().setFromObject(model.mesh);
+    maxX = Math.max(maxX, box.max.x);
+  });
+
+  // Position the new model to the right of the rightmost model
+  // Add a 50mm gap between models
+  const newX = maxX + 50;
+  return new THREE.Vector3(newX, 0, 0);
 };
 
 export {};

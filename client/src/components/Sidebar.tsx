@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { useScene } from "@/hooks/use-scene";
-import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Pencil, Printer } from "lucide-react";
+import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { ModelList } from "./ModelList";
@@ -1078,6 +1078,10 @@ export function Sidebar() {
               <Box className="h-5 w-5" />
               <span className="text-xs mt-1">Library</span>
             </TabsTrigger>
+            <TabsTrigger value="ai" className="flex justify-center items-center flex-col py-3 px-2">
+              <Bot className="h-5 w-5" />
+              <span className="text-xs mt-1">AI</span>
+            </TabsTrigger>
             <TabsTrigger value="shapes" className="flex justify-center items-center flex-col py-3 px-2">
               <Shapes className="h-5 w-5" />
               <span className="text-xs mt-1">Shapes</span>
@@ -1137,8 +1141,17 @@ export function Sidebar() {
             <TabsContent value="library" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  The 3D Library offers ready-made designs and customizable models. Simply add any model to your workspace for quick adjustments—like positioning, scaling, or printing.
+                  The 3D Library offers both ready-made designs and customizable models. Simply add any model to your workspace for quick adjustments—like positioning, scaling, or printing.
                 </p>
+                <Button
+                  variant="default"
+                  size="default"
+                  className="w-full"
+                  onClick={() => setActiveTab("library")}
+                >
+                  <Box className="mr-2 h-4 w-4" />
+                  Open 3D Library
+                </Button>
                 <Button
                   variant="outline"
                   size="default"
@@ -1146,6 +1159,60 @@ export function Sidebar() {
                   onClick={handleImportClick}
                 >
                   <Upload className="mr-2 h-4 w-4" />
+                  Import STL or SVG
+                </Button>
+              </div>
+            </TabsContent>
+            
+            {/* AI Model Generator Tab */}
+            <TabsContent value="ai" className="flex-1 overflow-y-auto p-3 h-full">
+              <div className="flex flex-col space-y-6">
+                {/* MagicFish AI Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5" />
+                      MagicFish AI
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Create detailed 3D models from images or text descriptions. Perfect for characters, creatures, and organic shapes.
+                    </p>
+                    <Button className="w-full" onClick={() => window.open('#', '_blank')}>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Open MagicFish AI
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* BuildFish AI Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Shapes className="h-5 w-5" />
+                      BuildFish AI
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Generate precise 3D designs from text descriptions. Ideal for architectural models, mechanical parts, and technical designs.
+                    </p>
+                    <Button className="w-full" onClick={() => window.open('#', '_blank')}>
+                      <Shapes className="mr-2 h-4 w-4" />
+                      Open BuildFish AI
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Import Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleImportClick}
+                >
+                  <Upload className="mr-1 h-4 w-4" />
                   Import STL or SVG
                 </Button>
               </div>

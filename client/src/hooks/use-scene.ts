@@ -1523,9 +1523,9 @@ export const useScene = create<SceneState>((set, get) => {
         const result = exporter.parse(meshToExport, { binary: true });
         
         // Create a blob from the result
-        const blob = new Blob([result], { type: 'application/octet-stream' });
+        const blob = new Blob([result], { type: result instanceof Uint8Array ? 'application/octet-stream' : 'text/plain' });
         
-        // Return the blob instead of handling the download here
+        // Return the blob
         return blob;
         
       } catch (error) {

@@ -1,8 +1,10 @@
 {
   "version": 2,
-  "buildCommand": "npm run vercel-build",
-  "outputDirectory": "dist/public",
   "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static"
+    },
     {
       "src": "api/**/*.ts",
       "use": "@vercel/node"
@@ -14,16 +16,15 @@
       "dest": "/api/$1"
     },
     {
+      "handle": "filesystem"
+    },
+    {
       "src": "/assets/(.*)",
-      "dest": "/dist/public/assets/$1"
+      "dest": "/assets/$1"
     },
     {
-      "src": "/(.*)\\.(?:js|css|ico|png|jpg|jpeg|svg|gif)$",
-      "dest": "/dist/public/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/dist/public/index.html"
+      "src": ".*",
+      "dest": "/index.html"
     }
   ]
 } 

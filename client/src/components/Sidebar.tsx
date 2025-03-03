@@ -1084,13 +1084,55 @@ export function Sidebar() {
             
             {/* AI Model Generator Tab */}
             <TabsContent value="ai" className="flex-1 overflow-y-auto p-3 h-full">
-              <div className="flex flex-col items-center justify-center h-full">
-                <Bot className="h-12 w-12 text-muted-foreground mb-2" />
-                <h3 className="text-lg font-medium">AI Model Generator</h3>
-                <p className="text-sm text-muted-foreground text-center mt-2">
-                  Create custom 3D models with AI assistance.
-                  Coming soon!
-                </p>
+              <div className="flex flex-col space-y-6">
+                {/* Import Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleImportClick}
+                >
+                  <Upload className="mr-1 h-4 w-4" />
+                  Import STL or SVG
+                </Button>
+
+                {/* MagicFish AI Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5" />
+                      MagicFish AI
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Create detailed 3D models from images or text descriptions. Perfect for characters, creatures, and organic shapes.
+                    </p>
+                    <Button className="w-full" onClick={() => window.open('#', '_blank')}>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Open MagicFish AI
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* BuildFish AI Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Shapes className="h-5 w-5" />
+                      BuildFish AI
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Generate precise 3D designs from text descriptions. Ideal for architectural models, mechanical parts, and technical designs.
+                    </p>
+                    <Button className="w-full" onClick={() => window.open('#', '_blank')}>
+                      <Shapes className="mr-2 h-4 w-4" />
+                      Open BuildFish AI
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
             

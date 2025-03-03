@@ -18,7 +18,7 @@ import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Checkbox } from "./ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Model } from "@/types/model";
+import type { Model } from "@/types/model";
 
 // Font options with their display names and paths
 const FONTS = [
@@ -337,622 +337,311 @@ export function Sidebar() {
     setActiveTab(value);
   };
   
-  const handleAddCube = () => {
-    // Create a cube geometry
-    const geometry = new THREE.BoxGeometry(5, 5, 5);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
-    // Create mesh
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    
-    // Position mesh slightly above the grid
-    mesh.position.y = 2.5;
-    
-    // Store original transform
+  // Helper function for random color
+  const getRandomColor = () => new THREE.Color(Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5);
+
+  // Function to create a new model with the correct type
+  const createModel = (mesh: THREE.Mesh, type: Model['type'], name: string) => {
     const originalPosition = mesh.position.clone();
     const originalRotation = mesh.rotation.clone();
     const originalScale = mesh.scale.clone();
-    
-    // Add to scene
-    scene.add(mesh);
-    
-    // Create model object
-    const newModel = {
-      id: `cube-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Cube ${Date.now()}`,
-      type: 'cube',
+
+    return {
+      id: `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name,
+      type,
       mesh,
       originalPosition,
       originalRotation,
       originalScale
-    };
-    
-    // Add to models array
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    // Select the new model
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
-    // Save to history
+    } as Model;
+  };
+
+  const handleAddCube = () => {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+
+    const newModel = createModel(mesh, 'cube', 'Cube');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Cube added",
-      description: "A new cube has been added to the scene",
+      title: "Success",
+      description: "Cube added to scene",
     });
   };
 
   const handleAddSphere = () => {
-    const geometry = new THREE.SphereGeometry(3, 32, 32);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 3;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `sphere-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Sphere ${Date.now()}`,
-      type: 'sphere',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'sphere', 'Sphere');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Sphere added",
-      description: "A new sphere has been added to the scene",
+      title: "Success",
+      description: "Sphere added to scene",
     });
   };
 
   const handleAddCylinder = () => {
-    const geometry = new THREE.CylinderGeometry(2.5, 2.5, 5, 32);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `cylinder-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Cylinder ${Date.now()}`,
-      type: 'cylinder',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'cylinder', 'Cylinder');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Cylinder added",
-      description: "A new cylinder has been added to the scene",
+      title: "Success",
+      description: "Cylinder added to scene",
     });
   };
 
   const handleAddCone = () => {
-    const geometry = new THREE.ConeGeometry(3, 5, 32);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.ConeGeometry(0.5, 1, 32);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `cone-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Cone ${Date.now()}`,
-      type: 'cone',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'cone', 'Cone');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Cone added",
-      description: "A new cone has been added to the scene",
+      title: "Success",
+      description: "Cone added to scene",
     });
   };
 
   const handleAddTorus = () => {
-    const geometry = new THREE.TorusGeometry(3, 1, 16, 50);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.TorusGeometry(0.5, 0.2, 16, 100);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `torus-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Torus ${Date.now()}`,
-      type: 'torus',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'torus', 'Torus');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Torus added",
-      description: "A new torus has been added to the scene",
+      title: "Success",
+      description: "Torus added to scene",
     });
   };
-  
+
   const handleAddTorusKnot = () => {
-    const geometry = new THREE.TorusKnotGeometry(2, 0.6, 100, 16);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.TorusKnotGeometry(0.5, 0.2, 100, 16);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `torusknot-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Torus Knot ${Date.now()}`,
-      type: 'torusknot',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'torusknot', 'Torus Knot');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Torus Knot added",
-      description: "A new torus knot has been added to the scene",
+      title: "Success",
+      description: "Torus Knot added to scene",
     });
   };
 
   const handleAddOctahedron = () => {
-    const geometry = new THREE.OctahedronGeometry(3);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.OctahedronGeometry(0.5);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `octahedron-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Octahedron ${Date.now()}`,
-      type: 'octahedron',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'octahedron', 'Octahedron');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Octahedron added",
-      description: "A new octahedron has been added to the scene",
+      title: "Success",
+      description: "Octahedron added to scene",
     });
   };
 
   const handleAddIcosahedron = () => {
-    const geometry = new THREE.IcosahedronGeometry(3);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.IcosahedronGeometry(0.5);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `icosahedron-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Icosahedron ${Date.now()}`,
-      type: 'icosahedron',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'icosahedron', 'Icosahedron');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Icosahedron added",
-      description: "A new icosahedron has been added to the scene",
+      title: "Success",
+      description: "Icosahedron added to scene",
     });
   };
 
   const handleAddDodecahedron = () => {
-    const geometry = new THREE.DodecahedronGeometry(3);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.DodecahedronGeometry(0.5);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `dodecahedron-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Dodecahedron ${Date.now()}`,
-      type: 'dodecahedron',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'dodecahedron', 'Dodecahedron');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Dodecahedron added",
-      description: "A new dodecahedron has been added to the scene",
+      title: "Success",
+      description: "Dodecahedron added to scene",
     });
   };
 
   const handleAddCapsule = () => {
-    const geometry = new THREE.CapsuleGeometry(2, 4, 20, 20);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `capsule-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Capsule ${Date.now()}`,
-      type: 'capsule',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'capsule', 'Capsule');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Capsule added",
-      description: "A new capsule has been added to the scene",
+      title: "Success",
+      description: "Capsule added to scene",
     });
   };
 
   const handleAddPyramid = () => {
-    // Create a pyramid using a custom geometry
-    const geometry = new THREE.ConeGeometry(3, 5, 4);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.ConeGeometry(0.5, 1, 4);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `pyramid-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Pyramid ${Date.now()}`,
-      type: 'pyramid',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'pyramid', 'Pyramid');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Pyramid added",
-      description: "A new pyramid has been added to the scene",
+      title: "Success",
+      description: "Pyramid added to scene",
     });
   };
 
   const handleAddTube = () => {
     // Create a curved path for the tube
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-2, 0, 0),
-      new THREE.Vector3(-1, 1, 1),
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(1, -1, 1),
-      new THREE.Vector3(2, 0, 0)
+      new THREE.Vector3(-0.5, -0.5, 0),
+      new THREE.Vector3(0, 0.5, 0),
+      new THREE.Vector3(0.5, -0.5, 0)
     ]);
-    
-    const geometry = new THREE.TubeGeometry(curve, 64, 0.4, 16, false);
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const geometry = new THREE.TubeGeometry(curve, 20, 0.2, 8, false);
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `tube-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Tube ${Date.now()}`,
-      type: 'tube',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'model', 'Tube');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Tube added",
-      description: "A new tube has been added to the scene",
+      title: "Success",
+      description: "Tube added to scene",
     });
   };
 
   const handleAddPrism = () => {
-    // Create a triangular prism using BufferGeometry
+    // Create a triangular prism using custom geometry
+    const geometry = new THREE.BufferGeometry();
     const vertices = new Float32Array([
       // Front face
-      -1.5, -1.5, 1.5,
-      1.5, -1.5, 1.5,
-      0, 1.5, 1.5,
+      -0.5, -0.5, 0.5,
+      0.5, -0.5, 0.5,
+      0, 0.5, 0.5,
       // Back face
-      -1.5, -1.5, -1.5,
-      1.5, -1.5, -1.5,
-      0, 1.5, -1.5,
+      -0.5, -0.5, -0.5,
+      0.5, -0.5, -0.5,
+      0, 0.5, -0.5,
     ]);
-
     const indices = new Uint16Array([
       0, 1, 2, // front
-      3, 5, 4, // back
-      0, 3, 1, // bottom
-      1, 3, 4, // bottom
-      1, 4, 2, // right side
-      2, 4, 5, // right side
-      0, 2, 3, // left side
-      2, 5, 3, // left side
+      3, 4, 5, // back
+      0, 3, 4, 0, 4, 1, // bottom
+      1, 4, 5, 1, 5, 2, // right side
+      0, 2, 5, 0, 5, 3  // left side
     ]);
-
-    const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff,
-      metalness: 0.1,
-      roughness: 0.8
-    });
-    
+    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.y = 2.5;
-    
-    const originalPosition = mesh.position.clone();
-    const originalRotation = mesh.rotation.clone();
-    const originalScale = mesh.scale.clone();
-    
     scene.add(mesh);
-    
-    const newModel = {
-      id: `prism-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      name: `Prism ${Date.now()}`,
-      type: 'prism',
-      mesh,
-      originalPosition,
-      originalRotation,
-      originalScale
-    };
-    
-    const { models } = useScene.getState();
-    const newModels = [...models, newModel];
-    useScene.setState({ models: newModels });
-    
-    const newIndex = newModels.length - 1;
-    selectModel(newIndex);
-    
+
+    const newModel = createModel(mesh, 'model', 'Prism');
+    const updatedModels = [...models, newModel];
+    useScene.setState({ models: updatedModels });
+    selectModel(updatedModels.length - 1);
     saveHistoryState();
-    
+
     toast({
-      title: "Prism added",
-      description: "A new triangular prism has been added to the scene",
+      title: "Success",
+      description: "Prism added to scene",
     });
   };
   

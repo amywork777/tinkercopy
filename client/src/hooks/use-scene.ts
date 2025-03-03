@@ -28,10 +28,12 @@ const SNAP_GRID_SIZE = 2.0; // Increased from 1.0 to 2.0 for larger models
 type Model = {
   id: string;
   name: string;
+  type: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'text' | 'model' | 'torusknot' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'capsule' | 'pyramid';
   mesh: THREE.Mesh;
   originalPosition: THREE.Vector3;
   originalRotation: THREE.Euler;
   originalScale: THREE.Vector3;
+  textProps?: TextProps;
 };
 
 // Type for our transform operations
@@ -572,6 +574,7 @@ export const useScene = create<SceneState>((set, get) => {
         const newModel: Model = {
           id: `model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: file.name,
+          type: 'model',
           mesh,
           originalPosition,
           originalRotation,
@@ -1245,6 +1248,7 @@ export const useScene = create<SceneState>((set, get) => {
         const newModel: Model = {
           id: `csg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: `${operationType}_${modelA.name}_${modelB.name}`,
+          type: 'model',
           mesh: resultMesh,
           originalPosition: resultMesh.position.clone(),
           originalRotation: resultMesh.rotation.clone(),
@@ -1297,6 +1301,7 @@ export const useScene = create<SceneState>((set, get) => {
         return {
           id: model.id,
           name: model.name,
+          type: model.type,
           mesh: meshClone,
           originalPosition: model.originalPosition.clone(),
           originalRotation: model.originalRotation.clone(),
@@ -1391,6 +1396,7 @@ export const useScene = create<SceneState>((set, get) => {
         return {
           id: historyModel.id,
           name: historyModel.name,
+          type: historyModel.type,
           mesh: restoredMesh,
           originalPosition: historyModel.originalPosition.clone(),
           originalRotation: historyModel.originalRotation.clone(),
@@ -1470,6 +1476,7 @@ export const useScene = create<SceneState>((set, get) => {
         return {
           id: historyModel.id,
           name: historyModel.name,
+          type: historyModel.type,
           mesh: restoredMesh,
           originalPosition: historyModel.originalPosition.clone(),
           originalRotation: historyModel.originalRotation.clone(),
@@ -1789,6 +1796,7 @@ export const useScene = create<SceneState>((set, get) => {
         const newModel: Model = {
           id: `svg-model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: file.name,
+          type: 'model',
           mesh,
           originalPosition,
           originalRotation,
@@ -1919,6 +1927,7 @@ export const useScene = create<SceneState>((set, get) => {
         const newModel: Model = {
           id: `text-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: `Text: ${text.substring(0, 15)}${text.length > 15 ? '...' : ''}`,
+          type: 'text',
           mesh,
           originalPosition,
           originalRotation,
@@ -2376,3 +2385,28 @@ function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 
       break;
   }
 }
+
+// ... existing code ...
+type TextProps = {
+  text: string;
+  fontSize: number;
+  height: number;
+  curveSegments: number;
+  bevelEnabled: boolean;
+  bevelThickness: number;
+  bevelSize: number;
+  bevelSegments: number;
+  fontPath: string;
+};
+
+type Model = {
+  id: string;
+  name: string;
+  type: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'text' | 'model' | 'torusknot' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'capsule' | 'pyramid';
+  mesh: THREE.Mesh;
+  originalPosition: THREE.Vector3;
+  originalRotation: THREE.Euler;
+  originalScale: THREE.Vector3;
+  textProps?: TextProps;
+};
+// ... existing code ...

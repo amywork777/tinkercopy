@@ -70,10 +70,19 @@ export default defineConfig({
     assetsDir: "assets"
   },
   server: {
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+    },
+    watch: {
+      usePolling: true,
+      interval: 100,
+    },
     proxy: {
       "/api": {
         target: "http://localhost:4000",
         changeOrigin: true,
+        secure: false,
       },
     },
   },

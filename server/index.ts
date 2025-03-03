@@ -39,30 +39,31 @@ app.use((req, res, next) => {
 // Initialize routes
 let server: any;
 (async () => {
+  // Initialize routes first
   server = await registerRoutes(app);
 
+  // Error handling middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
     res.status(status).json({ message });
     throw err;
   });
 
-  if (process.env.NODE_ENV === "development") {
+  // Development mode with Vite middleware
+  if (process.env.NODE_ENV !== "production") {
     await setupVite(app, server);
   } else {
+    // Production mode with static files
     serveStatic(app);
   }
 
-  // Use port from environment variable for Vercel
+  // Use port from environment variable or default to 4000
   const PORT = process.env.PORT || 4000;
 
-  if (process.env.NODE_ENV !== "production") {
-    server.listen(PORT, () => {
-      log(`Server running at http://localhost:${PORT}`);
-    });
-  }
+  server.listen(PORT, () => {
+    log(`Server running at http://localhost:${PORT} in ${process.env.NODE_ENV || "development"} mode`);
+  });
 })();
 
 // Export the Express app for Vercel

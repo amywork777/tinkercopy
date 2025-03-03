@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Undo, Redo, Combine, Plus, Minus, XCircle, Copy, Trash2 } from "lucide-react";
+import { Undo, Redo, Combine, Plus, Minus, XCircle, Copy, Trash2, Move, RotateCw, Maximize2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Separator } from "@/components/ui/separator";
@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ViewOptions } from "./ViewOptions";
 import * as THREE from "three";
+import { ShareDialog } from "./ShareDialog";
 
 export const ToolBar = () => {
   const { 
@@ -573,6 +574,8 @@ export const ToolBar = () => {
         </Tooltip>
 
         <Separator orientation="vertical" className="h-8" />
+
+        <ShareDialog />
 
         <div className="flex items-center gap-2">
           <Select 

@@ -259,6 +259,56 @@ export const ToolBar = () => {
           </TooltipContent>
         </Tooltip>
 
+        <Separator orientation="vertical" className="h-8 mx-1" />
+
+        {/* Models Selection Status */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="px-3">
+                  <span className="text-white text-sm">Models ({models.length})</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px] p-0" align="center">
+                <div className="p-3">
+                  <h3 className="text-sm font-semibold mb-3">Current Models</h3>
+                  {models.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No models in scene</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {models.map((model, index) => (
+                        <div 
+                          key={model.id} 
+                          className={`flex items-center justify-between p-2 rounded-md ${
+                            index === selectedModelIndex ? 'bg-accent' : 'hover:bg-accent/50'
+                          }`}
+                          onClick={() => selectModel(index)}
+                          style={{ cursor: "pointer" }}
+                        >
+                          <span className="text-sm truncate flex-1">
+                            {model.name || `Model ${index + 1}`}
+                          </span>
+                          {index === selectedModelIndex && (
+                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                              Selected
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Current Models</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Separator orientation="vertical" className="h-8 mx-1" />
+
         {/* New Combine Models Popover */}
         <Tooltip>
           <TooltipTrigger asChild>

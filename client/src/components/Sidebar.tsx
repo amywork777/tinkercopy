@@ -13,7 +13,6 @@ import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
-import { ModelLibrary } from "./ModelLibrary";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
@@ -755,14 +754,91 @@ export function Sidebar() {
     }
   }, [selectedModelIndex, models]);
 
+  // Initialize canvas when component mounts or when active tab changes
+  useEffect(() => {
+    if (activeTab === "sketch" && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      // Get the DPR and size
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      
+      // Set the canvas size accounting for DPI
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      
+      // Scale the context to ensure correct drawing
+      ctx.scale(dpr, dpr);
+      
+      // Set canvas CSS size
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      
+      // Set drawing styles
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#000';
+      
+      // Redraw existing lines
+      sketchLines.forEach(line => {
+        if (line.points.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(line.points[0].x, line.points[0].y);
+          
+          for (let i = 1; i < line.points.length; i++) {
+            ctx.lineTo(line.points[i].x, line.points[i].y);
+          }
+          
+          ctx.stroke();
+        }
+      });
+    }
+  }, [activeTab, sketchLines]);
+
+  // Function to get canvas coordinates
+  const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    
+    // Calculate coordinates taking into account DPI scaling and canvas CSS size
+    const x = ((e.clientX - rect.left) * (canvas.width / rect.width)) / dpr;
+    const y = ((e.clientY - rect.top) * (canvas.height / rect.height)) / dpr;
+    
+    return { x, y };
+  };
+
   // Function to start drawing
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = getCanvasCoordinates(e);
+    
+    // Draw initial point
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      // Reset any previous transforms
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      
+      // Apply DPI scaling
+      const dpr = window.devicePixelRatio || 1;
+      ctx.scale(dpr, dpr);
+      
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#000';
+      
+      // Draw a small circle for the first point
+      ctx.beginPath();
+      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
     
     setCurrentLine([{x, y}]);
     setIsDrawing(true);
@@ -775,27 +851,31 @@ export function Sidebar() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    setCurrentLine([...currentLine, {x, y}]);
+    const { x, y } = getCanvasCoordinates(e);
     
     // Draw the line
     const ctx = canvas.getContext('2d');
     if (ctx) {
+      // Reset any previous transforms
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      
+      // Apply DPI scaling
+      const dpr = window.devicePixelRatio || 1;
+      ctx.scale(dpr, dpr);
+      
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       ctx.strokeStyle = '#000';
       
-      if (currentLine.length > 1) {
-        ctx.beginPath();
-        const prevPoint = currentLine[currentLine.length - 2];
-        ctx.moveTo(prevPoint.x, prevPoint.y);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-      }
+      // Always draw from the last point to current point
+      const prevPoint = currentLine[currentLine.length - 1];
+      ctx.beginPath();
+      ctx.moveTo(prevPoint.x, prevPoint.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
     }
+    
+    setCurrentLine([...currentLine, {x, y}]);
   };
   
   // Function to end drawing
@@ -893,41 +973,6 @@ export function Sidebar() {
       });
     });
   };
-  
-  // Initialize canvas when component mounts or when active tab changes
-  useEffect(() => {
-    if (activeTab === "sketch" && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      
-      // Set canvas dimensions
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
-      
-      // Clear canvas
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Redraw existing lines
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = '#000';
-        
-        sketchLines.forEach(line => {
-          if (line.points.length > 1) {
-            ctx.beginPath();
-            ctx.moveTo(line.points[0].x, line.points[0].y);
-            
-            for (let i = 1; i < line.points.length; i++) {
-              ctx.lineTo(line.points[i].x, line.points[i].y);
-            }
-            
-            ctx.stroke();
-          }
-        });
-      }
-    }
-  }, [activeTab, sketchLines]);
 
   return (
     <div className="h-full flex flex-col">
@@ -986,7 +1031,6 @@ export function Sidebar() {
                   <Upload className="mr-1 h-4 w-4" />
                   Import STL or SVG
                 </Button>
-                
                 <Button
                   variant="outline"
                   size="sm"
@@ -1013,7 +1057,29 @@ export function Sidebar() {
             
             {/* 3D Library Tab */}
             <TabsContent value="library" className="flex-1 overflow-y-auto p-3 h-full">
-              <ModelLibrary />
+              <div className="flex flex-col space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  The 3D Library offers both ready-made designs and customizable models. Simply add any model to your workspace for quick adjustments—like positioning, scaling, or printing.
+                </p>
+                <Button
+                  variant="default"
+                  size="default"
+                  className="w-full"
+                  onClick={() => setActiveTab("library")}
+                >
+                  <Box className="mr-2 h-4 w-4" />
+                  Open 3D Library
+                </Button>
+                <Button
+                  variant="outline"
+                  size="default"
+                  className="w-full"
+                  onClick={handleImportClick}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import STL or SVG
+                </Button>
+              </div>
             </TabsContent>
             
             {/* AI Model Generator Tab */}

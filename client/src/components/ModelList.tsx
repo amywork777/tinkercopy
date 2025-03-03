@@ -91,23 +91,7 @@ export function ModelList() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">Model Library</h3>
-        <Button 
-          variant="outline" 
-          size="sm"
-          onClick={() => document.getElementById('file-input')?.click()}
-          className="flex gap-2 h-8"
-        >
-          <ImportIcon className="h-4 w-4" />
-          <span className="text-xs">Import STL</span>
-          <input
-            id="file-input"
-            type="file"
-            accept=".stl"
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-          />
-        </Button>
+        <h3 className="text-sm font-medium">Models</h3>
       </div>
       
       {models.length === 0 ? (

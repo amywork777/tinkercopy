@@ -314,6 +314,43 @@ export function TransformControls({ className }: { className?: string }) {
       : convertValue(value, 'mm', 'in').toFixed(3);
   };
 
+  // Add new handlers for number inputs
+  const handlePositionInputChange = (axis: 'x' | 'y' | 'z', value: string) => {
+    if (selectedModelIndex === null) return;
+    
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+    
+    handlePositionSliderChange(axis, numValue);
+  };
+
+  const handleRotationInputChange = (axis: 'x' | 'y' | 'z', value: string) => {
+    if (selectedModelIndex === null) return;
+    
+    const numValue = parseFloat(value) * Math.PI / 180; // Convert degrees to radians
+    if (isNaN(numValue)) return;
+    
+    handleRotationSliderChange(axis, numValue);
+  };
+
+  const handleScaleInputChange = (axis: 'x' | 'y' | 'z', value: string) => {
+    if (selectedModelIndex === null) return;
+    
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+    
+    handleScaleSliderChange(axis, numValue);
+  };
+
+  const handleUniformScaleInputChange = (value: string) => {
+    if (selectedModelIndex === null) return;
+    
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+    
+    handleUniformScaleSliderChange(numValue);
+  };
+
   return (
     <div className={cn("p-4", className)}>
       <h3 className="text-lg font-semibold mb-4">Transform Controls</h3>
@@ -393,9 +430,17 @@ export function TransformControls({ className }: { className?: string }) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="x-position" className="text-red-500">X Position</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {formatPosition(xPosition)} {getDimensionUnit()}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={formatPosition(xPosition)}
+                        onChange={(e) => handlePositionInputChange('x', e.target.value)}
+                        className="w-20 h-8"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {getDimensionUnit()}
+                      </span>
+                    </div>
                   </div>
                   <Slider 
                     id="x-position"
@@ -411,9 +456,17 @@ export function TransformControls({ className }: { className?: string }) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="y-position" className="text-blue-500">Y Position</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {formatPosition(zPosition)} {getDimensionUnit()}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={formatPosition(zPosition)}
+                        onChange={(e) => handlePositionInputChange('y', e.target.value)}
+                        className="w-20 h-8"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {getDimensionUnit()}
+                      </span>
+                    </div>
                   </div>
                   <Slider 
                     id="y-position"
@@ -429,9 +482,17 @@ export function TransformControls({ className }: { className?: string }) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="z-position" className="text-green-500">Z Position</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {formatPosition(yPosition)} {getDimensionUnit()}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={formatPosition(yPosition)}
+                        onChange={(e) => handlePositionInputChange('z', e.target.value)}
+                        className="w-20 h-8"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {getDimensionUnit()}
+                      </span>
+                    </div>
                   </div>
                   <Slider 
                     id="z-position"
@@ -451,7 +512,15 @@ export function TransformControls({ className }: { className?: string }) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="x-rotation" className="text-red-500">X Rotation</Label>
-                    <span className="text-xs text-muted-foreground">{(xRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={(xRotation * 180 / Math.PI).toFixed(0)}
+                        onChange={(e) => handleRotationInputChange('x', e.target.value)}
+                        className="w-20 h-8"
+                      />
+                      <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
+                    </div>
                   </div>
                   <Slider 
                     id="x-rotation"
@@ -467,7 +536,15 @@ export function TransformControls({ className }: { className?: string }) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="y-rotation" className="text-blue-500">Y Rotation</Label>
-                    <span className="text-xs text-muted-foreground">{(zRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={(zRotation * 180 / Math.PI).toFixed(0)}
+                        onChange={(e) => handleRotationInputChange('y', e.target.value)}
+                        className="w-20 h-8"
+                      />
+                      <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
+                    </div>
                   </div>
                   <Slider 
                     id="y-rotation"
@@ -483,7 +560,15 @@ export function TransformControls({ className }: { className?: string }) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="z-rotation" className="text-green-500">Z Rotation</Label>
-                    <span className="text-xs text-muted-foreground">{(yRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={(yRotation * 180 / Math.PI).toFixed(0)}
+                        onChange={(e) => handleRotationInputChange('z', e.target.value)}
+                        className="w-20 h-8"
+                      />
+                      <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
+                    </div>
                   </div>
                   <Slider 
                     id="z-rotation"
@@ -511,11 +596,21 @@ export function TransformControls({ className }: { className?: string }) {
                 </div>
 
                 {useUniformScale ? (
-                  // Uniform scaling slider
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="uniform-scale" className="text-purple-500">Uniform Scale</Label>
-                      <span className="text-xs text-muted-foreground">{formatScale(uniformScale)}</span>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={uniformScale.toFixed(2)}
+                          onChange={(e) => handleUniformScaleInputChange(e.target.value)}
+                          min={0.01}
+                          max={MAX_SCALE}
+                          step={0.01}
+                          className="w-20 h-8"
+                        />
+                        <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                      </div>
                     </div>
                     <Slider 
                       id="uniform-scale"
@@ -533,7 +628,18 @@ export function TransformControls({ className }: { className?: string }) {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="x-scale" className="text-red-500">X Scale</Label>
-                        <span className="text-xs text-muted-foreground">{formatScale(xScale)}</span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            value={xScale.toFixed(2)}
+                            onChange={(e) => handleScaleInputChange('x', e.target.value)}
+                            min={0.01}
+                            max={MAX_SCALE}
+                            step={0.01}
+                            className="w-20 h-8"
+                          />
+                          <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                        </div>
                       </div>
                       <Slider 
                         id="x-scale"
@@ -549,7 +655,18 @@ export function TransformControls({ className }: { className?: string }) {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="y-scale" className="text-blue-500">Y Scale</Label>
-                        <span className="text-xs text-muted-foreground">{formatScale(zScale)}</span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            value={zScale.toFixed(2)}
+                            onChange={(e) => handleScaleInputChange('y', e.target.value)}
+                            min={0.01}
+                            max={MAX_SCALE}
+                            step={0.01}
+                            className="w-20 h-8"
+                          />
+                          <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                        </div>
                       </div>
                       <Slider 
                         id="y-scale"
@@ -565,7 +682,18 @@ export function TransformControls({ className }: { className?: string }) {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="z-scale" className="text-green-500">Z Scale</Label>
-                        <span className="text-xs text-muted-foreground">{formatScale(yScale)}</span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            value={yScale.toFixed(2)}
+                            onChange={(e) => handleScaleInputChange('z', e.target.value)}
+                            min={0.01}
+                            max={MAX_SCALE}
+                            step={0.01}
+                            className="w-20 h-8"
+                          />
+                          <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                        </div>
                       </div>
                       <Slider 
                         id="z-scale"

@@ -2,7 +2,7 @@
   "version": 2,
   "framework": "vite",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "outputDirectory": "dist/public",
   "installCommand": "npm install",
   "builds": [
     {
@@ -10,7 +10,7 @@
       "use": "@vercel/node"
     },
     {
-      "src": "dist/**",
+      "src": "dist/public/**",
       "use": "@vercel/static"
     }
   ],
@@ -20,11 +20,15 @@
       "dest": "server/index.ts"
     },
     {
+      "src": "/assets/(.*)",
+      "dest": "/dist/public/assets/$1"
+    },
+    {
       "handle": "filesystem"
     },
     {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "/dist/public/index.html"
     }
   ]
 } 

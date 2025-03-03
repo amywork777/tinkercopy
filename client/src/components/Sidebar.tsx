@@ -18,6 +18,7 @@ import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Checkbox } from "./ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Model } from "@/types/model";
 
 // Font options with their display names and paths
 const FONTS = [
@@ -74,7 +75,7 @@ export function Sidebar() {
   
   // Check if the currently selected model is a text model that can be edited
   const selectedTextModel = selectedModelIndex !== null && models[selectedModelIndex] 
-    ? models[selectedModelIndex].type === 'text' ? models[selectedModelIndex] : null 
+    ? models[selectedModelIndex].type === 'text' ? models[selectedModelIndex] as Model : null 
     : null;
 
   // Sketch state
@@ -153,7 +154,7 @@ export function Sidebar() {
     // Clone the material
     let clonedMaterial;
     if (Array.isArray(copiedModel.mesh.material)) {
-      clonedMaterial = copiedModel.mesh.material.map(mat => mat.clone());
+      clonedMaterial = copiedModel.mesh.material.map((mat: THREE.Material) => mat.clone());
     } else {
       clonedMaterial = copiedModel.mesh.material.clone();
     }
@@ -314,7 +315,7 @@ export function Sidebar() {
         fontPath: selectedFont
       };
       
-      await loadText(text, textProps, selectedModelIndex);
+      await loadText(text, textProps);
       
       toast({
         title: "Success",
@@ -1053,7 +1054,9 @@ export function Sidebar() {
     }
     
     // Force a render
-    scene.needsUpdate = true;
+    if (scene.needsUpdate !== undefined) {
+      scene.needsUpdate = true;
+    }
     
     // Save state for undo/redo
     saveHistoryState();
@@ -1137,7 +1140,7 @@ export function Sidebar() {
       const material = model.mesh.material;
       
       // Set color
-      if (material && 'color' in material) {
+      if (material && 'color' in material && material.color) {
         setMaterialColor('#' + material.color.getHexString());
       }
     }
@@ -1740,7 +1743,7 @@ export function Sidebar() {
                   {/* Create or Update Button */}
                   <Button 
                     onClick={editingTextModelId ? handleUpdateText : handleCreateText} 
-                    disabled={isLoading || (editingTextModelId && !selectedTextModel)}
+                    disabled={isLoading || Boolean(editingTextModelId && !selectedTextModel)}
                     className="mb-4"
                   >
                     {isLoading 

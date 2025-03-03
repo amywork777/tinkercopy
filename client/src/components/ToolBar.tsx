@@ -390,11 +390,11 @@ export const ToolBar = () => {
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Select mode" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="standard">Standard</SelectItem>
-              <SelectItem value="wireframe">Wireframe</SelectItem>
-              <SelectItem value="realistic">Realistic</SelectItem>
-              <SelectItem value="xray">X-Ray</SelectItem>
+            <SelectContent className="min-w-[120px]">
+              <SelectItem key="standard" value="standard">Standard</SelectItem>
+              <SelectItem key="wireframe" value="wireframe">Wireframe</SelectItem>
+              <SelectItem key="realistic" value="realistic">Realistic</SelectItem>
+              <SelectItem key="xray" value="xray">X-Ray</SelectItem>
             </SelectContent>
           </Select>
         </div>

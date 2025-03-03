@@ -13,7 +13,8 @@ export function Viewport() {
     selectedModelIndex,
     cameraView,
     showGrid,
-    showAxes
+    showAxes,
+    setCameraView
   } = useScene();
   
   // Initialize scene when component mounts
@@ -37,19 +38,19 @@ export function Viewport() {
     
     switch (cameraView) {
       case 'top':
-        camera.position.set(0, 10, 0);
+        camera.position.set(0, 50, 0);
         camera.lookAt(0, 0, 0);
         break;
       case 'front':
-        camera.position.set(0, 0, 10);
+        camera.position.set(0, 0, 50);
         camera.lookAt(0, 0, 0);
         break;
       case 'side':
-        camera.position.set(10, 0, 0);
+        camera.position.set(50, 0, 0);
         camera.lookAt(0, 0, 0);
         break;
       case 'isometric':
-        camera.position.set(5, 5, 5);
+        camera.position.set(30, 30, 30);
         camera.lookAt(0, 0, 0);
         break;
     }
@@ -85,7 +86,11 @@ export function Viewport() {
     const axesHelper = scene.children.find(child => child.name === 'axesHelper');
     
     if (axesHelper) {
-      axesHelper.visible = showAxes;
+      if (showAxes) {
+        scene.add(axesHelper);
+      } else {
+        scene.remove(axesHelper);
+      }
       
       // Force renderer update
       if (renderer && camera) {

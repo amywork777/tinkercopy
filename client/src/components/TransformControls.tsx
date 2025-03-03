@@ -48,6 +48,15 @@ const ROTATION_UNIT = "°";
 const SCALE_UNIT = "";
 const DIMENSION_UNIT = "mm";
 
+// Maximum scale is now more conservative to prevent exceeding 10 inches
+const MAX_SCALE = 42; // This allows scaling up to 10 inches for models that start at 6mm
+const MM_PER_INCH = 25.4;
+
+// Helper function to format scale display
+const formatScale = (scale: number) => {
+  return `${scale.toFixed(2)}${SCALE_UNIT}`;
+};
+
 export function TransformControls({ className }: { className?: string }) {
   const { 
     transformMode, 
@@ -160,11 +169,13 @@ export function TransformControls({ className }: { className?: string }) {
       newPosition.x = value;
       setXPosition(value);
     } else if (axis === 'y') {
-      newPosition.y = value;
-      setYPosition(value);
-    } else {
+      // Y input controls Z (height)
       newPosition.z = value;
       setZPosition(value);
+    } else {
+      // Z input controls Y (depth)
+      newPosition.y = value;
+      setYPosition(value);
     }
     
     setPositionValues(newPosition);
@@ -181,11 +192,13 @@ export function TransformControls({ className }: { className?: string }) {
       newRotation.x = value;
       setXRotation(value);
     } else if (axis === 'y') {
-      newRotation.y = value;
-      setYRotation(value);
-    } else {
+      // Y input controls Z rotation
       newRotation.z = value;
       setZRotation(value);
+    } else {
+      // Z input controls Y rotation
+      newRotation.y = value;
+      setYRotation(value);
     }
     
     setRotationValues(newRotation);
@@ -202,11 +215,13 @@ export function TransformControls({ className }: { className?: string }) {
       newScale.x = value;
       setXScale(value);
     } else if (axis === 'y') {
-      newScale.y = value;
-      setYScale(value);
-    } else {
+      // Y input controls Z scale
       newScale.z = value;
       setZScale(value);
+    } else {
+      // Z input controls Y scale
+      newScale.y = value;
+      setYScale(value);
     }
     
     setScaleValues(newScale);
@@ -215,15 +230,22 @@ export function TransformControls({ className }: { className?: string }) {
     // Update dimensions after scale change
     if (selectedModelIndex !== null && models[selectedModelIndex]) {
       const model = models[selectedModelIndex];
-      if (model.mesh.geometry && model.mesh.geometry.boundingBox) {
-        const size = new Vector3();
-        model.mesh.geometry.boundingBox.getSize(size);
-        
-        const width = parseFloat((size.x * newScale.x).toFixed(2));
-        const height = parseFloat((size.y * newScale.y).toFixed(2));
-        const depth = parseFloat((size.z * newScale.z).toFixed(2));
-        
-        setDimensions({ width, height, depth });
+      if (model.mesh.geometry) {
+        model.mesh.geometry.computeBoundingBox();
+        if (model.mesh.geometry.boundingBox) {
+          const size = new Vector3();
+          model.mesh.geometry.boundingBox.getSize(size);
+          
+          // Apply the current scale to get actual dimensions
+          const width = parseFloat((size.x * newScale.x).toFixed(2));
+          const height = parseFloat((size.y * newScale.y).toFixed(2));
+          const depth = parseFloat((size.z * newScale.z).toFixed(2));
+          
+          console.log(`Updated dimensions: ${width.toFixed(2)}mm × ${height.toFixed(2)}mm × ${depth.toFixed(2)}mm`);
+          console.log(`Updated dimensions: ${(width/25.4).toFixed(2)}in × ${(height/25.4).toFixed(2)}in × ${(depth/25.4).toFixed(2)}in`);
+          
+          setDimensions({ width, height, depth });
+        }
       }
     }
   };
@@ -242,15 +264,23 @@ export function TransformControls({ className }: { className?: string }) {
     // Update dimensions after uniform scale change
     if (selectedModelIndex !== null && models[selectedModelIndex]) {
       const model = models[selectedModelIndex];
-      if (model.mesh.geometry && model.mesh.geometry.boundingBox) {
-        const size = new Vector3();
-        model.mesh.geometry.boundingBox.getSize(size);
-        
-        const width = parseFloat((size.x * value).toFixed(2));
-        const height = parseFloat((size.y * value).toFixed(2));
-        const depth = parseFloat((size.z * value).toFixed(2));
-        
-        setDimensions({ width, height, depth });
+      if (model.mesh.geometry) {
+        // Ensure we compute the current bounding box for accurate dimensions
+        model.mesh.geometry.computeBoundingBox();
+        if (model.mesh.geometry.boundingBox) {
+          const size = new Vector3();
+          model.mesh.geometry.boundingBox.getSize(size);
+          
+          // Apply the uniform scale to get actual dimensions
+          const width = parseFloat((size.x * value).toFixed(2));
+          const height = parseFloat((size.y * value).toFixed(2));
+          const depth = parseFloat((size.z * value).toFixed(2));
+          
+          console.log(`Updated dimensions (uniform): ${width.toFixed(2)}mm × ${height.toFixed(2)}mm × ${depth.toFixed(2)}mm`);
+          console.log(`Updated dimensions (uniform): ${(width/25.4).toFixed(2)}in × ${(height/25.4).toFixed(2)}in × ${(depth/25.4).toFixed(2)}in`);
+          
+          setDimensions({ width, height, depth });
+        }
       }
     }
   };
@@ -331,11 +361,11 @@ export function TransformControls({ className }: { className?: string }) {
                 <span>W: {formatDimension(dimensions.width)}</span>
               </div>
               <div className="flex items-center gap-1">
-                <Box className="h-3 w-3 text-green-500" />
+                <Box className="h-3 w-3 text-blue-500" />
                 <span>H: {formatDimension(dimensions.height)}</span>
               </div>
               <div className="flex items-center gap-1">
-                <Box className="h-3 w-3 text-blue-500" />
+                <Box className="h-3 w-3 text-green-500" />
                 <span>D: {formatDimension(dimensions.depth)}</span>
               </div>
             </div>
@@ -369,9 +399,9 @@ export function TransformControls({ className }: { className?: string }) {
                   </div>
                   <Slider 
                     id="x-position"
-                    min={-10} 
-                    max={10} 
-                    step={0.1} 
+                    min={-200} 
+                    max={200} 
+                    step={1} 
                     value={[xPosition]} 
                     onValueChange={(values) => handlePositionSliderChange('x', values[0])}
                     className="slider-red"
@@ -380,37 +410,37 @@ export function TransformControls({ className }: { className?: string }) {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="y-position" className="text-green-500">Y Position</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {formatPosition(yPosition)} {getDimensionUnit()}
-                    </span>
-                  </div>
-                  <Slider 
-                    id="y-position"
-                    min={-10} 
-                    max={10} 
-                    step={0.1} 
-                    value={[yPosition]} 
-                    onValueChange={(values) => handlePositionSliderChange('y', values[0])}
-                    className="slider-green"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="z-position" className="text-blue-500">Z Position</Label>
+                    <Label htmlFor="y-position" className="text-blue-500">Y Position</Label>
                     <span className="text-xs text-muted-foreground">
                       {formatPosition(zPosition)} {getDimensionUnit()}
                     </span>
                   </div>
                   <Slider 
-                    id="z-position"
-                    min={-10} 
-                    max={10} 
-                    step={0.1} 
+                    id="y-position"
+                    min={-200} 
+                    max={200} 
+                    step={1} 
                     value={[zPosition]} 
-                    onValueChange={(values) => handlePositionSliderChange('z', values[0])}
+                    onValueChange={(values) => handlePositionSliderChange('y', values[0])}
                     className="slider-blue"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="z-position" className="text-green-500">Z Position</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {formatPosition(yPosition)} {getDimensionUnit()}
+                    </span>
+                  </div>
+                  <Slider 
+                    id="z-position"
+                    min={-200} 
+                    max={200} 
+                    step={1} 
+                    value={[yPosition]} 
+                    onValueChange={(values) => handlePositionSliderChange('z', values[0])}
+                    className="slider-green"
                   />
                 </div>
               </div>
@@ -436,33 +466,33 @@ export function TransformControls({ className }: { className?: string }) {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="y-rotation" className="text-green-500">Y Rotation</Label>
-                    <span className="text-xs text-muted-foreground">{(yRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                    <Label htmlFor="y-rotation" className="text-blue-500">Y Rotation</Label>
+                    <span className="text-xs text-muted-foreground">{(zRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
                   </div>
                   <Slider 
                     id="y-rotation"
                     min={-Math.PI} 
                     max={Math.PI} 
                     step={Math.PI / 180} 
-                    value={[yRotation]} 
+                    value={[zRotation]} 
                     onValueChange={(values) => handleRotationSliderChange('y', values[0])}
-                    className="slider-green"
+                    className="slider-blue"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="z-rotation" className="text-blue-500">Z Rotation</Label>
-                    <span className="text-xs text-muted-foreground">{(zRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
+                    <Label htmlFor="z-rotation" className="text-green-500">Z Rotation</Label>
+                    <span className="text-xs text-muted-foreground">{(yRotation * 180 / Math.PI).toFixed(0)}{ROTATION_UNIT}</span>
                   </div>
                   <Slider 
                     id="z-rotation"
                     min={-Math.PI} 
                     max={Math.PI} 
                     step={Math.PI / 180} 
-                    value={[zRotation]} 
+                    value={[yRotation]} 
                     onValueChange={(values) => handleRotationSliderChange('z', values[0])}
-                    className="slider-blue"
+                    className="slider-green"
                   />
                 </div>
               </div>
@@ -485,13 +515,13 @@ export function TransformControls({ className }: { className?: string }) {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="uniform-scale" className="text-purple-500">Uniform Scale</Label>
-                      <span className="text-xs text-muted-foreground">{uniformScale.toFixed(2)}{SCALE_UNIT}</span>
+                      <span className="text-xs text-muted-foreground">{formatScale(uniformScale)}</span>
                     </div>
                     <Slider 
                       id="uniform-scale"
-                      min={0.1} 
-                      max={5} 
-                      step={0.1} 
+                      min={0.01} 
+                      max={MAX_SCALE} 
+                      step={0.01} 
                       value={[uniformScale]} 
                       onValueChange={(values) => handleUniformScaleSliderChange(values[0])}
                       className="slider-purple"
@@ -503,13 +533,13 @@ export function TransformControls({ className }: { className?: string }) {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="x-scale" className="text-red-500">X Scale</Label>
-                        <span className="text-xs text-muted-foreground">{xScale.toFixed(2)}{SCALE_UNIT}</span>
+                        <span className="text-xs text-muted-foreground">{formatScale(xScale)}</span>
                       </div>
                       <Slider 
                         id="x-scale"
-                        min={0.1} 
-                        max={5} 
-                        step={0.1} 
+                        min={0.01} 
+                        max={MAX_SCALE} 
+                        step={0.01} 
                         value={[xScale]} 
                         onValueChange={(values) => handleScaleSliderChange('x', values[0])}
                         className="slider-red"
@@ -518,33 +548,33 @@ export function TransformControls({ className }: { className?: string }) {
                     
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="y-scale" className="text-green-500">Y Scale</Label>
-                        <span className="text-xs text-muted-foreground">{yScale.toFixed(2)}{SCALE_UNIT}</span>
+                        <Label htmlFor="y-scale" className="text-blue-500">Y Scale</Label>
+                        <span className="text-xs text-muted-foreground">{formatScale(zScale)}</span>
                       </div>
                       <Slider 
                         id="y-scale"
-                        min={0.1} 
-                        max={5} 
-                        step={0.1} 
-                        value={[yScale]} 
+                        min={0.01} 
+                        max={MAX_SCALE} 
+                        step={0.01} 
+                        value={[zScale]} 
                         onValueChange={(values) => handleScaleSliderChange('y', values[0])}
-                        className="slider-green"
+                        className="slider-blue"
                       />
                     </div>
                     
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="z-scale" className="text-blue-500">Z Scale</Label>
-                        <span className="text-xs text-muted-foreground">{zScale.toFixed(2)}{SCALE_UNIT}</span>
+                        <Label htmlFor="z-scale" className="text-green-500">Z Scale</Label>
+                        <span className="text-xs text-muted-foreground">{formatScale(yScale)}</span>
                       </div>
                       <Slider 
                         id="z-scale"
-                        min={0.1} 
-                        max={5} 
-                        step={0.1} 
-                        value={[zScale]} 
+                        min={0.01} 
+                        max={MAX_SCALE} 
+                        step={0.01} 
+                        value={[yScale]} 
                         onValueChange={(values) => handleScaleSliderChange('z', values[0])}
-                        className="slider-blue"
+                        className="slider-green"
                       />
                     </div>
                   </>

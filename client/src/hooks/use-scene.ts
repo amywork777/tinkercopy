@@ -9,16 +9,20 @@ import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry, TextGeometryParameters } from "three/examples/jsm/geometries/TextGeometry.js";
 
 // Scene configuration
-const GRID_SIZE = 20;
+const GRID_SIZE = 100; // Increased from 50 to 100 to provide more workspace for 10-inch models
 const BACKGROUND_COLOR = 0x333333; // Dark gray
 const getRandomColor = () => new THREE.Color(Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5);
 
+// Maximum model size in inches - set to exactly 10 inches
+const MAX_SIZE_INCHES = 10; // Maximum dimension allowed for any model
+const MM_PER_INCH = 25.4; // Standard conversion
+
 // Helper constants for transformation
-const TRANSFORM_STEP = 0.5; // Movement step size in units
+const TRANSFORM_STEP = 5.0; // Increased from 1.0 to 5.0 for much faster movement
 const ROTATION_STEP = Math.PI / 18; // 10 degrees in radians
-const SCALE_STEP = 0.1; // 10% scale step
-const SNAP_THRESHOLD = 0.5; // Distance in units to trigger snapping
-const SNAP_GRID_SIZE = 0.5; // Grid size for snapping
+const SCALE_STEP = 0.2; // Increased from 0.1 to 0.2 for faster scaling (20% scale step)
+const SNAP_THRESHOLD = 1.0; // Increased from 0.5 to 1.0 for larger models
+const SNAP_GRID_SIZE = 2.0; // Increased from 1.0 to 2.0 for larger models
 
 // Type for our 3D models
 type Model = {
@@ -231,7 +235,7 @@ export const useScene = create<SceneState>((set, get) => {
     },
 
     // View options
-    cameraView: 'top',
+    cameraView: 'isometric',
     showGrid: true,
     showAxes: true,
 
@@ -292,29 +296,30 @@ export const useScene = create<SceneState>((set, get) => {
       container.appendChild(canvas);
       console.log("Canvas attached to DOM:", canvas.width, "x", canvas.height);
       
-      // Set up camera
+      // Setup camera and orbit controls
       camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
-      camera.position.set(10, 10, 10);
+      camera.position.set(25, 25, 25); // Was originally 10, 10, 10
       camera.lookAt(0, 0, 0);
+      camera.updateProjectionMatrix();
       
-      // Set up orbit controls
-      const orbitControls = new OrbitControls(camera, canvas);
+      // Initialize orbit controls
+      const orbitControls = new OrbitControls(camera, renderer.domElement);
+      orbitControls.minDistance = 5; // Allow closer zoom (was 5)
+      orbitControls.maxDistance = 200; // Allow further zoom (was 100)
       orbitControls.enableDamping = true;
-      orbitControls.dampingFactor = 0.1;
-      orbitControls.screenSpacePanning = true;
-      orbitControls.minDistance = 1;
-      orbitControls.maxDistance = 50;
+      orbitControls.dampingFactor = 0.05;
+      
+      set({ orbitControls });
       
       // Add a grid helper and give it a name for later reference
-      const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, 0xFFFFFF, 0x888888);
+      const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE / 2);
       gridHelper.name = 'gridHelper';
       gridHelper.visible = get().showGrid;
       gridHelper.position.y = -1;
       scene.add(gridHelper);
       
-      // Add axes helper and give it a name for later reference
-      const axesHelper = new THREE.AxesHelper(5);
+      // Add axes helper
+      const axesHelper = new THREE.AxesHelper(GRID_SIZE / 2); // Larger axes for better visibility
       axesHelper.name = 'axesHelper';
       axesHelper.visible = get().showAxes;
       scene.add(axesHelper);
@@ -436,7 +441,7 @@ export const useScene = create<SceneState>((set, get) => {
       }
       
       try {
-        console.log("Loading STL file:", file.name);
+        console.log("[MODEL IMPORT] Loading STL file:", file.name);
         const loader = new STLLoader();
         
         // Load the STL file
@@ -469,14 +474,71 @@ export const useScene = create<SceneState>((set, get) => {
           geometry.translate(-center.x, -center.y, -center.z);
         }
 
-        // Normalize size
+        // IMPORTANT: Preserve the original dimensions of models
+        // Calculate dimensions and report extensively
         geometry.computeBoundingSphere();
-        if (geometry.boundingSphere) {
+        geometry.computeBoundingBox();
+        
+        if (geometry.boundingSphere && geometry.boundingBox) {
           const radius = geometry.boundingSphere.radius;
-          if (radius > 0) {
-            const scaleFactor = radius > 5 ? 5 / radius : 1;
-            if (scaleFactor !== 1) {
+          const size = new THREE.Vector3();
+          geometry.boundingBox.getSize(size);
+          
+          const width = size.x;
+          const height = size.y;
+          const depth = size.z;
+          
+          const inchWidth = width / MM_PER_INCH;
+          const inchHeight = height / MM_PER_INCH;
+          const inchDepth = depth / MM_PER_INCH;
+          
+          console.log(`[MODEL IMPORT] Original dimensions: ${width.toFixed(2)}mm × ${height.toFixed(2)}mm × ${depth.toFixed(2)}mm`);
+          console.log(`[MODEL IMPORT] Original dimensions: ${inchWidth.toFixed(2)}in × ${inchHeight.toFixed(2)}in × ${inchDepth.toFixed(2)}in`);
+          console.log(`[MODEL IMPORT] Radius: ${radius.toFixed(2)} units (${(radius/MM_PER_INCH).toFixed(2)} inches)`);
+          
+          // Calculate max dimension in inches
+          const maxDimension = Math.max(inchWidth, inchHeight, inchDepth);
+          console.log(`[MODEL IMPORT] Max dimension: ${maxDimension.toFixed(2)} inches`);
+          
+          // Only scale down extremely large models that would be difficult to work with
+          // Use consistent scaling to preserve aspect ratio
+          if (radius > 500) { 
+            const scaleFactor = 100 / radius;
+            geometry.scale(scaleFactor, scaleFactor, scaleFactor);
+            
+            // Report new dimensions after scaling
+            geometry.computeBoundingBox();
+            if (geometry.boundingBox) {
+              const newSize = new THREE.Vector3();
+              geometry.boundingBox.getSize(newSize);
+              
+              console.log(`[MODEL IMPORT] Very large model detected. Scaled down by factor: ${scaleFactor.toFixed(4)}`);
+              console.log(`[MODEL IMPORT] New dimensions: ${newSize.x.toFixed(2)}mm × ${newSize.y.toFixed(2)}mm × ${newSize.z.toFixed(2)}mm`);
+              console.log(`[MODEL IMPORT] New dimensions: ${(newSize.x/MM_PER_INCH).toFixed(2)}in × ${(newSize.y/MM_PER_INCH).toFixed(2)}in × ${(newSize.z/MM_PER_INCH).toFixed(2)}in`);
+            }
+          } else {
+            // If our model is very small, scale it up to make it easier to see 
+            // but still leave room to scale it more if needed
+            if (maxDimension < 1.0) {
+              // Scale up small models to be more visible but still under 5 inches
+              const targetSize = 2.0; // Target 2 inches for the largest dimension
+              const scaleFactor = (targetSize * MM_PER_INCH) / (maxDimension * MM_PER_INCH);
+              
               geometry.scale(scaleFactor, scaleFactor, scaleFactor);
+              
+              console.log(`[MODEL IMPORT] Very small model detected. Scaled up by factor: ${scaleFactor.toFixed(4)}`);
+              
+              // Report new dimensions
+              geometry.computeBoundingBox();
+              if (geometry.boundingBox) {
+                const newSize = new THREE.Vector3();
+                geometry.boundingBox.getSize(newSize);
+                
+                console.log(`[MODEL IMPORT] New dimensions: ${newSize.x.toFixed(2)}mm × ${newSize.y.toFixed(2)}mm × ${newSize.z.toFixed(2)}mm`);
+                console.log(`[MODEL IMPORT] New dimensions: ${(newSize.x/MM_PER_INCH).toFixed(2)}in × ${(newSize.y/MM_PER_INCH).toFixed(2)}in × ${(newSize.z/MM_PER_INCH).toFixed(2)}in`);
+              }
+            } else {
+              console.log(`[MODEL IMPORT] Model within reasonable size range. No auto-scaling applied.`);
             }
           }
         }
@@ -504,7 +566,7 @@ export const useScene = create<SceneState>((set, get) => {
         
         // Add to scene
         scene.add(mesh);
-        console.log("Added mesh to scene:", mesh);
+        console.log("[MODEL IMPORT] Added mesh to scene");
         
         // Create model object
         const newModel: Model = {
@@ -673,7 +735,7 @@ export const useScene = create<SceneState>((set, get) => {
     // Apply transformation directly to the selected model
     applyTransform: (operation: TransformOperation, direction: 1 | -1) => {
       const state = get();
-      const { selectedModelIndex, models, snapSettings } = state;
+      const { selectedModelIndex, models, snapSettings, unit } = state;
       
       if (selectedModelIndex === null || !models[selectedModelIndex]) {
         console.warn("No model selected for transform");
@@ -683,20 +745,26 @@ export const useScene = create<SceneState>((set, get) => {
       const model = models[selectedModelIndex];
       const mesh = model.mesh;
       
+      // Convert max size to current unit
+      const maxSizeInCurrentUnit = unit === 'in' ? MAX_SIZE_INCHES : MAX_SIZE_INCHES * MM_PER_INCH;
+      
       // Apply the requested transform
       switch(operation) {
         // Translation operations
         case 'translateX':
           mesh.position.x += TRANSFORM_STEP * direction;
           if (snapSettings.enabled) snapModelPosition(selectedModelIndex);
+          console.log(`Moved X to: ${mesh.position.x.toFixed(2)}`);
           break;
         case 'translateY':
           mesh.position.y += TRANSFORM_STEP * direction;
           if (snapSettings.enabled) snapModelPosition(selectedModelIndex);
+          console.log(`Moved Y to: ${mesh.position.y.toFixed(2)}`);
           break;
         case 'translateZ':
           mesh.position.z += TRANSFORM_STEP * direction;
           if (snapSettings.enabled) snapModelPosition(selectedModelIndex);
+          console.log(`Moved Z to: ${mesh.position.z.toFixed(2)}`);
           break;
           
         // Rotation operations
@@ -712,18 +780,92 @@ export const useScene = create<SceneState>((set, get) => {
           
         // Scale operations  
         case 'scaleX':
-          mesh.scale.x = Math.max(0.1, mesh.scale.x + SCALE_STEP * direction);
-          break;
         case 'scaleY':
-          mesh.scale.y = Math.max(0.1, mesh.scale.y + SCALE_STEP * direction);
+        case 'scaleZ': {
+          const minScale = 0.01; // Smaller minimum scale for more flexibility
+          
+          // Calculate current size in scene units
+          mesh.geometry.computeBoundingBox();
+          const boundingBox = mesh.geometry.boundingBox;
+          
+          if (boundingBox) {
+            // Calculate dimensions of the original geometry (before scaling)
+            const size = new THREE.Vector3();
+            boundingBox.getSize(size);
+            const originalWidth = size.x;
+            const originalHeight = size.y; 
+            const originalDepth = size.z;
+            
+            console.log(`Original model dimensions: ${originalWidth.toFixed(2)} × ${originalHeight.toFixed(2)} × ${originalDepth.toFixed(2)}`);
+            
+            // Calculate the proposed new scale
+            let newScaleX = mesh.scale.x;
+            let newScaleY = mesh.scale.y;
+            let newScaleZ = mesh.scale.z;
+            
+            if (operation === 'scaleX') {
+              newScaleX += SCALE_STEP * direction;
+            } else if (operation === 'scaleY') {
+              newScaleY += SCALE_STEP * direction;
+            } else if (operation === 'scaleZ') {
+              newScaleZ += SCALE_STEP * direction;
+            }
+            
+            // Calculate the proposed dimensions
+            const proposedWidth = originalWidth * newScaleX;
+            const proposedHeight = originalHeight * newScaleY;
+            const proposedDepth = originalDepth * newScaleZ;
+            
+            // Check if any dimension would exceed the max size
+            const maxDimension = Math.max(proposedWidth, proposedHeight, proposedDepth);
+            
+            if (direction > 0 && maxDimension > maxSizeInCurrentUnit) {
+              // If scaling up and any dimension would exceed max size, don't scale
+              console.log(`Cannot scale further - max dimension would be ${(maxDimension/MM_PER_INCH).toFixed(2)} inches`);
+              return;
+            } else if (direction < 0) {
+              // If scaling down, ensure we don't go below minimum
+              newScaleX = Math.max(minScale, newScaleX);
+              newScaleY = Math.max(minScale, newScaleY);
+              newScaleZ = Math.max(minScale, newScaleZ);
+            }
+            
+            // Apply the new scales
+            mesh.scale.set(newScaleX, newScaleY, newScaleZ);
+            
+            // Log current dimensions after scaling
+            const currentWidth = originalWidth * mesh.scale.x;
+            const currentHeight = originalHeight * mesh.scale.y;
+            const currentDepth = originalDepth * mesh.scale.z;
+            
+            // Convert to appropriate units for display
+            const widthInUserUnits = unit === 'in' ? currentWidth / MM_PER_INCH : currentWidth;
+            const heightInUserUnits = unit === 'in' ? currentHeight / MM_PER_INCH : currentHeight;
+            const depthInUserUnits = unit === 'in' ? currentDepth / MM_PER_INCH : currentDepth;
+            
+            console.log(`Current dimensions (${unit}): ${widthInUserUnits.toFixed(2)} × ${heightInUserUnits.toFixed(2)} × ${depthInUserUnits.toFixed(2)}`);
+            // Also log in mm for debugging
+            console.log(`Current dimensions (mm): ${currentWidth.toFixed(2)} × ${currentHeight.toFixed(2)} × ${currentDepth.toFixed(2)}`);
+            console.log(`Current dimensions (in): ${(currentWidth/MM_PER_INCH).toFixed(2)} × ${(currentHeight/MM_PER_INCH).toFixed(2)} × ${(currentDepth/MM_PER_INCH).toFixed(2)}`);
+          } else {
+            // Fallback to original behavior if bounding box is not available
+            if (operation === 'scaleX') {
+              mesh.scale.x = Math.max(minScale, mesh.scale.x + SCALE_STEP * direction);
+            } else if (operation === 'scaleY') {
+              mesh.scale.y = Math.max(minScale, mesh.scale.y + SCALE_STEP * direction);
+            } else if (operation === 'scaleZ') {
+              mesh.scale.z = Math.max(minScale, mesh.scale.z + SCALE_STEP * direction);
+            }
+          }
           break;
-        case 'scaleZ':
-          mesh.scale.z = Math.max(0.1, mesh.scale.z + SCALE_STEP * direction);
-          break;
+        }
       }
       
       // Update the matrix
       mesh.updateMatrix();
+      
+      // Render the scene to show changes
+      state.renderer.render(state.scene, state.camera);
       
       // Save history state after transformation
       get().saveHistoryState();
@@ -786,7 +928,7 @@ export const useScene = create<SceneState>((set, get) => {
     // Set model scale directly from input values
     setModelScale: (x: number, y: number, z: number) => {
       const state = get();
-      const { selectedModelIndex, models } = state;
+      const { selectedModelIndex, models, unit } = state;
       
       if (selectedModelIndex === null || !models[selectedModelIndex]) {
         console.warn("No model selected for scale change");
@@ -797,10 +939,76 @@ export const useScene = create<SceneState>((set, get) => {
       const mesh = model.mesh;
       
       // Ensure minimum scale
-      const minScale = 0.1;
-      const validX = Math.max(minScale, x);
-      const validY = Math.max(minScale, y);
-      const validZ = Math.max(minScale, z);
+      const minScale = 0.01; // Smaller minimum scale for more flexibility
+      let validX = Math.max(minScale, x);
+      let validY = Math.max(minScale, y);
+      let validZ = Math.max(minScale, z);
+      
+      // Apply exact 10-inch size limit
+      mesh.geometry.computeBoundingBox();
+      const boundingBox = mesh.geometry.boundingBox;
+      
+      if (boundingBox) {
+        // Calculate dimensions of the original geometry (before scaling)
+        const size = new THREE.Vector3();
+        boundingBox.getSize(size);
+        const originalWidth = size.x;
+        const originalHeight = size.y; 
+        const originalDepth = size.z;
+        
+        // Log original dimensions for debugging
+        console.log(`Original model dimensions (mm): ${originalWidth.toFixed(2)} × ${originalHeight.toFixed(2)} × ${originalDepth.toFixed(2)}`);
+        console.log(`Original model dimensions (in): ${(originalWidth/MM_PER_INCH).toFixed(2)} × ${(originalHeight/MM_PER_INCH).toFixed(2)} × ${(originalDepth/MM_PER_INCH).toFixed(2)}`);
+        
+        // Convert max size to current unit (254mm for 10 inches)
+        const maxSizeInMM = MAX_SIZE_INCHES * MM_PER_INCH;
+        
+        // Calculate maximum allowed scale for each dimension
+        if (originalWidth > 0) {
+          const maxScaleX = maxSizeInMM / originalWidth;
+          if (validX > maxScaleX) {
+            console.log(`X scale capped from ${validX.toFixed(2)} to ${maxScaleX.toFixed(2)} to respect 10-inch limit`);
+            validX = maxScaleX;
+          }
+        }
+        
+        if (originalHeight > 0) {
+          const maxScaleY = maxSizeInMM / originalHeight;
+          if (validY > maxScaleY) {
+            console.log(`Y scale capped from ${validY.toFixed(2)} to ${maxScaleY.toFixed(2)} to respect 10-inch limit`);
+            validY = maxScaleY;
+          }
+        }
+        
+        if (originalDepth > 0) {
+          const maxScaleZ = maxSizeInMM / originalDepth;
+          if (validZ > maxScaleZ) {
+            console.log(`Z scale capped from ${validZ.toFixed(2)} to ${maxScaleZ.toFixed(2)} to respect 10-inch limit`);
+            validZ = maxScaleZ;
+          }
+        }
+        
+        // Calculate final dimensions after scaling
+        const finalWidth = originalWidth * validX;
+        const finalHeight = originalHeight * validY;
+        const finalDepth = originalDepth * validZ;
+        
+        // Log final dimensions in both mm and inches for debugging
+        console.log(`Final dimensions (mm): ${finalWidth.toFixed(2)} × ${finalHeight.toFixed(2)} × ${finalDepth.toFixed(2)}`);
+        console.log(`Final dimensions (in): ${(finalWidth/MM_PER_INCH).toFixed(2)} × ${(finalHeight/MM_PER_INCH).toFixed(2)} × ${(finalDepth/MM_PER_INCH).toFixed(2)}`);
+        
+        // Check if any dimension is close to the maximum limit
+        const tolerance = 0.1; // Add a small tolerance for floating point comparisons
+        const atLimit = (
+          (originalWidth > 0 && Math.abs(finalWidth - maxSizeInMM) < tolerance) || 
+          (originalHeight > 0 && Math.abs(finalHeight - maxSizeInMM) < tolerance) || 
+          (originalDepth > 0 && Math.abs(finalDepth - maxSizeInMM) < tolerance)
+        );
+          
+        if (atLimit) {
+          console.log(`At least one dimension is at the maximum ${MAX_SIZE_INCHES} inch (${maxSizeInMM.toFixed(2)} mm) limit`);
+        }
+      }
       
       // Set the new scale
       mesh.scale.set(validX, validY, validZ);

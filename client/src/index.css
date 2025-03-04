@@ -3,6 +3,96 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --radius: 0.5rem;
+    
+    --background: 210 20% 98%;
+    --foreground: 224 71.4% 4.1%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+    
+    --primary: 186 85% 73%;
+    --primary-foreground: 210 20% 12%;
+    
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
+    
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
+    
+    --accent: 32 100% 74%;
+    --accent-foreground: 224 71.4% 4.1%;
+    
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+    
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 224 71.4% 4.1%;
+    
+    --button-primary: 186 85% 73%;
+    --button-primary-hover: 186 85% 65%;
+
+    --button-secondary: 220 14.3% 95.9%;
+    --button-secondary-hover: 220 14.3% 90%;
+
+    --button-customize: 186 85% 73%;
+    --button-customize-text: 210 20% 12%;
+    --button-customize-hover: 186 85% 65%;
+
+    --button-save: 32 100% 74%;
+    --button-save-hover: 32 100% 65%;
+  }
+  
+  .dark {
+    --radius: 0.5rem;
+
+    --background: 222 47% 11%;
+    --foreground: 210 20% 98%;
+    
+    --card: 224 71.4% 4.1%;
+    --card-foreground: 210 20% 98%;
+    
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 20% 98%;
+    
+    --primary: 186 85% 73%;
+    --primary-foreground: 222 47% 11%;
+    
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 20% 98%;
+    
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    
+    --accent: 32 100% 74%;
+    --accent-foreground: 222 47% 11%;
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+    
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    
+    --button-primary: 186 85% 73%;
+    --button-primary-hover: 186 85% 65%;
+
+    --button-secondary: 217.2 32.6% 17.5%;
+    --button-secondary-hover: 217.2 32.6% 25%;
+
+    --button-customize: 32 100% 74%;
+    --button-customize-text: 222 47% 11%;
+    --button-customize-hover: 32 100% 65%;
+
+    --button-save: 186 85% 73%;
+    --button-save-hover: 186 85% 65%;
+  }
+  
   * {
     @apply border-border;
   }
@@ -22,6 +112,7 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    border: none;
   }
 
   /* Ensure the 3D viewport is visible and sized correctly */
@@ -29,5 +120,6 @@
     display: block;
     width: 100%;
     height: 100%;
+    border: none;
   }
 }

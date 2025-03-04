@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useScene } from "@/hooks/use-scene";
-import { Card } from "@/components/ui/card";
 import { ViewCube } from "./ViewCube";
+import { TransformGizmo } from "./TransformGizmo";
 
 export function Viewport() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,6 +31,31 @@ export function Viewport() {
     return cleanup;
   }, [initializeScene]);
 
+  // Add debug listener for mouse movement
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    
+    // Debug mouse events
+    const handleMouseMove = (e: MouseEvent) => {
+      // Don't log to avoid console spam
+      // console.log("Mouse move in viewport", e.clientX, e.clientY);
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      console.log("Mouse down in viewport", e.clientX, e.clientY);
+    };
+
+    container.addEventListener('mousemove', handleMouseMove);
+    container.addEventListener('mousedown', handleMouseDown);
+    
+    return () => {
+      container.removeEventListener('mousemove', handleMouseMove);
+      container.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, [containerRef.current]);
+
   // Update camera position when camera view changes
   useEffect(() => {
     if (!camera) return;
@@ -42,12 +67,24 @@ export function Viewport() {
         camera.position.set(0, 50, 0);
         camera.lookAt(0, 0, 0);
         break;
+      case 'bottom':
+        camera.position.set(0, -50, 0);
+        camera.lookAt(0, 0, 0);
+        break;  
       case 'front':
         camera.position.set(0, 0, 50);
         camera.lookAt(0, 0, 0);
         break;
-      case 'side':
+      case 'back':
+        camera.position.set(0, 0, -50);
+        camera.lookAt(0, 0, 0);
+        break;
+      case 'right':
         camera.position.set(50, 0, 0);
+        camera.lookAt(0, 0, 0);
+        break;
+      case 'left':
+        camera.position.set(-50, 0, 0);
         camera.lookAt(0, 0, 0);
         break;
       case 'isometric':
@@ -101,49 +138,24 @@ export function Viewport() {
   }, [showAxes, scene, renderer, camera]);
 
   return (
-    <Card 
-      className="h-full w-full rounded-md overflow-hidden border shadow-md relative"
-      style={{ position: "relative" }}
-    >
-      {/* Container div for Three.js canvas with important positioning styles */}
-      <div 
-        ref={containerRef} 
-        className="w-full h-full relative"
-        style={{
-          minHeight: "600px",
-          background: "#333", // Fallback color before scene loads
-          position: "relative",
-          touchAction: "none" // Disable browser handling of touch events
-        }}
-      />
+    <div className="w-full h-full bg-background relative overflow-hidden">
+      <div ref={containerRef} className="w-full h-full" />
       
-      {/* View Cube */}
       <ViewCube />
       
-      {/* Status overlay */}
-      <div 
-        className="absolute bottom-4 left-4 bg-background/80 p-2 rounded-md text-sm z-20 pointer-events-none"
-        style={{ pointerEvents: "none" }}
-      >
-        {models.length === 0 ? (
-          <span>Import an STL model to get started</span>
-        ) : (
-          <span>Models: {models.length} | Selected: {selectedModelIndex !== null ? 
-            models[selectedModelIndex]?.name.slice(0, 20) || 'Unknown' : 'None'}</span>
-        )}
-      </div>
-      
-      {/* Help text overlay when empty */}
       {models.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-background/50 p-6 rounded-lg text-center max-w-md">
-            <h3 className="text-lg font-medium mb-2">Empty Scene</h3>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center bg-background/80 backdrop-blur-sm p-6 rounded-lg max-w-md">
+            <h3 className="text-2xl font-bold mb-2">Your Canvas Awaits</h3>
             <p className="text-muted-foreground mb-4">
               Add a shape from the sidebar or import an STL file to get started
             </p>
           </div>
         </div>
       )}
-    </Card>
+      
+      {/* Make sure TransformGizmo is the last component added */}
+      <TransformGizmo />
+    </div>
   );
 }

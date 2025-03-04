@@ -5,7 +5,7 @@ import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSG } from 'three-csg-ts';
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
-import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
+import { FontLoader } from "three/examples/jsm/loaders/FontLoader";
 import { TextGeometry, TextGeometryParameters } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from 'three/examples/jsm/loaders/FontLoader';
 import { createRoot } from 'react-dom/client';
@@ -1740,6 +1740,12 @@ export const useScene = create<SceneState>((set, get) => {
       const center = box.getCenter(new THREE.Vector3());
       finalMesh.position.sub(center);
       finalMesh.position.y = extrudeDepth / 2; // Place on the grid
+      
+      // Fix the orientation for SVG models created from sketches
+      if (file.name.startsWith('sketch-')) {
+        // Apply 180 degrees rotation around Z-axis to correct sketch orientation
+        finalMesh.rotateZ(Math.PI);
+      }
       
       // Store original transform
       const originalPosition = finalMesh.position.clone();

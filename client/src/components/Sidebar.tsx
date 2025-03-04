@@ -510,7 +510,7 @@ export function Sidebar() {
     const originalPosition = mesh.position.clone();
     const originalRotation = mesh.rotation.clone();
     const originalScale = mesh.scale.clone();
-
+    
     return {
       id: `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       name,
@@ -541,7 +541,7 @@ export function Sidebar() {
     useScene.setState({ models: updatedModels });
     selectModel(updatedModels.length - 1);
     saveHistoryState();
-
+    
     toast({
       title: "Success",
       description: "Cube added to scene",
@@ -582,7 +582,7 @@ export function Sidebar() {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-
+    
     const newModel = createModel(mesh, 'cylinder', 'Cylinder');
     const updatedModels = [...models, newModel];
     useScene.setState({ models: updatedModels });
@@ -609,7 +609,7 @@ export function Sidebar() {
     useScene.setState({ models: updatedModels });
     selectModel(updatedModels.length - 1);
     saveHistoryState();
-
+    
     toast({
       title: "Success",
       description: "Cone added to scene",
@@ -645,7 +645,7 @@ export function Sidebar() {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-
+    
     const newModel = createModel(mesh, 'torusknot', 'Torus Knot');
     const updatedModels = [...models, newModel];
     useScene.setState({ models: updatedModels });
@@ -672,7 +672,7 @@ export function Sidebar() {
     useScene.setState({ models: updatedModels });
     selectModel(updatedModels.length - 1);
     saveHistoryState();
-
+    
     toast({
       title: "Success",
       description: "Octahedron added to scene",
@@ -708,7 +708,7 @@ export function Sidebar() {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-
+    
     const newModel = createModel(mesh, 'dodecahedron', 'Dodecahedron');
     const updatedModels = [...models, newModel];
     useScene.setState({ models: updatedModels });
@@ -735,7 +735,7 @@ export function Sidebar() {
     useScene.setState({ models: updatedModels });
     selectModel(updatedModels.length - 1);
     saveHistoryState();
-
+    
     toast({
       title: "Success",
       description: "Capsule added to scene",
@@ -776,7 +776,7 @@ export function Sidebar() {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-
+    
     const newModel = createModel(mesh, 'model', 'Tube');
     const updatedModels = [...models, newModel];
     useScene.setState({ models: updatedModels });
@@ -824,7 +824,7 @@ export function Sidebar() {
     useScene.setState({ models: updatedModels });
     selectModel(updatedModels.length - 1);
     saveHistoryState();
-
+    
     toast({
       title: "Success",
       description: "Prism added to scene",
@@ -930,7 +930,7 @@ export function Sidebar() {
     
     // Force a render
     if (scene.needsUpdate !== undefined) {
-      scene.needsUpdate = true;
+    scene.needsUpdate = true;
     }
     
     // Save state for undo/redo
@@ -1023,16 +1023,16 @@ export function Sidebar() {
 
   // Initialize canvas when component mounts or tab changes
   useEffect(() => {
-    const canvas = canvasRef.current;
+      const canvas = canvasRef.current;
     if (!canvas || activeTab !== 'sketch') return;
-
+      
     // Set canvas size with high DPI support
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -1043,16 +1043,16 @@ export function Sidebar() {
 
     // Draw existing lines
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    
-    sketchLines.forEach(line => {
-      if (line.points.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(line.points[0].x, line.points[0].y);
-        for (let i = 1; i < line.points.length; i++) {
-          ctx.lineTo(line.points[i].x, line.points[i].y);
-        }
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      
+      sketchLines.forEach(line => {
+        if (line.points.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(line.points[0].x, line.points[0].y);
+          for (let i = 1; i < line.points.length; i++) {
+            ctx.lineTo(line.points[i].x, line.points[i].y);
+          }
         
         // Add a line back to the first point to ensure the shape is closed
         // Only do this if the last point isn't the same as the first point
@@ -1061,10 +1061,10 @@ export function Sidebar() {
              line.points[0].y !== line.points[line.points.length - 1].y)) {
           ctx.lineTo(line.points[0].x, line.points[0].y);
         }
-        
-        ctx.stroke();
-      }
-    });
+          
+          ctx.stroke();
+        }
+      });
   }, [activeTab, sketchLines, gridSize]);
 
   // Function to get canvas coordinates
@@ -1157,15 +1157,15 @@ export function Sidebar() {
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
+      
     // Reset transforms and set styles
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const dpr = window.devicePixelRatio || 1;
-    ctx.scale(dpr, dpr);
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#000';
-
+      const dpr = window.devicePixelRatio || 1;
+      ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#000';
+      
     // Clear and redraw grid
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawGrid(ctx, canvas.width, canvas.height);
@@ -1178,15 +1178,6 @@ export function Sidebar() {
         for (let i = 1; i < line.points.length; i++) {
           ctx.lineTo(line.points[i].x, line.points[i].y);
         }
-        
-        // Add a line back to the first point to ensure the shape is closed
-        // Only do this if the last point isn't the same as the first point
-        if (line.points.length > 2 && 
-            (line.points[0].x !== line.points[line.points.length - 1].x || 
-             line.points[0].y !== line.points[line.points.length - 1].y)) {
-          ctx.lineTo(line.points[0].x, line.points[0].y);
-        }
-        
         ctx.stroke();
       }
     });
@@ -1201,21 +1192,8 @@ export function Sidebar() {
       // Draw line to current mouse position
       ctx.lineTo(x, y);
       
-      // If we have at least 3 points, draw a dashed line back to the start to show it will be a closed shape
-      if (currentLine.length >= 2) {
-        // Solid line for the actual drawn path
-        ctx.stroke();
-        
-        // Dashed line back to start point to indicate closure
-        ctx.beginPath();
-        ctx.setLineDash([5, 5]);
-        ctx.moveTo(x, y);
-        ctx.lineTo(currentLine[0].x, currentLine[0].y);
-        ctx.stroke();
-        ctx.setLineDash([]); // Reset to solid line
-      } else {
-        ctx.stroke();
-      }
+      // Just draw the current line without auto-closing
+      ctx.stroke();
     }
 
     if (startPoint) {
@@ -1260,7 +1238,7 @@ export function Sidebar() {
       setCurrentLine([...currentLine, { x, y }]);
     }
   };
-
+  
   // Function to convert sketch to SVG and extrude
   const convertSketchToModel = async () => {
     if (sketchLines.length === 0) {
@@ -1271,14 +1249,14 @@ export function Sidebar() {
       });
       return;
     }
-
+    
     setIsSketchProcessing(true);
     
     try {
-      // Create an SVG from the sketch
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      const canvas = canvasRef.current;
-      if (!canvas) return;
+    // Create an SVG from the sketch
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const canvas = canvasRef.current;
+    if (!canvas) return;
       
       // Get canvas dimensions
       const width = canvas.width;
@@ -1289,50 +1267,93 @@ export function Sidebar() {
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       
       // Create a single path for all lines
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       let d = '';
       
-      // Find the first valid line to start the path
-      const firstLine = sketchLines.find(line => line.points.length > 1);
-      if (!firstLine) return;
-      
-      // Start with the first point
-      const firstPoint = firstLine.points[0];
-      d += `M ${firstPoint.x} ${height - firstPoint.y}`;
-      
-      // Add all points from the first line
-      for (let i = 1; i < firstLine.points.length; i++) {
-        const point = firstLine.points[i];
-        d += ` L ${point.x} ${height - point.y}`;
-      }
-      
-      // Add points from remaining lines
-      for (let lineIndex = 1; lineIndex < sketchLines.length; lineIndex++) {
-        const line = sketchLines[lineIndex];
-        if (line.points.length > 1) {
-          for (let i = 0; i < line.points.length; i++) {
+      // Process the sketch lines into a unified path
+      if (sketchLines.length === 1) {
+        // If there's only one line/shape, handle it according to mode
+        const line = sketchLines[0];
+        if (line.points.length > 2) {
+          // Start the path
+          const firstPoint = line.points[0];
+          d += `M ${firstPoint.x} ${firstPoint.y}`;
+          
+          // Add all other points
+          for (let i = 1; i < line.points.length; i++) {
             const point = line.points[i];
-            d += ` L ${point.x} ${height - point.y}`;
+            d += ` L ${point.x} ${point.y}`;
           }
+          
+          // Only auto-close for non-freeform modes
+          if (sketchMode !== 'freeform') {
+            // Make sure to close the path if the last point isn't already the same as the first
+            const lastPoint = line.points[line.points.length - 1];
+            if (firstPoint.x !== lastPoint.x || firstPoint.y !== lastPoint.y) {
+              d += ` L ${firstPoint.x} ${firstPoint.y}`;
+            }
+          }
+        }
+      } else if (sketchLines.length > 1) {
+        // For multiple lines, create a compound path
+        // Find all valid lines (with enough points)
+        const validLines = sketchLines.filter(line => line.points.length > 2);
+        
+        if (validLines.length > 0) {
+          // Process each line as a separate subpath
+          validLines.forEach((line, index) => {
+            // For each new subpath, start with M
+            const firstPoint = line.points[0];
+            d += `${index > 0 ? ' M' : 'M'} ${firstPoint.x} ${firstPoint.y}`;
+            
+            // Add all other points
+            for (let i = 1; i < line.points.length; i++) {
+              const point = line.points[i];
+              d += ` L ${point.x} ${point.y}`;
+            }
+            
+            // Only auto-close for non-freeform modes
+            if (sketchMode !== 'freeform') {
+              // Close this subpath if needed
+              const lastPoint = line.points[line.points.length - 1];
+              if (firstPoint.x !== lastPoint.x || firstPoint.y !== lastPoint.y) {
+                d += ` L ${firstPoint.x} ${firstPoint.y}`;
+              }
+              
+              // Close the subpath explicitly 
+              d += ' Z';
+            }
+          });
         }
       }
       
-      // Close the path
-      d += ' Z';
+      // Make sure the overall path is closed
+      if (!d.endsWith(' Z')) {
+        // Don't auto-close paths for freeform mode
+        if (sketchMode !== 'freeform') {
+          d += ' Z';
+        }
+      }
       
       path.setAttribute('d', d);
-      path.setAttribute('fill', 'black');
-      path.setAttribute('stroke', 'none');
+      path.setAttribute('fill', sketchMode === 'freeform' ? 'none' : 'black');
+      path.setAttribute('stroke', 'black');
+      path.setAttribute('stroke-width', '1');
       svg.appendChild(path);
-      
-      // Convert SVG to blob
+    
+    // Convert SVG to blob
       const serializer = new XMLSerializer();
       const svgString = serializer.serializeToString(svg);
-      const blob = new Blob([svgString], { type: 'image/svg+xml' });
+      
+      // Add extra SVG attributes to ensure proper rendering
+      const processedSvgString = svgString.replace('<svg', 
+        '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+      
+      const blob = new Blob([processedSvgString], { type: 'image/svg+xml' });
       const file = new File([blob], `sketch-${Date.now()}.svg`, { type: 'image/svg+xml' });
       
       // Load the SVG and extrude it with the current settings
-      await loadSVG(file, 20); // Default height of 20mm
+      await loadSVG(file, extrusionDepth); // Use the user's specified extrusion depth
       
       // Get the last added model which should be our newly created one
       const currentModels = useScene.getState().models;
@@ -1399,30 +1420,8 @@ export function Sidebar() {
 
   const endDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (sketchMode === 'freeform' && isDrawing) {
-      // Add the first point to the end to close the shape if there are enough points and
-      // the end point is not already very close to the start point
-      if (currentLine.length > 2) {
-        const firstPoint = currentLine[0];
-        const lastPoint = currentLine[currentLine.length - 1];
-        
-        // Check if the last point is already close to the first point (within 10 pixels)
-        const distance = Math.sqrt(
-          Math.pow(firstPoint.x - lastPoint.x, 2) + 
-          Math.pow(firstPoint.y - lastPoint.y, 2)
-        );
-        
-        // If the distance is significant, add the first point again to close the shape
-        // Otherwise, we can assume the user already closed the shape manually
-        if (distance > 10) {
-          setSketchLines([...sketchLines, { points: [...currentLine, firstPoint] }]);
-        } else {
-          setSketchLines([...sketchLines, { points: currentLine }]);
-        }
-      } else {
-        // If there are not enough points, just add what we have
-        setSketchLines([...sketchLines, { points: currentLine }]);
-      }
-      
+      // Simply add the current line as is, without auto-closing
+      setSketchLines([...sketchLines, { points: currentLine }]);
       setCurrentLine([]);
       setIsDrawing(false);
     } else if (startPoint && previewLine) {
@@ -1530,7 +1529,7 @@ export function Sidebar() {
                 </div>
               </div>
             </TabsContent>
-
+            
             {/* Shapes Tab */}
             <TabsContent value="shapes" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-6">
@@ -1540,10 +1539,10 @@ export function Sidebar() {
                   <div className="grid grid-cols-2 gap-2">
                     <Button variant="outline" size="sm" onClick={handleAddCube} className="justify-center w-full">
                       Cube
-                    </Button>
+                </Button>
                     <Button variant="outline" size="sm" onClick={handleAddSphere} className="justify-center w-full">
                       Sphere
-                    </Button>
+                </Button>
                     <Button variant="outline" size="sm" onClick={handleAddCylinder} className="justify-center w-full">
                       Cylinder
                     </Button>
@@ -1578,7 +1577,7 @@ export function Sidebar() {
                   <div className="grid grid-cols-2 gap-2">
                     <Button variant="outline" size="sm" onClick={handleAddTorusKnot} className="justify-center w-full">
                       Torus Knot
-                    </Button>
+                </Button>
                     <Button variant="outline" size="sm" onClick={handleAddOctahedron} className="justify-center w-full">
                       Octahedron
                     </Button>
@@ -1618,7 +1617,7 @@ export function Sidebar() {
                     <Button className="w-full" onClick={() => window.open('#', '_blank')}>
                       <Sparkles className="mr-2 h-4 w-4" />
                       Open MagicFish AI
-                    </Button>
+                </Button>
                   </CardContent>
                 </Card>
 
@@ -1637,12 +1636,12 @@ export function Sidebar() {
                     <Button className="w-full" onClick={() => window.open('#', '_blank')}>
                       <Zap className="mr-2 h-4 w-4" />
                       Open BuildFish AI
-                    </Button>
+                </Button>
                   </CardContent>
                 </Card>
               </div>
             </TabsContent>
-
+            
             {/* Sketch Tab */}
             <TabsContent value="sketch" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-4">
@@ -1804,22 +1803,22 @@ export function Sidebar() {
                   {/* Text Style Controls */}
                   <div className="grid gap-6">
                     {/* Bevel thickness control */}
-                    <div className="flex items-center gap-4">
-                      <Label className="w-24 text-right text-sm">Thickness</Label>
-                      <div className="flex-1 flex items-center gap-3">
-                        <Slider
-                          value={[bevelThickness]}
+                        <div className="flex items-center gap-4">
+                          <Label className="w-24 text-right text-sm">Thickness</Label>
+                          <div className="flex-1 flex items-center gap-3">
+                            <Slider
+                              value={[bevelThickness]}
                           min={0}
                           max={5}
                           step={0.1}
-                          onValueChange={(value) => setBevelThickness(value[0])}
-                          className="flex-1"
-                        />
+                              onValueChange={(value) => setBevelThickness(value[0])}
+                              className="flex-1"
+                            />
                         <span className="w-12 text-sm text-center">
                           {bevelThickness}mm
-                        </span>
-                      </div>
-                    </div>
+                            </span>
+                          </div>
+                        </div>
                   </div>
                 </div>
               </div>

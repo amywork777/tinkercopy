@@ -18,7 +18,31 @@ import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUti
 const GRID_SIZE = 500; // Much larger grid for better visibility
 const GRID_DIVISIONS = 100; // More divisions for finer grid
 const BACKGROUND_COLOR = 0x333333; // Dark gray
-const getRandomColor = () => new THREE.Color(Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5);
+
+// Define an array of vibrant, fun colors
+const vibrantColors = [
+  '#FF5733', // Bright orange/coral
+  '#33FF57', // Bright green
+  '#3357FF', // Bright blue
+  '#FF33A8', // Hot pink
+  '#33FFF6', // Cyan
+  '#F6FF33', // Bright yellow
+  '#FF33F6', // Magenta
+  '#FF5757', // Bright red
+  '#57FF57', // Lime green
+  '#5757FF', // Indigo
+  '#FFC733', // Gold
+  '#33CFFF', // Sky blue
+  '#FF9E33', // Orange
+  '#B533FF', // Purple
+  '#33FF9E'  // Mint green
+];
+
+const getRandomColor = () => {
+  // Select a random color from the array
+  const randomIndex = Math.floor(Math.random() * vibrantColors.length);
+  return new THREE.Color(vibrantColors[randomIndex]);
+};
 
 // Maximum model size in inches - set to exactly 10 inches
 const MAX_SIZE_INCHES = 10;
@@ -361,8 +385,8 @@ export const useScene = create<SceneState>((set, get) => {
       
       // Add click event listener for model selection 
       canvas.addEventListener('pointerdown', (event) => {
-        const currentState = get();
-        
+          const currentState = get();
+          
         // We're skipping complicated checks for debugging purposes
         // This avoids potential conflicts between selection and transformation
         const isTransformActive = false; // Allow selection to work for debugging
@@ -463,7 +487,7 @@ export const useScene = create<SceneState>((set, get) => {
     
     // Add function to update grid position based on models
     updateGridPosition: () => {
-      const state = get();
+        const state = get();
       const gridHelper = state.scene.children.find(child => child.name === 'gridHelper');
       if (!gridHelper) return;
 
@@ -481,7 +505,7 @@ export const useScene = create<SceneState>((set, get) => {
         if (!hasModels) {
           lowestY = bbox.min.y;
           hasModels = true;
-        } else {
+              } else {
           lowestY = Math.min(lowestY, bbox.min.y);
         }
       });
@@ -529,15 +553,15 @@ export const useScene = create<SceneState>((set, get) => {
       });
       
       // Create mesh with random color and apply scale
-      const material = new THREE.MeshStandardMaterial({ 
-        color: getRandomColor(),
+        const material = new THREE.MeshStandardMaterial({ 
+          color: getRandomColor(),
         metalness: 0.5,
         roughness: 0.5,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
       // Apply the chosen scale
       mesh.scale.copy(scale);
 
@@ -556,30 +580,30 @@ export const useScene = create<SceneState>((set, get) => {
 
       // Add to scene
       scene.add(mesh);
-
-      // Store original transform
-      const originalPosition = mesh.position.clone();
-      const originalRotation = mesh.rotation.clone();
-      const originalScale = mesh.scale.clone();
-
-      // Create model object
+        
+        // Store original transform
+        const originalPosition = mesh.position.clone();
+        const originalRotation = mesh.rotation.clone();
+        const originalScale = mesh.scale.clone();
+        
+        // Create model object
       const model: Model = {
-        id: `model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        name: file.name,
+          id: `model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: file.name,
         type: 'model',
-        mesh,
-        originalPosition,
-        originalRotation,
-        originalScale
-      };
-
+          mesh,
+          originalPosition,
+          originalRotation,
+          originalScale
+        };
+        
       // Update state
       const updatedModels = [...get().models, model];
       set({ 
         models: updatedModels,
         selectedModelIndex: updatedModels.length - 1 
       });
-      get().saveHistoryState();
+        get().saveHistoryState();
       get().updateGridPosition();
     },
 
@@ -938,7 +962,7 @@ export const useScene = create<SceneState>((set, get) => {
         const size = new THREE.Vector3();
         boundingBox.getSize(size);
         const originalWidth = size.x;
-        const originalHeight = size.y;
+        const originalHeight = size.y; 
         const originalDepth = size.z;
         
         // Calculate final dimensions after proposed scaling
@@ -1659,7 +1683,7 @@ export const useScene = create<SceneState>((set, get) => {
       const url = URL.createObjectURL(file);
       
       // Load the SVG
-      const loader = new SVGLoader();
+        const loader = new SVGLoader();
       const svgData = await loader.loadAsync(url);
       
       // Clean up the URL
@@ -1669,27 +1693,27 @@ export const useScene = create<SceneState>((set, get) => {
       const group = new THREE.Group();
       
       // Create a material with a random color
-      const material = new THREE.MeshStandardMaterial({
-        color: getRandomColor(),
-        side: THREE.DoubleSide,
-      });
-      
+        const material = new THREE.MeshStandardMaterial({ 
+          color: getRandomColor(),
+          side: THREE.DoubleSide,
+        });
+        
       // Extrusion settings with bevel for better 3D appearance
-      const extrudeSettings = {
-        depth: extrudeDepth,
+        const extrudeSettings = {
+          depth: extrudeDepth,
         bevelEnabled: true,
         bevelThickness: 1,
         bevelSize: 1,
         bevelOffset: 0,
         bevelSegments: 3
-      };
-      
-      // Process all paths in the SVG
-      svgData.paths.forEach((path) => {
-        // Convert all subpaths to shapes
-        const shapes = path.toShapes(true);
+        };
         
-        shapes.forEach((shape) => {
+        // Process all paths in the SVG
+        svgData.paths.forEach((path) => {
+        // Convert all subpaths to shapes
+          const shapes = path.toShapes(true);
+          
+          shapes.forEach((shape) => {
           // Ensure the shape is properly oriented for solid extrusion
           shape.autoClose = true;
           
@@ -1703,31 +1727,31 @@ export const useScene = create<SceneState>((set, get) => {
           }
           
           // Extrude the shape to create a solid 3D object
-          const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
           
           // Create mesh with the geometry
-          const mesh = new THREE.Mesh(geometry, material);
+            const mesh = new THREE.Mesh(geometry, material);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           
-          group.add(mesh);
+            group.add(mesh);
+          });
         });
-      });
-      
-      // If no valid paths were found, throw an error
-      if (group.children.length === 0) {
-        throw new Error("No valid paths found in SVG");
-      }
-      
-      // Combine all meshes into a single mesh for better performance
-      const buffers: THREE.BufferGeometry[] = [];
-      group.children.forEach((child) => {
-        if (child instanceof THREE.Mesh) {
-          buffers.push(child.geometry.clone());
+        
+        // If no valid paths were found, throw an error
+        if (group.children.length === 0) {
+          throw new Error("No valid paths found in SVG");
         }
-      });
-      
-      // Use BufferGeometryUtils to merge geometries
+        
+      // Combine all meshes into a single mesh for better performance
+        const buffers: THREE.BufferGeometry[] = [];
+        group.children.forEach((child) => {
+          if (child instanceof THREE.Mesh) {
+            buffers.push(child.geometry.clone());
+          }
+        });
+        
+        // Use BufferGeometryUtils to merge geometries
       const mergedGeometry = BufferGeometryUtils.mergeGeometries(buffers);
       
       // Create the final mesh
@@ -1746,31 +1770,31 @@ export const useScene = create<SceneState>((set, get) => {
         // Apply 180 degrees rotation around Z-axis to correct sketch orientation
         finalMesh.rotateZ(Math.PI);
       }
-      
-      // Store original transform
+        
+        // Store original transform
       const originalPosition = finalMesh.position.clone();
       const originalRotation = finalMesh.rotation.clone();
       const originalScale = finalMesh.scale.clone();
-      
-      // Add to scene
+        
+        // Add to scene
       state.scene.add(finalMesh);
-      
-      // Create model object
+        
+        // Create model object
       const model: Model = {
         id: `svg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        name: file.name,
+          name: file.name,
         type: 'svg',
         mesh: finalMesh,
-        originalPosition,
-        originalRotation,
-        originalScale
-      };
-      
-      // Add to models array
+          originalPosition,
+          originalRotation,
+          originalScale
+        };
+        
+        // Add to models array
       const updatedModels = [...state.models, model];
       set({ models: updatedModels });
-      
-      // Select the new model
+        
+        // Select the new model
       const newIndex = updatedModels.length - 1;
       state.selectModel(newIndex);
       
@@ -1783,7 +1807,7 @@ export const useScene = create<SceneState>((set, get) => {
       const state = get();
       const loader = new FontLoader();
       const fontPath = options?.fontPath || defaultFontPath;
-      
+
       if (!state.isSceneReady) {
         console.error("Scene not ready, can't create text");
         return;
@@ -2353,11 +2377,11 @@ function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 
       
     case 'wireframe':
       // Always recreate the wireframe material to ensure it stays wireframe
-      const material = new THREE.MeshBasicMaterial({
-        color: currentColor,
-        wireframe: true
-      });
-      mesh.material = material;
+        const material = new THREE.MeshBasicMaterial({
+          color: currentColor,
+          wireframe: true
+        });
+        mesh.material = material;
       break;
       
     case 'realistic':

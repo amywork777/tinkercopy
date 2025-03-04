@@ -1053,6 +1053,15 @@ export function Sidebar() {
         for (let i = 1; i < line.points.length; i++) {
           ctx.lineTo(line.points[i].x, line.points[i].y);
         }
+        
+        // Add a line back to the first point to ensure the shape is closed
+        // Only do this if the last point isn't the same as the first point
+        if (line.points.length > 2 && 
+            (line.points[0].x !== line.points[line.points.length - 1].x || 
+             line.points[0].y !== line.points[line.points.length - 1].y)) {
+          ctx.lineTo(line.points[0].x, line.points[0].y);
+        }
+        
         ctx.stroke();
       }
     });
@@ -1169,6 +1178,15 @@ export function Sidebar() {
         for (let i = 1; i < line.points.length; i++) {
           ctx.lineTo(line.points[i].x, line.points[i].y);
         }
+        
+        // Add a line back to the first point to ensure the shape is closed
+        // Only do this if the last point isn't the same as the first point
+        if (line.points.length > 2 && 
+            (line.points[0].x !== line.points[line.points.length - 1].x || 
+             line.points[0].y !== line.points[line.points.length - 1].y)) {
+          ctx.lineTo(line.points[0].x, line.points[0].y);
+        }
+        
         ctx.stroke();
       }
     });
@@ -1182,7 +1200,22 @@ export function Sidebar() {
       }
       // Draw line to current mouse position
       ctx.lineTo(x, y);
-      ctx.stroke();
+      
+      // If we have at least 3 points, draw a dashed line back to the start to show it will be a closed shape
+      if (currentLine.length >= 2) {
+        // Solid line for the actual drawn path
+        ctx.stroke();
+        
+        // Dashed line back to start point to indicate closure
+        ctx.beginPath();
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(x, y);
+        ctx.lineTo(currentLine[0].x, currentLine[0].y);
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset to solid line
+      } else {
+        ctx.stroke();
+      }
     }
 
     if (startPoint) {
@@ -1366,7 +1399,30 @@ export function Sidebar() {
 
   const endDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (sketchMode === 'freeform' && isDrawing) {
-      setSketchLines([...sketchLines, { points: currentLine }]);
+      // Add the first point to the end to close the shape if there are enough points and
+      // the end point is not already very close to the start point
+      if (currentLine.length > 2) {
+        const firstPoint = currentLine[0];
+        const lastPoint = currentLine[currentLine.length - 1];
+        
+        // Check if the last point is already close to the first point (within 10 pixels)
+        const distance = Math.sqrt(
+          Math.pow(firstPoint.x - lastPoint.x, 2) + 
+          Math.pow(firstPoint.y - lastPoint.y, 2)
+        );
+        
+        // If the distance is significant, add the first point again to close the shape
+        // Otherwise, we can assume the user already closed the shape manually
+        if (distance > 10) {
+          setSketchLines([...sketchLines, { points: [...currentLine, firstPoint] }]);
+        } else {
+          setSketchLines([...sketchLines, { points: currentLine }]);
+        }
+      } else {
+        // If there are not enough points, just add what we have
+        setSketchLines([...sketchLines, { points: currentLine }]);
+      }
+      
       setCurrentLine([]);
       setIsDrawing(false);
     } else if (startPoint && previewLine) {

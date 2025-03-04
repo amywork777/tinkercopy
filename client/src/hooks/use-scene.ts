@@ -133,10 +133,10 @@ type SceneState = {
   convertValue: (value: number, from: 'mm' | 'in', to: 'mm' | 'in') => number;
   
   // View options
-  cameraView: 'top' | 'front' | 'side' | 'isometric';
+  cameraView: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'isometric';
   showGrid: boolean;
   showAxes: boolean;
-  setCameraView: (view: 'top' | 'front' | 'side' | 'isometric') => void;
+  setCameraView: (view: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'isometric') => void;
   setShowGrid: (show: boolean) => void;
   setShowAxes: (show: boolean) => void;
   
@@ -192,6 +192,9 @@ type SceneState = {
 
   // Add function to update grid position based on models
   updateGridPosition: () => void;
+
+  // Sync UI state with current model transforms
+  syncTransformUIState: () => void;
 };
 
 export const useScene = create<SceneState>((set, get) => {
@@ -315,12 +318,22 @@ export const useScene = create<SceneState>((set, get) => {
       camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
       
-      // Initialize orbit controls
+      // Initialize orbit controls with optimizations for transform controls
       const orbitControls = new OrbitControls(camera, renderer.domElement);
-      orbitControls.minDistance = 5; // Allow closer zoom (was 5)
-      orbitControls.maxDistance = 200; // Allow further zoom (was 100)
+      orbitControls.minDistance = 5; // Allow closer zoom
+      orbitControls.maxDistance = 200; // Allow further zoom
       orbitControls.enableDamping = true;
       orbitControls.dampingFactor = 0.05;
+      orbitControls.rotateSpeed = 0.7; // Slow down rotation for more precise control
+      orbitControls.zoomSpeed = 0.8; // Slightly slower zoom for better control
+      orbitControls.addEventListener('change', () => {
+        // Force renderer update on orbit change
+        renderer.render(scene, camera);
+      });
+      
+      // Make sure the canvas receives all pointer events
+      canvas.style.pointerEvents = "auto";
+      canvas.style.zIndex = "1";
       
       set({ orbitControls });
       
@@ -348,10 +361,14 @@ export const useScene = create<SceneState>((set, get) => {
       
       // Add click event listener for model selection 
       canvas.addEventListener('pointerdown', (event) => {
-        // Only handle selection when not adjusting camera
-        if (orbitControls.enabled) {
-          const currentState = get();
-          
+        const currentState = get();
+        
+        // We're skipping complicated checks for debugging purposes
+        // This avoids potential conflicts between selection and transformation
+        const isTransformActive = false; // Allow selection to work for debugging
+        
+        // Only handle selection when orbit controls are enabled
+        if (orbitControls.enabled && !isTransformActive) {
           // Prevent default to avoid any browser handling
           event.preventDefault();
           
@@ -587,36 +604,41 @@ export const useScene = create<SceneState>((set, get) => {
     
     // Select a model
     selectModel: (index: number | null) => {
-      const { models, selectedModelIndex, clearSnapIndicators } = get();
+      const { models, selectedModelIndex, clearSnapIndicators, renderingMode } = get();
       
       // If there was a previously selected model, reset its appearance
       if (selectedModelIndex !== null && models[selectedModelIndex]) {
         const model = models[selectedModelIndex];
-        model.mesh.material = new THREE.MeshStandardMaterial({
-          color: model.mesh.material instanceof THREE.MeshStandardMaterial 
-            ? model.mesh.material.color 
-            : new THREE.Color(0x888888),
-          roughness: 0.7,
-          metalness: 0.2
-        });
+        // First preserve the current color
+        const currentColor = model.mesh.material instanceof THREE.Material 
+          ? (model.mesh.material as THREE.MeshStandardMaterial).color 
+          : new THREE.Color(0x888888);
+        
+        // Apply material based on the current rendering mode
+        updateModelMaterial(model.mesh, renderingMode);
       }
       
-      // If selecting a new model, highlight it
+      // If selecting a new model, highlight it while preserving the rendering mode
       if (index !== null && models[index]) {
         const model = models[index];
-        model.mesh.material = new THREE.MeshStandardMaterial({
-          color: model.mesh.material instanceof THREE.MeshStandardMaterial 
-            ? model.mesh.material.color 
-            : new THREE.Color(0x888888),
-          roughness: 0.3,
-          metalness: 0.7,
-          emissive: new THREE.Color(0x222222)
-        });
+        const currentColor = model.mesh.material instanceof THREE.Material 
+          ? (model.mesh.material as THREE.MeshStandardMaterial).color 
+          : new THREE.Color(0x888888);
+        
+        // First apply the current rendering mode
+        updateModelMaterial(model.mesh, renderingMode);
+        
+        // Then add highlighting based on material type
+        if (model.mesh.material instanceof THREE.MeshStandardMaterial || 
+            model.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+          model.mesh.material.emissive = new THREE.Color(0x222222);
+        }
       }
       
       // Reset highlighting on all models
       models.forEach(model => {
-        if (model.mesh.material instanceof THREE.MeshStandardMaterial) {
+        if (model.mesh.material instanceof THREE.MeshStandardMaterial ||
+            model.mesh.material instanceof THREE.MeshPhysicalMaterial) {
           model.mesh.material.emissive.set(0x000000); // Reset emissive to black (no glow)
         }
       });
@@ -625,8 +647,9 @@ export const useScene = create<SceneState>((set, get) => {
       if (index !== null && models[index]) {
         const selectedModel = models[index];
         
-        // Highlight selected model with emissive glow
-        if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial) {
+        // Highlight selected model with emissive glow based on material type
+        if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial ||
+            selectedModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
           selectedModel.mesh.material.emissive.set(0x222222); // Slight glow
         }
       }
@@ -648,11 +671,13 @@ export const useScene = create<SceneState>((set, get) => {
       state.models.forEach(model => {
         // Only reset secondary highlight, not the primary selected model
         if (state.models.indexOf(model) !== state.selectedModelIndex) {
-          const material = model.mesh.material as THREE.MeshStandardMaterial;
-          
-          // Check if this is not the primary selected model
+          // Check if this is not the primary selected model and it was secondarily selected
           if (model.mesh.userData.secondarySelected) {
-            material.emissive.set(0x000000);
+            // Reset emissive based on material type
+            if (model.mesh.material instanceof THREE.MeshStandardMaterial || 
+                model.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+              model.mesh.material.emissive.set(0x000000);
+            }
             model.mesh.userData.secondarySelected = false;
           }
         }
@@ -665,9 +690,11 @@ export const useScene = create<SceneState>((set, get) => {
       if (index !== null && state.models[index]) {
         const secondaryModel = state.models[index];
         
-        // Highlight secondary model with a different emissive color
-        const material = secondaryModel.mesh.material as THREE.MeshStandardMaterial;
-        material.emissive.set(0x004444); // Teal-ish color
+        // Highlight secondary model with a different emissive color based on material type
+        if (secondaryModel.mesh.material instanceof THREE.MeshStandardMaterial || 
+            secondaryModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+          secondaryModel.mesh.material.emissive.set(0x004444); // Teal-ish color
+        }
         secondaryModel.mesh.userData.secondarySelected = true;
         
         console.log("Selected secondary model:", secondaryModel.name);
@@ -1524,9 +1551,44 @@ export const useScene = create<SceneState>((set, get) => {
     },
 
     // View options
-    setCameraView: (view: 'top' | 'front' | 'side' | 'isometric') => {
-      const state = get();
+    setCameraView: (view: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'isometric') => {
+      const { renderingMode } = get();
       set({ cameraView: view });
+      
+      // Make sure we re-apply the current rendering mode after camera view change
+      // This prevents the camera view change from affecting the rendering mode
+      setTimeout(() => {
+        const { models, scene, camera, renderer } = get();
+        
+        // Re-apply rendering mode to ensure consistency
+        models.forEach(model => {
+          updateModelMaterial(model.mesh, renderingMode);
+        });
+        
+        // Re-apply selection highlights if needed
+        const { selectedModelIndex, secondaryModelIndex } = get();
+        if (selectedModelIndex !== null && models[selectedModelIndex]) {
+          const selectedModel = models[selectedModelIndex];
+          if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial || 
+              selectedModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+            selectedModel.mesh.material.emissive.set(0x222222);
+          }
+        }
+        
+        if (secondaryModelIndex !== null && models[secondaryModelIndex]) {
+          const secondaryModel = models[secondaryModelIndex];
+          if (secondaryModel.mesh.material instanceof THREE.MeshStandardMaterial || 
+              secondaryModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+            secondaryModel.mesh.material.emissive.set(0x004444);
+          }
+        }
+        
+        // Force a render to apply changes
+        if (renderer && camera) {
+          renderer.render(scene, camera);
+        }
+      }, 50); // Small delay to ensure camera position is updated first
+      
       console.log(`Camera view set to: ${view}`);
     },
     setShowGrid: (show: boolean) => {
@@ -1545,15 +1607,33 @@ export const useScene = create<SceneState>((set, get) => {
       set({ renderingMode: mode });
       
       // Update all models with the new rendering mode
-      const { models, scene } = get();
+      const { models, scene, camera, renderer, selectedModelIndex, secondaryModelIndex } = get();
       
       models.forEach(model => {
         updateModelMaterial(model.mesh, mode);
       });
       
+      // Re-apply selection highlights if needed
+      if (selectedModelIndex !== null && models[selectedModelIndex]) {
+        const selectedModel = models[selectedModelIndex];
+        if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial || 
+            selectedModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+          selectedModel.mesh.material.emissive.set(0x222222);
+        }
+      }
+      
+      // Re-apply secondary selection highlights if needed
+      if (secondaryModelIndex !== null && models[secondaryModelIndex]) {
+        const secondaryModel = models[secondaryModelIndex];
+        if (secondaryModel.mesh.material instanceof THREE.MeshStandardMaterial || 
+            secondaryModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+          secondaryModel.mesh.material.emissive.set(0x004444);
+        }
+      }
+      
       // Force re-render
-      const { renderer, camera } = get();
       if (renderer && camera) {
+        console.log(`Rendering mode changed to: ${mode}, forcing re-render`);
         renderer.render(scene, camera);
       }
     },
@@ -1823,6 +1903,29 @@ export const useScene = create<SceneState>((set, get) => {
         console.error("Error creating 3D text:", error);
         throw new Error("Failed to create 3D text");
       }
+    },
+
+    // Sync UI state with current model transforms
+    syncTransformUIState: () => {
+      const state = get();
+      const { selectedModelIndex, models } = state;
+      
+      if (selectedModelIndex === null || !models[selectedModelIndex]) {
+        return;
+      }
+      
+      const model = models[selectedModelIndex];
+      
+      // This function doesn't need to do anything on its own
+      // It will cause a component re-render which will update position/rotation/scale values
+      // through the useEffect hooks in the TransformControls component
+      
+      // Force a render to update the scene
+      if (state.renderer && state.camera) {
+        state.renderer.render(state.scene, state.camera);
+      }
+      
+      console.log("Synced transform UI state after gizmo transform");
     }
   };
 });

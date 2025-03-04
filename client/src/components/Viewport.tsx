@@ -2,8 +2,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useScene } from "@/hooks/use-scene";
 import { ViewCube } from "./ViewCube";
 import { TransformGizmo } from "./TransformGizmo";
-import { useDevice } from "@/lib/hooks/use-device";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export function Viewport() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -20,11 +18,6 @@ export function Viewport() {
     setCameraView
   } = useScene();
   
-  const { isMobile } = useDevice();
-  const [touchStartTime, setTouchStartTime] = useState(0);
-  const [lastTap, setLastTap] = useState(0);
-  const [orbitControls, setOrbitControls] = useState<OrbitControls | null>(null);
-  
   // Initialize scene when component mounts
   useEffect(() => {
     if (!containerRef.current) return;
@@ -34,67 +27,9 @@ export function Viewport() {
     // Initialize the scene with our container element
     const cleanup = initializeScene(containerRef.current);
     
-    // Get the orbit controls instance from the scene
-    if (camera && renderer) {
-      const controls = new OrbitControls(camera, renderer.domElement);
-      setOrbitControls(controls);
-    }
-    
     // Clean up when component unmounts
-    return () => {
-      cleanup();
-      if (orbitControls) {
-        orbitControls.dispose();
-      }
-    };
-  }, [initializeScene, camera, renderer]);
-
-  // Add touch handlers for mobile devices
-  useEffect(() => {
-    if (!containerRef.current || !isMobile || !orbitControls) return;
-
-    const container = containerRef.current;
-    
-    // Mobile touch handlers
-    const handleTouchStart = (e: TouchEvent) => {
-      // Track touch start time for long press detection
-      setTouchStartTime(Date.now());
-      
-      // Double tap detection for selection
-      const currentTime = Date.now();
-      const tapLength = currentTime - lastTap;
-      if (tapLength < 300 && tapLength > 0) {
-        // Double tap detected - implement model selection logic
-        e.preventDefault();
-        const touch = e.touches[0];
-        // You could implement raycasting here to select a model on double tap
-        console.log("Double tap detected at", touch.clientX, touch.clientY);
-      }
-      setLastTap(currentTime);
-    };
-
-    const handleTouchEnd = () => {
-      setTouchStartTime(0);
-    };
-
-    // Adjust OrbitControls for mobile
-    if (orbitControls) {
-      // Make controls more touch-friendly
-      orbitControls.rotateSpeed = 0.5;
-      orbitControls.zoomSpeed = 1.0;
-      orbitControls.panSpeed = 0.8;
-      orbitControls.enableDamping = true;
-      orbitControls.dampingFactor = 0.2;
-    }
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
-    
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [containerRef, isMobile, orbitControls, lastTap]);
+    return cleanup;
+  }, [initializeScene]);
 
   // Add debug listener for mouse movement
   useEffect(() => {
@@ -203,41 +138,24 @@ export function Viewport() {
   }, [showAxes, scene, renderer, camera]);
 
   return (
-    <div 
-      ref={containerRef} 
-      className="w-full h-full relative" 
-      onContextMenu={(e) => e.preventDefault()} // Prevent right-click menu
-    >
-      {/* Viewport guidance overlay for mobile - only show on first visit/tutorial */}
-      {isMobile && (
-        <div className="absolute top-0 left-0 w-full pointer-events-none p-4 text-sm text-center text-white bg-black/30 rounded-b-md opacity-80">
-          <p>Pinch to zoom • Drag to rotate • Two fingers to pan</p>
+    <div className="w-full h-full bg-background relative overflow-hidden">
+      <div ref={containerRef} className="w-full h-full" />
+      
+      <ViewCube />
+      
+      {models.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center bg-background/80 backdrop-blur-sm p-6 rounded-lg max-w-md">
+            <h3 className="text-2xl font-bold mb-2">Your Canvas Awaits</h3>
+            <p className="text-muted-foreground mb-4">
+              Add a shape from the sidebar or import an STL file to get started
+            </p>
+          </div>
         </div>
       )}
       
-      {/* ViewCube - Position differently on mobile */}
-      <div className={`absolute ${isMobile ? 'bottom-4 right-4' : 'top-4 right-4'} z-10`}>
-        <ViewCube />
-      </div>
-      
-      {/* Loading indicator or other UI elements */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        {models.length === 0 && (
-          <div className="bg-background/70 backdrop-blur-sm p-6 rounded-md shadow-lg text-center max-w-xs">
-            <p className="text-lg font-medium mb-2">No models in scene</p>
-            <p className="text-sm text-muted-foreground">
-              {isMobile 
-                ? "Tap the menu button to add shapes or import models" 
-                : "Use the sidebar to add shapes or import models"}
-            </p>
-          </div>
-        )}
-      </div>
-      
-      {/* Transform gizmo */}
-      {selectedModelIndex !== null && (
-        <TransformGizmo />
-      )}
+      {/* Make sure TransformGizmo is the last component added */}
+      <TransformGizmo />
     </div>
   );
 }

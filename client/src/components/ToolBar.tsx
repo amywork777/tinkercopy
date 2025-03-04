@@ -18,7 +18,6 @@ import * as THREE from "three";
 import { ShareDialog } from "./ShareDialog";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { useDevice } from "@/lib/hooks/use-device";
 
 export const ToolBar = () => {
   const { 
@@ -50,9 +49,6 @@ export const ToolBar = () => {
   const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
   const [combineOptionsOpen, setCombineOptionsOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
-
-  const { isMobile, isTablet } = useDevice();
-  const isSmallScreen = isMobile || isTablet;
 
   const handleUndo = () => {
     if (canUndo) {
@@ -223,196 +219,368 @@ export const ToolBar = () => {
   };
 
   return (
-    <div className="flex items-center justify-center w-full">
-      <div className="bg-background/80 backdrop-blur-sm shadow-sm rounded-lg border border-border p-1">
-        <div className="flex items-center gap-1">
-          {/* Essential controls always visible */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size={isSmallScreen ? "sm" : "default"}
-                disabled={!canUndo}
-                onClick={handleUndo}
-                className={isSmallScreen ? "h-8 w-8 px-0" : ""}
-              >
-                <Undo className={isSmallScreen ? "h-4 w-4" : "h-5 w-5"} />
-                <span className="sr-only">Undo</span>
+    <div className="bg-background/90 backdrop-blur-sm rounded-lg shadow-lg p-2 flex items-center justify-center space-x-2 border border-border">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleUndo} 
+            disabled={!canUndo}
+          >
+            <Undo className={canUndo ? "text-foreground" : "text-muted-foreground"} size={18} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Undo (Ctrl+Z)</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleRedo} 
+            disabled={!canRedo}
+          >
+            <Redo className={canRedo ? "text-foreground" : "text-muted-foreground"} size={18} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Redo (Ctrl+Y)</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={handleCopyModel}
+            disabled={selectedModelIndex === null}
+          >
+            <Copy className={selectedModelIndex !== null ? "text-foreground" : "text-muted-foreground"} size={18} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Copy Model (Ctrl+C)</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={handleDeleteModel}
+            disabled={selectedModelIndex === null}
+          >
+            <Trash2 className={selectedModelIndex !== null ? "text-destructive" : "text-muted-foreground"} size={18} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Delete Selected Model</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="h-8 mx-1" />
+
+      {/* View Options Popover */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Popover open={viewOptionsOpen} onOpenChange={setViewOptionsOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="px-3">
+                <span className="text-foreground text-sm">Views</span>
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Undo</p>
-            </TooltipContent>
-          </Tooltip>
-          
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size={isSmallScreen ? "sm" : "default"}
-                disabled={!canRedo}
-                onClick={handleRedo}
-                className={isSmallScreen ? "h-8 w-8 px-0" : ""}
-              >
-                <Redo className={isSmallScreen ? "h-4 w-4" : "h-5 w-5"} />
-                <span className="sr-only">Redo</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Redo</p>
-            </TooltipContent>
-          </Tooltip>
-          
-          {/* Separator */}
-          <Separator orientation="vertical" className="h-8" />
-          
-          {/* Delete button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size={isSmallScreen ? "sm" : "default"}
-                disabled={selectedModelIndex === null}
-                onClick={handleDeleteModel}
-                className={isSmallScreen ? "h-8 w-8 px-0" : ""}
-              >
-                <Trash2 className={isSmallScreen ? "h-4 w-4" : "h-5 w-5"} />
-                <span className="sr-only">Delete</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Delete Selected</p>
-            </TooltipContent>
-          </Tooltip>
-          
-          {/* Only show on larger screens */}
-          {!isMobile && (
-            <>
-              {/* Duplicate button */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size={isSmallScreen ? "sm" : "default"}
-                    disabled={selectedModelIndex === null}
-                    onClick={handleCopyModel}
-                    className={isSmallScreen ? "h-8 w-8 px-0" : ""}
-                  >
-                    <Copy className={isSmallScreen ? "h-4 w-4" : "h-5 w-5"} />
-                    <span className="sr-only">Duplicate</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Duplicate</p>
-                </TooltipContent>
-              </Tooltip>
-              
-              {/* Another separator */}
-              <Separator orientation="vertical" className="h-8" />
-              
-              {/* Boolean operations in a dropdown on small screens */}
-              {isTablet ? (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 px-0">
-                      <Combine className="h-4 w-4" />
-                      <span className="sr-only">Combine</span>
+            </PopoverTrigger>
+            <PopoverContent className="w-[220px] p-0" align="center">
+              <div className="p-3">
+                <h3 className="text-sm font-semibold mb-3">View Options</h3>
+                
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'top' ? 'default' : 'outline'}
+                      className="w-full h-8"
+                      onClick={() => setCameraView('top')}
+                    >
+                      Top
                     </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2">
-                    <div className="flex flex-col gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
-                        onClick={() => handleCSGOperation('union')}
-                      >
-                        Union
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
-                        onClick={() => handleCSGOperation('subtract')}
-                      >
-                        Subtract
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
-                        onClick={() => handleCSGOperation('intersect')}
-                      >
-                        Intersect
-                      </Button>
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'front' ? 'default' : 'outline'}
+                      className="w-full h-8"
+                      onClick={() => setCameraView('front')}
+                    >
+                      Front
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'right' ? 'default' : 'outline'}
+                      className="w-full h-8"
+                      onClick={() => setCameraView('right')}
+                    >
+                      Side
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'isometric' ? 'default' : 'outline'}
+                      className="w-full h-8"
+                      onClick={() => setCameraView('isometric')}
+                    >
+                      Isometric
+                    </Button>
+                  </div>
+                  
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="toolbar-show-grid" 
+                        checked={showGrid}
+                        onCheckedChange={(checked) => setShowGrid(!!checked)}
+                      />
+                      <Label htmlFor="toolbar-show-grid" className="text-sm">Show Grid</Label>
                     </div>
-                  </PopoverContent>
-                </Popover>
-              ) : (
-                // Full size buttons on desktop
-                <div className="flex items-center gap-1">
+                    
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="toolbar-show-axes" 
+                        checked={showAxes}
+                        onCheckedChange={(checked) => setShowAxes(!!checked)}
+                      />
+                      <Label htmlFor="toolbar-show-axes" className="text-sm">Show Axes</Label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>View Options</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="h-8 mx-1" />
+
+      {/* Models Selection Status */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="px-3">
+                <span className="text-foreground text-sm">Models ({models.length})</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[280px] p-0" align="center">
+              <div className="p-3">
+                <h3 className="text-sm font-semibold mb-3">Current Models</h3>
+                {models.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No models in scene</p>
+                ) : (
+                  <div className="space-y-2">
+                    {models.map((model, index) => (
+                      <div 
+                        key={model.id} 
+                        className={`flex items-center justify-between p-2 rounded-md ${
+                          index === selectedModelIndex ? 'bg-accent' : 'hover:bg-accent/50'
+                        }`}
+                      >
+                        <span 
+                          className="text-sm truncate flex-1 cursor-pointer"
+                          onClick={() => selectModel(index)}
+                        >
+                          {model.name || `Model ${index + 1}`}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {index === selectedModelIndex && (
+                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded mr-2">
+                              Selected
+                            </span>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectModel(index);
+                              handleCopyModel();
+                            }}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectModel(index);
+                              handleDeleteModel();
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Current Models</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="h-8 mx-1" />
+
+      {/* Combine Models Popover */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Popover open={combineOptionsOpen} onOpenChange={setCombineOptionsOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="px-3">
+                <span className="text-foreground text-sm">Combine</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[320px] p-0" align="center">
+              <div className="p-4">
+                <h3 className="text-sm font-semibold mb-3">Combine Models</h3>
+                
+                {models.length < 2 ? (
+                  <div className="bg-muted/50 rounded-md p-2 mb-4">
+                    <p className="text-sm text-muted-foreground">
+                      You need at least two models to combine
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 mb-4">
+                    {/* Primary Model Selection */}
+                    <div>
+                      <Label htmlFor="primary-model" className="text-sm font-medium mb-1.5 block">
+                        Primary Model
+                      </Label>
+                      <Select 
+                        value={selectedModelIndex !== null ? selectedModelIndex.toString() : undefined}
+                        onValueChange={handlePrimaryModelSelect}
+                        disabled={models.length === 0}
+                      >
+                        <SelectTrigger id="primary-model" className="w-full">
+                          <SelectValue placeholder="Select primary model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {models.map((model, index) => (
+                            <SelectItem key={`primary-${index}`} value={index.toString()}>
+                              {model.name || `Model ${index + 1}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    {/* Secondary Model Selection */}
+                    <div>
+                      <Label htmlFor="secondary-model" className="text-sm font-medium mb-1.5 block">
+                        Secondary Model
+                      </Label>
+                      <Select 
+                        value={secondaryModelIndex !== null ? secondaryModelIndex.toString() : undefined}
+                        onValueChange={handleSecondaryModelSelect}
+                        disabled={models.length === 0}
+                      >
+                        <SelectTrigger id="secondary-model" className="w-full">
+                          <SelectValue placeholder="Select secondary model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {models.map((model, index) => (
+                            <SelectItem key={`secondary-${index}`} value={index.toString()}>
+                              {model.name || `Model ${index + 1}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="space-y-3">
                   <Button
-                    variant="ghost"
-                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
+                    size="default"
+                    variant="outline"
+                    className="justify-start h-auto py-2 w-full"
                     onClick={() => handleCSGOperation('union')}
-                  >
-                    Union
-                  </Button>
-                  <Button
-                    variant="ghost"
                     disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
+                  >
+                    <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-medium">Merge</span>
+                      <span className="text-xs text-muted-foreground mt-0.5">Combine both models</span>
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    size="default"
+                    variant="outline"
+                    className="justify-start h-auto py-2 w-full"
                     onClick={() => handleCSGOperation('subtract')}
-                  >
-                    Subtract
-                  </Button>
-                  <Button
-                    variant="ghost"
                     disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
-                    onClick={() => handleCSGOperation('intersect')}
                   >
-                    Intersect
+                    <Minus className="h-5 w-5 mr-3 flex-shrink-0" />
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-medium">Cut Out</span>
+                      <span className="text-xs text-muted-foreground mt-0.5">Remove secondary from primary</span>
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    size="default"
+                    variant="outline"
+                    className="justify-start h-auto py-2 w-full"
+                    onClick={() => handleCSGOperation('intersect')}
+                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
+                  >
+                    <XCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-medium">Intersect</span>
+                      <span className="text-xs text-muted-foreground mt-0.5">Keep overlapping parts</span>
+                    </div>
                   </Button>
                 </div>
-              )}
-            </>
-          )}
-          
-          {/* View options button - always show */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={viewOptionsOpen ? "secondary" : "ghost"}
-                size={isSmallScreen ? "sm" : "default"}
-                onClick={() => setViewOptionsOpen(!viewOptionsOpen)}
-                className={isSmallScreen ? "h-8 w-8 px-0" : ""}
-              >
-                <Maximize2 className={isSmallScreen ? "h-4 w-4" : "h-5 w-5"} />
-                <span className="sr-only">View Options</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>View Options</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Combine Models</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="h-8 mx-1" />
+
+      {/* Render Mode Selection */}
+      <div className="flex items-center gap-2">
+        <Select 
+          value={renderingMode} 
+          onValueChange={handleRenderingModeChange}
+        >
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Select mode" />
+          </SelectTrigger>
+          <SelectContent className="min-w-[120px]">
+            <SelectItem key="standard" value="standard">Standard</SelectItem>
+            <SelectItem key="wireframe" value="wireframe">Wireframe</SelectItem>
+            <SelectItem key="realistic" value="realistic">Realistic</SelectItem>
+            <SelectItem key="xray" value="xray">X-Ray</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      
-      {/* View Options Dialog */}
-      {viewOptionsOpen && (
-        <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-20 w-[90%] sm:w-[400px]">
-          <ViewOptions 
-            onClose={() => setViewOptionsOpen(false)} 
-            renderingMode={renderingMode} 
-            setRenderingMode={setRenderingMode}
-            cameraView={cameraView}
-            setCameraView={setCameraView}
-            showGrid={showGrid}
-            setShowGrid={setShowGrid}
-            showAxes={showAxes}
-            setShowAxes={setShowAxes}
-          />
-        </div>
-      )}
     </div>
   );
 };

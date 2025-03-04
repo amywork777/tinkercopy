@@ -18,6 +18,10 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        primary: "bg-[hsl(var(--button-primary))] text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--button-primary-hover))]",
+        taiyaki_secondary: "bg-[hsl(var(--button-secondary))] text-[hsl(var(--secondary-foreground))] hover:bg-[hsl(var(--button-secondary-hover))]",
+        customize: "bg-[hsl(var(--button-customize))] text-[hsl(var(--button-customize-text))] hover:bg-[hsl(var(--button-customize-hover))]",
+        save: "bg-[hsl(var(--button-save))] text-foreground hover:bg-[hsl(var(--button-save-hover))]",
       },
       size: {
         default: "h-10 px-4 py-2",

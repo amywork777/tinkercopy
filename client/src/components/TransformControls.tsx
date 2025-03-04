@@ -31,7 +31,7 @@ import { useState, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Box3, Vector3 } from "three";
 import { cn } from "@/lib/utils";
@@ -353,376 +353,394 @@ export function TransformControls({ className }: { className?: string }) {
   };
 
   return (
-    <div className={cn("p-4", className)}>
-      <h3 className="text-lg font-semibold mb-4">Transform Controls</h3>
-      
-      <div className="space-y-4">
-      <div className="flex space-x-2">
-        <Button
-          variant={transformMode === "translate" ? "default" : "outline"}
-            className="flex-1"
-          onClick={() => setTransformMode("translate")}
-        >
-          Move
-        </Button>
-        <Button
-          variant={transformMode === "rotate" ? "default" : "outline"}
-            className="flex-1"
-          onClick={() => setTransformMode("rotate")}
-        >
-          Rotate
-        </Button>
-        <Button
-          variant={transformMode === "scale" ? "default" : "outline"}
-            className="flex-1"
-          onClick={() => setTransformMode("scale")}
-        >
-          Scale
-        </Button>
-        </div>
+    <div className={cn("p-2", className)}>
+      <Card className="bg-background/90 backdrop-blur-sm border shadow-sm mb-2">
+        <CardContent className="p-2">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-sm font-semibold">Transform Controls</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => resetTransform()}
+              className="h-6 text-xs"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" /> Reset
+            </Button>
+          </div>
+          
+          <div className="space-y-2">
+            <div className="flex space-x-1">
+              <Button
+                variant={transformMode === "translate" ? "default" : "outline"}
+                className="flex-1 h-7 text-xs"
+                onClick={() => setTransformMode("translate")}
+              >
+                Move
+              </Button>
+              <Button
+                variant={transformMode === "rotate" ? "default" : "outline"}
+                className="flex-1 h-7 text-xs"
+                onClick={() => setTransformMode("rotate")}
+              >
+                Rotate
+              </Button>
+              <Button
+                variant={transformMode === "scale" ? "default" : "outline"}
+                className="flex-1 h-7 text-xs"
+                onClick={() => setTransformMode("scale")}
+              >
+                Scale
+              </Button>
+            </div>
 
-        {/* Model Info and Utilities */}
-        <div className="flex flex-wrap justify-between items-center pt-2 mt-2 border-t border-border gap-2">
-          {/* Model dimensions */}
-          <div className="flex flex-col">
-            <div className="flex flex-wrap gap-2 text-xs">
+            {/* Model Info */}
+            <div className="flex flex-wrap items-center text-xs gap-1 border-t border-border pt-1 mt-1">
               <Button 
                 variant="outline" 
                 size="sm"
                 onClick={toggleUnit}
-                className="h-6 text-xs font-normal"
+                className="h-5 text-xs font-normal px-1"
               >
                 {unit.toUpperCase()}
               </Button>
-              <div className="flex items-center gap-1">
-                <Box className="h-3 w-3 text-red-500" />
-                <span>W: {formatDimension(dimensions.width)}</span>
+              <div className="flex gap-1">
+                <span className="text-red-500">W:</span>{formatDimension(dimensions.width)}
               </div>
-              <div className="flex items-center gap-1">
-                <Box className="h-3 w-3 text-blue-500" />
-                <span>H: {formatDimension(dimensions.height)}</span>
+              <div className="flex gap-1">
+                <span className="text-blue-500">H:</span>{formatDimension(dimensions.height)}
               </div>
-              <div className="flex items-center gap-1">
-                <Box className="h-3 w-3 text-green-500" />
-                <span>D: {formatDimension(dimensions.depth)}</span>
+              <div className="flex gap-1">
+                <span className="text-green-500">D:</span>{formatDimension(dimensions.depth)}
               </div>
             </div>
-          </div>
 
-          {/* Reset transform button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => resetTransform()}
-            className="h-7"
-          >
-            <RefreshCw className="h-3 w-3 mr-1" /> Reset
-          </Button>
-        </div>
-
-        {selectedModelIndex === null ? (
-          <div className="text-center p-4 text-sm text-muted-foreground">
-            Select a model to transform it
-          </div>
-        ) : (
-          <>
-            {transformMode === "translate" && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="x-position" className="text-red-500">X Position</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={formatPosition(xPosition)}
-                        onChange={(e) => handlePositionInputChange('x', e.target.value)}
-                        className="w-20 h-8"
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {getDimensionUnit()}
-                      </span>
-                    </div>
-                  </div>
-                  <Slider 
-                    id="x-position"
-                    min={-200} 
-                    max={200} 
-                    step={1} 
-                    value={[xPosition]} 
-                    onValueChange={(values) => handlePositionSliderChange('x', values[0])}
-                    className="slider-red"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="y-position" className="text-blue-500">Y Position</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={formatPosition(zPosition)}
-                        onChange={(e) => handlePositionInputChange('y', e.target.value)}
-                        className="w-20 h-8"
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {getDimensionUnit()}
-                      </span>
-                    </div>
-                  </div>
-                  <Slider 
-                    id="y-position"
-                    min={-200} 
-                    max={200} 
-                    step={1} 
-                    value={[zPosition]} 
-                    onValueChange={(values) => handlePositionSliderChange('y', values[0])}
-                    className="slider-blue"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="z-position" className="text-green-500">Z Position</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={formatPosition(yPosition)}
-                        onChange={(e) => handlePositionInputChange('z', e.target.value)}
-                        className="w-20 h-8"
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {getDimensionUnit()}
-                      </span>
-                    </div>
-                  </div>
-                  <Slider 
-                    id="z-position"
-                    min={-200} 
-                    max={200} 
-                    step={1} 
-                    value={[yPosition]} 
-                    onValueChange={(values) => handlePositionSliderChange('z', values[0])}
-                    className="slider-green"
-                  />
-                </div>
+            {selectedModelIndex === null ? (
+              <div className="text-center p-2 text-xs text-muted-foreground">
+                Select a model to transform it
               </div>
-            )}
-            
-            {transformMode === "rotate" && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="x-rotation" className="text-red-500">X Rotation</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={(xRotation * 180 / Math.PI).toFixed(0)}
-                        onChange={(e) => handleRotationInputChange('x', e.target.value)}
-                        className="w-20 h-8"
-                      />
-                      <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
-                    </div>
-                  </div>
-                  <Slider 
-                    id="x-rotation"
-                    min={-Math.PI} 
-                    max={Math.PI} 
-                    step={Math.PI / 180} 
-                    value={[xRotation]} 
-                    onValueChange={(values) => handleRotationSliderChange('x', values[0])}
-                    className="slider-red"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="y-rotation" className="text-blue-500">Y Rotation</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={(zRotation * 180 / Math.PI).toFixed(0)}
-                        onChange={(e) => handleRotationInputChange('y', e.target.value)}
-                        className="w-20 h-8"
-                      />
-                      <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
-                    </div>
-                  </div>
-                  <Slider 
-                    id="y-rotation"
-                    min={-Math.PI} 
-                    max={Math.PI} 
-                    step={Math.PI / 180} 
-                    value={[zRotation]} 
-                    onValueChange={(values) => handleRotationSliderChange('y', values[0])}
-                    className="slider-blue"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="z-rotation" className="text-green-500">Z Rotation</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={(yRotation * 180 / Math.PI).toFixed(0)}
-                        onChange={(e) => handleRotationInputChange('z', e.target.value)}
-                        className="w-20 h-8"
-                      />
-                      <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
-                    </div>
-                  </div>
-                  <Slider 
-                    id="z-rotation"
-                    min={-Math.PI} 
-                    max={Math.PI} 
-                    step={Math.PI / 180} 
-                    value={[yRotation]} 
-                    onValueChange={(values) => handleRotationSliderChange('z', values[0])}
-                    className="slider-green"
-                  />
-                </div>
-              </div>
-            )}
-            
-            {transformMode === "scale" && (
-              <div className="space-y-4">
-                {/* Uniform scale toggle */}
-                <div className="flex items-center space-x-2 mb-2">
-                  <Checkbox 
-                    id="uniform-scale" 
-                    checked={useUniformScale}
-                    onCheckedChange={(checked) => setUseUniformScale(!!checked)}
-                  />
-                  <Label htmlFor="uniform-scale">Use uniform scale</Label>
-                </div>
-
-                {/* Scale precision toggle */}
-                <div className="flex items-center space-x-2 mb-2">
-                  <Checkbox 
-                    id="fine-scale" 
-                    checked={scaleMode === 'fine'}
-                    onCheckedChange={(checked) => setScaleMode(checked ? 'fine' : 'normal')}
-                  />
-                  <Label htmlFor="fine-scale">Fine scaling (0.01-2x)</Label>
-                </div>
-
-                {useUniformScale ? (
+            ) : (
+              <>
+                {transformMode === "translate" && (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="uniform-scale" className="text-purple-500">Uniform Scale</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          value={uniformScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
-                          onChange={(e) => handleUniformScaleInputChange(e.target.value)}
-                          min={0.01}
-                          max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
-                          step={scaleMode === 'fine' ? 0.005 : 0.01}
-                          className="w-20 h-8"
+                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="x-position" className="text-red-500 text-xs">X Position</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={formatPosition(xPosition)}
+                              onChange={(e) => handlePositionInputChange('x', e.target.value)}
+                              className="w-16 h-6 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {getDimensionUnit()}
+                            </span>
+                          </div>
+                        </div>
+                        <Slider 
+                          id="x-position"
+                          min={-200} 
+                          max={200} 
+                          step={1} 
+                          value={[xPosition]} 
+                          onValueChange={(values) => handlePositionSliderChange('x', values[0])}
+                          className="slider-red"
                         />
-                        <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
                       </div>
-                    </div>
-                    <Slider 
-                      id="uniform-scale"
-                      min={scaleMode === 'fine' ? 0.01 : 0.1} 
-                      max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE} 
-                      step={scaleMode === 'fine' ? 0.005 : 0.01} 
-                      value={[uniformScale]} 
-                      onValueChange={(values) => handleUniformScaleSliderChange(values[0])}
-                      className="slider-purple"
-                    />
+                    </Card>
+
+                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="y-position" className="text-blue-500 text-xs">Y Position</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={formatPosition(zPosition)}
+                              onChange={(e) => handlePositionInputChange('y', e.target.value)}
+                              className="w-16 h-6 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {getDimensionUnit()}
+                            </span>
+                          </div>
+                        </div>
+                        <Slider 
+                          id="y-position"
+                          min={-200} 
+                          max={200} 
+                          step={1} 
+                          value={[zPosition]} 
+                          onValueChange={(values) => handlePositionSliderChange('y', values[0])}
+                          className="slider-blue"
+                        />
+                      </div>
+                    </Card>
+
+                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="z-position" className="text-green-500 text-xs">Z Position</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={formatPosition(yPosition)}
+                              onChange={(e) => handlePositionInputChange('z', e.target.value)}
+                              className="w-16 h-6 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {getDimensionUnit()}
+                            </span>
+                          </div>
+                        </div>
+                        <Slider 
+                          id="z-position"
+                          min={-200} 
+                          max={200} 
+                          step={1} 
+                          value={[yPosition]} 
+                          onValueChange={(values) => handlePositionSliderChange('z', values[0])}
+                          className="slider-green"
+                        />
+                      </div>
+                    </Card>
                   </div>
-                ) : (
-                  // Per-axis scale sliders
-                  <>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="x-scale" className="text-red-500">X Scale</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            value={xScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
-                            onChange={(e) => handleScaleInputChange('x', e.target.value)}
-                            min={0.01}
-                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
-                            step={scaleMode === 'fine' ? 0.005 : 0.01}
-                            className="w-20 h-8"
-                          />
-                          <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
-                        </div>
-                      </div>
-                      <Slider 
-                        id="x-scale"
-                        min={scaleMode === 'fine' ? 0.01 : 0.1} 
-                        max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
-                        step={scaleMode === 'fine' ? 0.005 : 0.01}
-                        value={[xScale]} 
-                        onValueChange={(values) => handleScaleSliderChange('x', values[0])}
-                        className="slider-red"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="y-scale" className="text-blue-500">Y Scale</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            value={zScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
-                            onChange={(e) => handleScaleInputChange('y', e.target.value)}
-                            min={0.01}
-                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
-                            step={scaleMode === 'fine' ? 0.005 : 0.01}
-                            className="w-20 h-8"
-                          />
-                          <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
-                        </div>
-                      </div>
-                      <Slider 
-                        id="y-scale"
-                        min={scaleMode === 'fine' ? 0.01 : 0.1} 
-                        max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
-                        step={scaleMode === 'fine' ? 0.005 : 0.01}
-                        value={[zScale]} 
-                        onValueChange={(values) => handleScaleSliderChange('y', values[0])}
-                        className="slider-blue"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="z-scale" className="text-green-500">Z Scale</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            value={yScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
-                            onChange={(e) => handleScaleInputChange('z', e.target.value)}
-                            min={0.01}
-                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
-                            step={scaleMode === 'fine' ? 0.005 : 0.01}
-                            className="w-20 h-8"
-                          />
-                          <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
-                        </div>
-                      </div>
-                      <Slider 
-                        id="z-scale"
-                        min={scaleMode === 'fine' ? 0.01 : 0.1} 
-                        max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
-                        step={scaleMode === 'fine' ? 0.005 : 0.01}
-                        value={[yScale]} 
-                        onValueChange={(values) => handleScaleSliderChange('z', values[0])}
-                        className="slider-green"
-                      />
-                    </div>
-                  </>
                 )}
-              </div>
+                
+                {transformMode === "rotate" && (
+                  <div className="space-y-2">
+                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="x-rotation" className="text-red-500 text-xs">X Rotation</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={(xRotation * 180 / Math.PI).toFixed(0)}
+                              onChange={(e) => handleRotationInputChange('x', e.target.value)}
+                              className="w-16 h-6 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
+                          </div>
+                        </div>
+                        <Slider 
+                          id="x-rotation"
+                          min={-Math.PI} 
+                          max={Math.PI} 
+                          step={Math.PI / 180} 
+                          value={[xRotation]} 
+                          onValueChange={(values) => handleRotationSliderChange('x', values[0])}
+                          className="slider-red"
+                        />
+                      </div>
+                    </Card>
+
+                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="y-rotation" className="text-blue-500 text-xs">Y Rotation</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={(zRotation * 180 / Math.PI).toFixed(0)}
+                              onChange={(e) => handleRotationInputChange('y', e.target.value)}
+                              className="w-16 h-6 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
+                          </div>
+                        </div>
+                        <Slider 
+                          id="y-rotation"
+                          min={-Math.PI} 
+                          max={Math.PI} 
+                          step={Math.PI / 180} 
+                          value={[zRotation]} 
+                          onValueChange={(values) => handleRotationSliderChange('y', values[0])}
+                          className="slider-blue"
+                        />
+                      </div>
+                    </Card>
+
+                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="z-rotation" className="text-green-500 text-xs">Z Rotation</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={(yRotation * 180 / Math.PI).toFixed(0)}
+                              onChange={(e) => handleRotationInputChange('z', e.target.value)}
+                              className="w-16 h-6 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
+                          </div>
+                        </div>
+                        <Slider 
+                          id="z-rotation"
+                          min={-Math.PI} 
+                          max={Math.PI} 
+                          step={Math.PI / 180} 
+                          value={[yRotation]} 
+                          onValueChange={(values) => handleRotationSliderChange('z', values[0])}
+                          className="slider-green"
+                        />
+                      </div>
+                    </Card>
+                  </div>
+                )}
+                
+                {transformMode === "scale" && (
+                  <div className="space-y-2">
+                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center space-x-1">
+                          <Checkbox 
+                            id="uniform-scale" 
+                            checked={useUniformScale}
+                            onCheckedChange={(checked) => setUseUniformScale(!!checked)}
+                            className="h-3 w-3"
+                          />
+                          <Label htmlFor="uniform-scale" className="text-xs">Uniform</Label>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <Checkbox 
+                            id="fine-scale" 
+                            checked={scaleMode === 'fine'}
+                            onCheckedChange={(checked) => setScaleMode(checked ? 'fine' : 'normal')}
+                            className="h-3 w-3"
+                          />
+                          <Label htmlFor="fine-scale" className="text-xs">Fine (0.01-2x)</Label>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {useUniformScale ? (
+                      <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="uniform-scale" className="text-purple-500 text-xs">Uniform Scale</Label>
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                value={uniformScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
+                                onChange={(e) => handleUniformScaleInputChange(e.target.value)}
+                                min={0.01}
+                                max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                                step={scaleMode === 'fine' ? 0.005 : 0.01}
+                                className="w-16 h-6 text-xs"
+                              />
+                              <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                            </div>
+                          </div>
+                          <Slider 
+                            id="uniform-scale"
+                            min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE} 
+                            step={scaleMode === 'fine' ? 0.005 : 0.01} 
+                            value={[uniformScale]} 
+                            onValueChange={(values) => handleUniformScaleSliderChange(values[0])}
+                            className="slider-purple"
+                          />
+                        </div>
+                      </Card>
+                    ) : (
+                      <>
+                        <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="x-scale" className="text-red-500 text-xs">X Scale</Label>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  value={xScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
+                                  onChange={(e) => handleScaleInputChange('x', e.target.value)}
+                                  min={0.01}
+                                  max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                                  step={scaleMode === 'fine' ? 0.005 : 0.01}
+                                  className="w-16 h-6 text-xs"
+                                />
+                                <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                              </div>
+                            </div>
+                            <Slider 
+                              id="x-scale"
+                              min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                              max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                              step={scaleMode === 'fine' ? 0.005 : 0.01}
+                              value={[xScale]} 
+                              onValueChange={(values) => handleScaleSliderChange('x', values[0])}
+                              className="slider-red"
+                            />
+                          </div>
+                        </Card>
+                        
+                        <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="y-scale" className="text-blue-500 text-xs">Y Scale</Label>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  value={yScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
+                                  onChange={(e) => handleScaleInputChange('y', e.target.value)}
+                                  min={0.01}
+                                  max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                                  step={scaleMode === 'fine' ? 0.005 : 0.01}
+                                  className="w-16 h-6 text-xs"
+                                />
+                                <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                              </div>
+                            </div>
+                            <Slider 
+                              id="y-scale"
+                              min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                              max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                              step={scaleMode === 'fine' ? 0.005 : 0.01}
+                              value={[yScale]} 
+                              onValueChange={(values) => handleScaleSliderChange('y', values[0])}
+                              className="slider-blue"
+                            />
+                          </div>
+                        </Card>
+                        
+                        <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="z-scale" className="text-green-500 text-xs">Z Scale</Label>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  value={zScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
+                                  onChange={(e) => handleScaleInputChange('z', e.target.value)}
+                                  min={0.01}
+                                  max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                                  step={scaleMode === 'fine' ? 0.005 : 0.01}
+                                  className="w-16 h-6 text-xs"
+                                />
+                                <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
+                              </div>
+                            </div>
+                            <Slider 
+                              id="z-scale"
+                              min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                              max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                              step={scaleMode === 'fine' ? 0.005 : 0.01}
+                              value={[zScale]} 
+                              onValueChange={(values) => handleScaleSliderChange('z', values[0])}
+                              className="slider-green"
+                            />
+                          </div>
+                        </Card>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

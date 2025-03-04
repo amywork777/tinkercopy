@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { useScene } from "@/hooks/use-scene";
-import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer } from "lucide-react";
+import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { ModelList } from "./ModelList";
@@ -19,6 +19,7 @@ import { Slider } from "./ui/slider";
 import { Checkbox } from "./ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import type { Model } from "@/types/model";
+import { TaiyakiLibrary } from "./TaiyakiLibrary";
 
 // Font options with their display names and paths
 const FONTS = [
@@ -80,7 +81,7 @@ const findNonCollidingPosition = (models: Array<Model>, newBoundingBox: THREE.Bo
   return position;
 };
 
-export function Sidebar() {
+export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { 
     loadSTL, 
     loadSVG,
@@ -1435,6 +1436,15 @@ export function Sidebar() {
     <div className="h-full flex flex-col">
       <div className="p-4 flex items-center justify-between border-b">
         <h1 className="text-xl font-bold">Fish CAD</h1>
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       
       <div className="flex-1 flex flex-col">
@@ -1513,21 +1523,8 @@ export function Sidebar() {
             </TabsContent>
             
             {/* Library Tab */}
-            <TabsContent value="library" className="flex-1 overflow-y-auto p-3 h-full">
-              <div className="flex flex-col space-y-4">
-                <h3 className="text-lg font-medium">3D Library</h3>
-                <p className="text-sm text-muted-foreground">
-                  Import and manage your 3D models and designs.
-                </p>
-
-                {/* Import/Export Section */}
-                <div className="pt-4 space-y-2">
-                  <Button variant="outline" size="sm" className="w-full" onClick={handleImportClick}>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Import STL or SVG
-                  </Button>
-                </div>
-              </div>
+            <TabsContent value="library" className="flex-1 overflow-y-auto p-0 h-full">
+              <TaiyakiLibrary />
             </TabsContent>
             
             {/* Shapes Tab */}

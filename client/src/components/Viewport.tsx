@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useScene } from "@/hooks/use-scene";
 import { Card } from "@/components/ui/card";
+import { ViewCube } from "./ViewCube";
 
 export function Viewport() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,9 +117,12 @@ export function Viewport() {
         }}
       />
       
+      {/* View Cube */}
+      <ViewCube />
+      
       {/* Status overlay */}
       <div 
-        className="absolute bottom-4 right-4 bg-background/80 p-2 rounded-md text-sm z-20 pointer-events-none"
+        className="absolute bottom-4 left-4 bg-background/80 p-2 rounded-md text-sm z-20 pointer-events-none"
         style={{ pointerEvents: "none" }}
       >
         {models.length === 0 ? (
@@ -131,13 +135,13 @@ export function Viewport() {
       
       {/* Help text overlay when empty */}
       {models.length === 0 && (
-        <div 
-          className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-center"
-          style={{ pointerEvents: "none" }}
-        >
-          <h3 className="text-xl font-medium">3D Canvas</h3>
-          <p className="text-sm opacity-80 mt-2">Click on objects to select them.</p>
-          <p className="text-sm opacity-80">Use the transform tools to modify selected objects.</p>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="bg-background/50 p-6 rounded-lg text-center max-w-md">
+            <h3 className="text-lg font-medium mb-2">Empty Scene</h3>
+            <p className="text-muted-foreground mb-4">
+              Add a shape from the sidebar or import an STL file to get started
+            </p>
+          </div>
         </div>
       )}
     </Card>

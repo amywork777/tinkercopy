@@ -49,13 +49,14 @@ const SCALE_UNIT = "";
 const DIMENSION_UNIT = "mm";
 
 // Maximum scale is now based on allowing models to reach reasonable size
-const MAX_SCALE = 100; // Reduced from 1000 to 100 for more reasonable scaling
+const MAX_SCALE = 10; // Reduced from 100 to 10 for more intuitive scaling
+const MAX_SCALE_FINE = 2; // For fine-tuning at lower scales
 const MM_PER_INCH = 25.4;
 const MAX_SIZE_MM = 254; // 10 inches in mm
 
 // Helper function to format scale display
 const formatScale = (scale: number) => {
-  return scale >= 10 ? scale.toFixed(1) : scale.toFixed(2);
+  return scale >= 1 ? scale.toFixed(2) : scale.toFixed(3);
 };
 
 export function TransformControls({ className }: { className?: string }) {
@@ -83,6 +84,7 @@ export function TransformControls({ className }: { className?: string }) {
   const [scaleValues, setScaleValues] = useState({ x: 1, y: 1, z: 1 });
   const [uniformScale, setUniformScale] = useState(1);
   const [useUniformScale, setUseUniformScale] = useState(false);
+  const [scaleMode, setScaleMode] = useState('normal');
   
   // State for slider controls
   const [xPosition, setXPosition] = useState(0);
@@ -594,6 +596,16 @@ export function TransformControls({ className }: { className?: string }) {
                   <Label htmlFor="uniform-scale">Use uniform scale</Label>
                 </div>
 
+                {/* Scale precision toggle */}
+                <div className="flex items-center space-x-2 mb-2">
+                  <Checkbox 
+                    id="fine-scale" 
+                    checked={scaleMode === 'fine'}
+                    onCheckedChange={(checked) => setScaleMode(checked ? 'fine' : 'normal')}
+                  />
+                  <Label htmlFor="fine-scale">Fine scaling (0.01-2x)</Label>
+                </div>
+
                 {useUniformScale ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -601,11 +613,11 @@ export function TransformControls({ className }: { className?: string }) {
                       <div className="flex items-center gap-2">
                         <Input
                           type="number"
-                          value={uniformScale.toFixed(2)}
+                          value={uniformScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
                           onChange={(e) => handleUniformScaleInputChange(e.target.value)}
                           min={0.01}
-                          max={MAX_SCALE}
-                          step={0.01}
+                          max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                          step={scaleMode === 'fine' ? 0.005 : 0.01}
                           className="w-20 h-8"
                         />
                         <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
@@ -613,9 +625,9 @@ export function TransformControls({ className }: { className?: string }) {
                     </div>
                     <Slider 
                       id="uniform-scale"
-                      min={0.01} 
-                      max={MAX_SCALE} 
-                      step={0.01} 
+                      min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                      max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE} 
+                      step={scaleMode === 'fine' ? 0.005 : 0.01} 
                       value={[uniformScale]} 
                       onValueChange={(values) => handleUniformScaleSliderChange(values[0])}
                       className="slider-purple"
@@ -630,11 +642,11 @@ export function TransformControls({ className }: { className?: string }) {
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
-                            value={xScale.toFixed(2)}
+                            value={xScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
                             onChange={(e) => handleScaleInputChange('x', e.target.value)}
                             min={0.01}
-                            max={MAX_SCALE}
-                            step={0.01}
+                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                            step={scaleMode === 'fine' ? 0.005 : 0.01}
                             className="w-20 h-8"
                           />
                           <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
@@ -642,9 +654,9 @@ export function TransformControls({ className }: { className?: string }) {
                       </div>
                       <Slider 
                         id="x-scale"
-                        min={0.01} 
-                        max={MAX_SCALE} 
-                        step={0.01} 
+                        min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                        max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                        step={scaleMode === 'fine' ? 0.005 : 0.01}
                         value={[xScale]} 
                         onValueChange={(values) => handleScaleSliderChange('x', values[0])}
                         className="slider-red"
@@ -657,11 +669,11 @@ export function TransformControls({ className }: { className?: string }) {
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
-                            value={zScale.toFixed(2)}
+                            value={zScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
                             onChange={(e) => handleScaleInputChange('y', e.target.value)}
                             min={0.01}
-                            max={MAX_SCALE}
-                            step={0.01}
+                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                            step={scaleMode === 'fine' ? 0.005 : 0.01}
                             className="w-20 h-8"
                           />
                           <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
@@ -669,9 +681,9 @@ export function TransformControls({ className }: { className?: string }) {
                       </div>
                       <Slider 
                         id="y-scale"
-                        min={0.01} 
-                        max={MAX_SCALE} 
-                        step={0.01} 
+                        min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                        max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                        step={scaleMode === 'fine' ? 0.005 : 0.01}
                         value={[zScale]} 
                         onValueChange={(values) => handleScaleSliderChange('y', values[0])}
                         className="slider-blue"
@@ -684,11 +696,11 @@ export function TransformControls({ className }: { className?: string }) {
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
-                            value={yScale.toFixed(2)}
+                            value={yScale.toFixed(scaleMode === 'fine' ? 3 : 2)}
                             onChange={(e) => handleScaleInputChange('z', e.target.value)}
                             min={0.01}
-                            max={MAX_SCALE}
-                            step={0.01}
+                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                            step={scaleMode === 'fine' ? 0.005 : 0.01}
                             className="w-20 h-8"
                           />
                           <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
@@ -696,9 +708,9 @@ export function TransformControls({ className }: { className?: string }) {
                       </div>
                       <Slider 
                         id="z-scale"
-                        min={0.01} 
-                        max={MAX_SCALE} 
-                        step={0.01} 
+                        min={scaleMode === 'fine' ? 0.01 : 0.1} 
+                        max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                        step={scaleMode === 'fine' ? 0.005 : 0.01}
                         value={[yScale]} 
                         onValueChange={(values) => handleScaleSliderChange('z', values[0])}
                         className="slider-green"

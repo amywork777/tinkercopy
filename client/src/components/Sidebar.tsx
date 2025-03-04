@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { useScene } from "@/hooks/use-scene";
 import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer } from "lucide-react";
@@ -24,9 +24,61 @@ import type { Model } from "@/types/model";
 const FONTS = [
   { name: "Roboto", path: "https://threejs.org/examples/fonts/helvetiker_regular.typeface.json" },
   { name: "Times New Roman", path: "https://threejs.org/examples/fonts/gentilis_regular.typeface.json" },
-  { name: "Courier", path: "https://threejs.org/examples/fonts/droid/droid_serif_regular.typeface.json" },
-  { name: "Open Sans", path: "https://threejs.org/examples/fonts/optimer_regular.typeface.json" }
+  { name: "Courier", path: "https://threejs.org/examples/fonts/droid/droid_serif_regular.typeface.json" }
 ];
+
+// Add this helper function before the Sidebar component
+const findNonCollidingPosition = (models: Array<Model>, newBoundingBox: THREE.Box3): THREE.Vector3 => {
+  const position = new THREE.Vector3(0, 0, 0);
+  
+  // If no models exist, return origin
+  if (models.length === 0) return position;
+  
+  // Check if position is available at origin first
+  let hasCollision = false;
+  for (const model of models) {
+    const modelBounds = new THREE.Box3().setFromObject(model.mesh);
+    if (newBoundingBox.intersectsBox(modelBounds)) {
+      hasCollision = true;
+      break;
+    }
+  }
+  
+  // If no collision at origin, use that
+  if (!hasCollision) return position;
+  
+  // Otherwise, find the first available position in a spiral pattern
+  const spacing = 60; // ~2.36 inches
+  let ring = 1;
+  let angle = 0;
+  
+  while (ring < 10) { // Limit search to reasonable area
+    for (angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+      position.x = Math.cos(angle) * (spacing * ring);
+      position.z = Math.sin(angle) * (spacing * ring);
+      
+      // Move bounding box to test position
+      const testBox = newBoundingBox.clone().translate(position);
+      
+      // Check for collisions
+      hasCollision = false;
+      for (const model of models) {
+        const modelBounds = new THREE.Box3().setFromObject(model.mesh);
+        if (testBox.intersectsBox(modelBounds)) {
+          hasCollision = true;
+          break;
+        }
+      }
+      
+      if (!hasCollision) {
+        return position;
+      }
+    }
+    ring++;
+  }
+  
+  return position;
+};
 
 export function Sidebar() {
   const { 
@@ -44,20 +96,15 @@ export function Sidebar() {
     setRenderingMode
   } = useScene();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("uploads");
+  const [activeTab, setActiveTab] = useState("models");
   
   // State for copied model
   const [copiedModel, setCopiedModel] = useState<any>(null);
   
   // Text form state
   const [text, setText] = useState("Text");
-  const [fontSize, setFontSize] = useState(5);
-  const [height, setHeight] = useState(2);
-  const [curveSegments, setCurveSegments] = useState(4);
-  const [bevelEnabled, setBevelEnabled] = useState(true);
-  const [bevelThickness, setBevelThickness] = useState(0.2);
-  const [bevelSize, setBevelSize] = useState(0.1);
-  const [bevelSegments, setBevelSegments] = useState(3);
+  const [height, setHeight] = useState(20); // Default depth 20mm
+  const [bevelThickness, setBevelThickness] = useState(1); // Default bevel thickness 1mm
   const [selectedFont, setSelectedFont] = useState(FONTS[0].path);
   const [isLoading, setIsLoading] = useState(false);
   const [editingTextModelId, setEditingTextModelId] = useState<string | null>(null);
@@ -79,11 +126,115 @@ export function Sidebar() {
     : null;
 
   // Sketch state
-  const [sketchLines, setSketchLines] = useState<Array<{points: {x: number, y: number}[]}>>([]); 
-  const [currentLine, setCurrentLine] = useState<{x: number, y: number}[]>([]);
+  const [sketchLines, setSketchLines] = useState<Array<{points: Array<{x: number, y: number}>}>>([]);
+  const [currentLine, setCurrentLine] = useState<Array<{x: number, y: number}>>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [extrusionDepth, setExtrusionDepth] = useState(50.8); // Default to 2 inches
+  const [sketchMode, setSketchMode] = useState<'freeform' | 'precise' | 'rectangle' | 'circle'>('freeform');
+  const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
+  const [previewLine, setPreviewLine] = useState<Array<{x: number, y: number}> | null>(null);
+  const [gridSize, setGridSize] = useState(20); // Grid size in pixels
+  const [snapToGrid, setSnapToGrid] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Add state for sketch conversion
+  const [isSketchProcessing, setIsSketchProcessing] = useState(false);
+  
+  // Add preview canvas ref
+  const textPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Helper function to adjust color brightness
+  const adjustColor = (color: string, amount: number) => {
+    const hex = color.replace('#', '');
+    const r = Math.max(0, Math.min(255, parseInt(hex.slice(0, 2), 16) + amount));
+    const g = Math.max(0, Math.min(255, parseInt(hex.slice(2, 4), 16) + amount));
+    const b = Math.max(0, Math.min(255, parseInt(hex.slice(4, 6), 16) + amount));
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
+  
+  // Function to update text preview
+  const updateTextPreview = useCallback(() => {
+    const canvas = textPreviewCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set canvas size with high DPI support
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Clear canvas with light gray background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+    // Calculate font size based on canvas dimensions and text length
+    const fontSize = Math.min(
+      canvas.height / (3 * dpr),
+      (canvas.width / (text.length * 1.2)) / dpr
+    );
+
+    // Set font family based on selection
+    let fontFamily = 'Arial';
+    if (selectedFont === FONTS[0].path) {
+      fontFamily = 'Roboto, Arial';
+    } else if (selectedFont === FONTS[1].path) {
+      fontFamily = 'Times New Roman, serif';
+    } else if (selectedFont === FONTS[2].path) {
+      fontFamily = 'Courier, monospace';
+    }
+
+    // Set text properties
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const centerX = canvas.width / (2 * dpr);
+    const centerY = canvas.height / (2 * dpr);
+
+    // Draw main text fill
+    ctx.fillStyle = '#000000';
+    ctx.fillText(text || 'Preview Text', centerX, centerY);
+
+  }, [text, selectedFont, bevelThickness]);
+
+  // Update preview when settings change or component mounts
+  useEffect(() => {
+    if (activeTab !== 'text') return;
+
+    // Load Roboto font
+    const loadRobotoFont = async () => {
+      try {
+        const robotoFont = new FontFace('Roboto', 'url(https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Me5Q.ttf)');
+        await robotoFont.load();
+        document.fonts.add(robotoFont);
+        updateTextPreview();
+      } catch (error) {
+        console.error('Error loading Roboto font:', error);
+        updateTextPreview(); // Still try to show preview even if font fails
+      }
+    };
+    loadRobotoFont();
+  }, [text, selectedFont, bevelThickness, updateTextPreview, activeTab]);
+
+  // Update preview when canvas is resized
+  useEffect(() => {
+    updateTextPreview();
+    
+    const resizeObserver = new ResizeObserver(() => {
+      updateTextPreview();
+    });
+
+    if (textPreviewCanvasRef.current) {
+      resizeObserver.observe(textPreviewCanvasRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTextPreview]);
   
   // Add keyboard event handler for copy, paste, and delete
   useEffect(() => {
@@ -257,13 +408,8 @@ export function Sidebar() {
       // If the model has text properties, set them in the form
       if (selectedTextModel.textProps) {
         setText(selectedTextModel.textProps.text || "Text");
-        setFontSize(selectedTextModel.textProps.fontSize || 5);
-        setHeight(selectedTextModel.textProps.height || 2);
-        setCurveSegments(selectedTextModel.textProps.curveSegments || 4);
-        setBevelEnabled(selectedTextModel.textProps.bevelEnabled !== undefined ? selectedTextModel.textProps.bevelEnabled : true);
-        setBevelThickness(selectedTextModel.textProps.bevelThickness || 0.2);
-        setBevelSize(selectedTextModel.textProps.bevelSize || 0.1);
-        setBevelSegments(selectedTextModel.textProps.bevelSegments || 3);
+        setHeight(selectedTextModel.textProps.height || 20);
+        setBevelThickness(selectedTextModel.textProps.bevelThickness || 1);
         setSelectedFont(selectedTextModel.textProps.fontPath || FONTS[0].path);
       }
     } else {
@@ -284,16 +430,13 @@ export function Sidebar() {
     setIsLoading(true);
     
     try {
-      // Create a new text model or update existing one
       const textProps = {
         text,
-        fontSize,
         height,
-        curveSegments,
-        bevelEnabled,
         bevelThickness,
-        bevelSize,
-        bevelSegments,
+        bevelEnabled: true, // Always enable bevel
+        bevelSize: bevelThickness, // Match bevel size to thickness
+        bevelSegments: 3, // Add segments for smoother bevel
         fontPath: selectedFont
       };
       
@@ -304,7 +447,6 @@ export function Sidebar() {
         description: "3D text created successfully",
       });
       
-      // After creating, select the model to edit it
       const { models } = useScene.getState();
       const newIndex = models.length - 1;
       selectModel(newIndex);
@@ -328,16 +470,13 @@ export function Sidebar() {
     setIsLoading(true);
     
     try {
-      // Update the existing text model
       const textProps = {
         text,
-        fontSize,
         height,
-        curveSegments,
-        bevelEnabled,
         bevelThickness,
-        bevelSize,
-        bevelSegments,
+        bevelEnabled: true, // Always enable bevel
+        bevelSize: bevelThickness, // Match bevel size to thickness
+        bevelSegments: 3, // Add segments for smoother bevel
         fontPath: selectedFont
       };
       
@@ -387,6 +526,12 @@ export function Sidebar() {
     const geometry = new THREE.BoxGeometry(50.8, 50.8, 50.8);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    
+    // Calculate bounding box and find position
+    const boundingBox = new THREE.Box3().setFromObject(mesh);
+    const position = findNonCollidingPosition(models, boundingBox);
+    mesh.position.copy(position);
+    
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -407,6 +552,12 @@ export function Sidebar() {
     const geometry = new THREE.SphereGeometry(25.4, 32, 32);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    
+    // Calculate bounding box and find position
+    const boundingBox = new THREE.Box3().setFromObject(mesh);
+    const position = findNonCollidingPosition(models, boundingBox);
+    mesh.position.copy(position);
+    
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -427,6 +578,7 @@ export function Sidebar() {
     const geometry = new THREE.CylinderGeometry(25.4, 25.4, 50.8, 32);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -447,6 +599,7 @@ export function Sidebar() {
     const geometry = new THREE.ConeGeometry(25.4, 50.8, 32);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -467,6 +620,7 @@ export function Sidebar() {
     const geometry = new THREE.TorusGeometry(25.4, 8, 16, 100);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -484,9 +638,10 @@ export function Sidebar() {
   };
 
   const handleAddTorusKnot = () => {
-    const geometry = new THREE.TorusKnotGeometry(25.4, 8, 100, 16); // Main radius 1 inch, tube radius ~0.3 inch
+    const geometry = new THREE.TorusKnotGeometry(25.4, 8, 100, 16);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -504,9 +659,10 @@ export function Sidebar() {
   };
 
   const handleAddOctahedron = () => {
-    const geometry = new THREE.OctahedronGeometry(25.4); // 1 inch radius
+    const geometry = new THREE.OctahedronGeometry(25.4);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -524,9 +680,10 @@ export function Sidebar() {
   };
 
   const handleAddIcosahedron = () => {
-    const geometry = new THREE.IcosahedronGeometry(25.4); // 1 inch radius
+    const geometry = new THREE.IcosahedronGeometry(25.4);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -544,9 +701,10 @@ export function Sidebar() {
   };
 
   const handleAddDodecahedron = () => {
-    const geometry = new THREE.DodecahedronGeometry(25.4); // 1 inch radius
+    const geometry = new THREE.DodecahedronGeometry(25.4);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -567,6 +725,7 @@ export function Sidebar() {
     const geometry = new THREE.CapsuleGeometry(25.4, 50.8, 4, 8);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -587,6 +746,7 @@ export function Sidebar() {
     const geometry = new THREE.ConeGeometry(25.4, 50.8, 4);
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -861,49 +1021,42 @@ export function Sidebar() {
     }
   }, [selectedModelIndex, models]);
 
-  // Initialize canvas when component mounts or when active tab changes
+  // Initialize canvas when component mounts or tab changes
   useEffect(() => {
-    if (activeTab === "sketch" && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      
-      // Get the DPR and size
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      
-      // Set the canvas size accounting for DPI
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      
-      // Scale the context to ensure correct drawing
-      ctx.scale(dpr, dpr);
-      
-      // Set canvas CSS size
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      
-      // Set drawing styles
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#000';
-      ctx.fillStyle = '#000';
-      
-      // Redraw existing lines
-      sketchLines.forEach(line => {
-        if (line.points.length > 1) {
-          ctx.beginPath();
-          ctx.moveTo(line.points[0].x, line.points[0].y);
-          
-          for (let i = 1; i < line.points.length; i++) {
-            ctx.lineTo(line.points[i].x, line.points[i].y);
-          }
-          
-          ctx.stroke();
+    const canvas = canvasRef.current;
+    if (!canvas || activeTab !== 'sketch') return;
+
+    // Set canvas size with high DPI support
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas and draw grid
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawGrid(ctx, canvas.width, canvas.height);
+
+    // Draw existing lines
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    
+    sketchLines.forEach(line => {
+      if (line.points.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(line.points[0].x, line.points[0].y);
+        for (let i = 1; i < line.points.length; i++) {
+          ctx.lineTo(line.points[i].x, line.points[i].y);
         }
-      });
-    }
-  }, [activeTab, sketchLines]);
+        ctx.stroke();
+      }
+    });
+  }, [activeTab, sketchLines, gridSize]);
 
   // Function to get canvas coordinates
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -920,96 +1073,163 @@ export function Sidebar() {
     return { x, y };
   };
 
-  // Function to start drawing
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const { x, y } = getCanvasCoordinates(e);
-    
-    // Draw initial point
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Reset any previous transforms
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      
-      // Apply DPI scaling
-      const dpr = window.devicePixelRatio || 1;
-      ctx.scale(dpr, dpr);
-      
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#000';
-      ctx.fillStyle = '#000';
-      
-      // Draw a small circle for the first point
-      ctx.beginPath();
-      ctx.arc(x, y, 1, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    
-    setCurrentLine([{x, y}]);
-    setIsDrawing(true);
+  // Function to snap point to grid
+  const snapToGridPoint = (point: {x: number, y: number}) => {
+    if (!snapToGrid) return point;
+    return {
+      x: Math.round(point.x / gridSize) * gridSize,
+      y: Math.round(point.y / gridSize) * gridSize
+    };
   };
-  
-  // Function to continue drawing
+
+  // Function to calculate distance between points
+  const calculateDistance = (p1: {x: number, y: number}, p2: {x: number, y: number}) => {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Function to draw grid
+  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    ctx.save();
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 0.5;
+
+    // Draw vertical lines
+    for (let x = 0; x <= width; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+
+    // Draw horizontal lines
+    for (let y = 0; y <= height; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  };
+
+  // Function to draw rectangle
+  const drawRectangle = (ctx: CanvasRenderingContext2D, start: {x: number, y: number}, end: {x: number, y: number}, isDashed = false) => {
+    if (isDashed) ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.rect(
+      Math.min(start.x, end.x),
+      Math.min(start.y, end.y),
+      Math.abs(end.x - start.x),
+      Math.abs(end.y - start.y)
+    );
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+
+  // Function to draw circle
+  const drawCircle = (ctx: CanvasRenderingContext2D, center: {x: number, y: number}, end: {x: number, y: number}, isDashed = false) => {
+    const radius = calculateDistance(center, end);
+    if (isDashed) ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+
+  // Modified draw function
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    const { x, y } = getCanvasCoordinates(e);
+    const { x: rawX, y: rawY } = getCanvasCoordinates(e);
+    const { x, y } = snapToGrid ? snapToGridPoint({ x: rawX, y: rawY }) : { x: rawX, y: rawY };
     
-    // Draw the line
     const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Reset any previous transforms
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      
-      // Apply DPI scaling
-      const dpr = window.devicePixelRatio || 1;
-      ctx.scale(dpr, dpr);
-      
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#000';
-      
-      // Always draw from the last point to current point
-      const prevPoint = currentLine[currentLine.length - 1];
+    if (!ctx) return;
+
+    // Reset transforms and set styles
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const dpr = window.devicePixelRatio || 1;
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000';
+
+    // Clear and redraw grid
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawGrid(ctx, canvas.width, canvas.height);
+
+    // Redraw existing lines
+    sketchLines.forEach(line => {
+      if (line.points.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(line.points[0].x, line.points[0].y);
+        for (let i = 1; i < line.points.length; i++) {
+          ctx.lineTo(line.points[i].x, line.points[i].y);
+        }
+        ctx.stroke();
+      }
+    });
+
+    // Draw current line if in freeform mode
+    if (sketchMode === 'freeform' && isDrawing && currentLine.length > 0) {
       ctx.beginPath();
-      ctx.moveTo(prevPoint.x, prevPoint.y);
+      ctx.moveTo(currentLine[0].x, currentLine[0].y);
+      for (let i = 1; i < currentLine.length; i++) {
+        ctx.lineTo(currentLine[i].x, currentLine[i].y);
+      }
+      // Draw line to current mouse position
       ctx.lineTo(x, y);
       ctx.stroke();
     }
-    
-    setCurrentLine([...currentLine, {x, y}]);
-  };
-  
-  // Function to end drawing
-  const endDrawing = () => {
-    if (currentLine.length > 1) {
-      setSketchLines([...sketchLines, {points: currentLine}]);
+
+    if (startPoint) {
+      switch (sketchMode) {
+        case 'precise':
+          ctx.setLineDash([5, 5]);
+          ctx.beginPath();
+          ctx.moveTo(startPoint.x, startPoint.y);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          setPreviewLine([startPoint, { x, y }]);
+          break;
+
+        case 'rectangle':
+          drawRectangle(ctx, startPoint, { x, y }, true);
+          setPreviewLine([
+            startPoint,
+            { x, y: startPoint.y },
+            { x, y },
+            { x: startPoint.x, y },
+            startPoint
+          ]);
+          break;
+
+        case 'circle':
+          drawCircle(ctx, startPoint, { x, y }, true);
+          const radius = calculateDistance(startPoint, { x, y });
+          const points = [];
+          const segments = 32;
+          for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            points.push({
+              x: startPoint.x + Math.cos(angle) * radius,
+              y: startPoint.y + Math.sin(angle) * radius
+            });
+          }
+          setPreviewLine(points);
+          break;
+      }
+    } else if (sketchMode === 'freeform' && isDrawing) {
+      setCurrentLine([...currentLine, { x, y }]);
     }
-    setCurrentLine([]);
-    setIsDrawing(false);
   };
-  
-  // Function to clear the canvas
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      setSketchLines([]);
-      setCurrentLine([]);
-    }
-  };
-  
+
   // Function to convert sketch to SVG and extrude
-  const convertSketchToModel = () => {
+  const convertSketchToModel = async () => {
     if (sketchLines.length === 0) {
       toast({
         title: "No sketch found",
@@ -1018,68 +1238,142 @@ export function Sidebar() {
       });
       return;
     }
+
+    setIsSketchProcessing(true);
     
-    // Create an SVG from the sketch
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '800');
-    svg.setAttribute('height', '600');
-    
-    // Get canvas dimensions for coordinate transformation
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const canvasHeight = canvas.height;
-    
-    // Create a path for each line
-    sketchLines.forEach(line => {
-      if (line.points.length > 1) {
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        
-        // Invert Y coordinate to prevent the sketch from being upside down
-        // SVG coordinates increase downward, but we want to flip this behavior
-        const transformedPoints = line.points.map(point => ({
-          x: point.x,
-          y: canvasHeight - point.y // Invert Y coordinate
-        }));
-        
-        let d = `M ${transformedPoints[0].x} ${transformedPoints[0].y}`;
-        
-        for (let i = 1; i < transformedPoints.length; i++) {
-          d += ` L ${transformedPoints[i].x} ${transformedPoints[i].y}`;
-        }
-        
-        path.setAttribute('d', d);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', 'black');
-        path.setAttribute('stroke-width', '2');
-        svg.appendChild(path);
+    try {
+      // Create an SVG from the sketch
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      // Get canvas dimensions
+      const width = canvas.width;
+      const height = canvas.height;
+      
+      svg.setAttribute('width', width.toString());
+      svg.setAttribute('height', height.toString());
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      
+      // Create a single path for all lines
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      let d = '';
+      
+      // Find the first valid line to start the path
+      const firstLine = sketchLines.find(line => line.points.length > 1);
+      if (!firstLine) return;
+      
+      // Start with the first point
+      const firstPoint = firstLine.points[0];
+      d += `M ${firstPoint.x} ${height - firstPoint.y}`;
+      
+      // Add all points from the first line
+      for (let i = 1; i < firstLine.points.length; i++) {
+        const point = firstLine.points[i];
+        d += ` L ${point.x} ${height - point.y}`;
       }
-    });
-    
-    // Convert SVG to blob
-    const svgString = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([svgString], {type: 'image/svg+xml'});
-    const file = new File([blob], `sketch-${Date.now()}.svg`, {type: 'image/svg+xml'});
-    
-    // Load the SVG and extrude it
-    loadSVG(file, extrusionDepth).then(() => {
+      
+      // Add points from remaining lines
+      for (let lineIndex = 1; lineIndex < sketchLines.length; lineIndex++) {
+        const line = sketchLines[lineIndex];
+        if (line.points.length > 1) {
+          for (let i = 0; i < line.points.length; i++) {
+            const point = line.points[i];
+            d += ` L ${point.x} ${height - point.y}`;
+          }
+        }
+      }
+      
+      // Close the path
+      d += ' Z';
+      
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'black');
+      path.setAttribute('stroke', 'none');
+      svg.appendChild(path);
+      
+      // Convert SVG to blob
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svg);
+      const blob = new Blob([svgString], { type: 'image/svg+xml' });
+      const file = new File([blob], `sketch-${Date.now()}.svg`, { type: 'image/svg+xml' });
+      
+      // Load the SVG and extrude it with the current settings
+      await loadSVG(file, 20); // Default height of 20mm
+      
+      // Get the last added model which should be our newly created one
+      const currentModels = useScene.getState().models;
+      const lastModel = currentModels[currentModels.length - 1];
+      
+      if (lastModel && lastModel.mesh) {
+        // Apply default scale of 1
+        lastModel.mesh.scale.set(1, 1, 1);
+        
+        // Calculate bounding box and find position
+        const boundingBox = new THREE.Box3().setFromObject(lastModel.mesh);
+        const position = findNonCollidingPosition(currentModels.slice(0, -1), boundingBox);
+        
+        // Center the model at the found position
+        const center = new THREE.Vector3();
+        boundingBox.getCenter(center);
+        lastModel.mesh.position.copy(position).sub(center);
+        
+        // Update original properties
+        lastModel.originalPosition.copy(lastModel.mesh.position);
+        lastModel.originalScale.copy(lastModel.mesh.scale);
+      }
+      
       toast({
-        title: "Sketch extruded",
-        description: "Your sketch has been converted to a 3D model",
+        title: "Success",
+        description: "Sketch converted to 3D model",
       });
       
-      // Clear the canvas after successful conversion
-      clearCanvas();
+      // Clear the sketch
+      setSketchLines([]);
+      setCurrentLine([]);
+      setStartPoint(null);
+      setPreviewLine(null);
       
-      // Switch to the uploads tab to see the model
-      setActiveTab("uploads");
-    }).catch(error => {
-      console.error("Error extruding sketch:", error);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGrid(ctx, canvas.width, canvas.height);
+      }
+    } catch (error) {
       toast({
-        title: "Extrusion failed",
-        description: "There was an error creating your 3D model",
+        title: "Error",
+        description: "Failed to convert sketch to 3D model",
         variant: "destructive",
       });
-    });
+      console.error("Error converting sketch to 3D:", error);
+    } finally {
+      setIsSketchProcessing(false);
+    }
+  };
+
+  // Add mouse event handlers for sketching
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCanvasCoordinates(e);
+    const snappedPoint = snapToGrid ? snapToGridPoint({ x, y }) : { x, y };
+
+    if (sketchMode === 'freeform') {
+      setIsDrawing(true);
+      setCurrentLine([snappedPoint]);
+    } else {
+      setStartPoint(snappedPoint);
+    }
+  };
+
+  const endDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (sketchMode === 'freeform' && isDrawing) {
+      setSketchLines([...sketchLines, { points: currentLine }]);
+      setCurrentLine([]);
+      setIsDrawing(false);
+    } else if (startPoint && previewLine) {
+      setSketchLines([...sketchLines, { points: previewLine }]);
+      setStartPoint(null);
+      setPreviewLine(null);
+    }
   };
 
   return (
@@ -1090,27 +1384,27 @@ export function Sidebar() {
       
       <div className="flex-1 flex flex-col">
         <Tabs 
-          defaultValue="uploads" 
+          defaultValue="models" 
           className="flex-1 flex flex-row h-full"
           value={activeTab}
           onValueChange={handleTabChange}
         >
           <TabsList className="flex flex-col h-full py-4 border-r space-y-2 w-20 shrink-0 overflow-y-auto overflow-x-hidden">
-            <TabsTrigger value="uploads" className="flex justify-center items-center flex-col py-3 px-2">
-              <Upload className="h-5 w-5" />
-              <span className="text-xs mt-1">Uploads</span>
+            <TabsTrigger value="models" className="flex justify-center items-center flex-col py-3 px-2">
+              <Box className="h-5 w-5" />
+              <span className="text-xs mt-1">Models</span>
             </TabsTrigger>
             <TabsTrigger value="library" className="flex justify-center items-center flex-col py-3 px-2">
-              <Box className="h-5 w-5" />
+              <Shapes className="h-5 w-5" />
               <span className="text-xs mt-1">Library</span>
+            </TabsTrigger>
+            <TabsTrigger value="shapes" className="flex justify-center items-center flex-col py-3 px-2">
+              <Box className="h-5 w-5" />
+              <span className="text-xs mt-1">Shapes</span>
             </TabsTrigger>
             <TabsTrigger value="ai" className="flex justify-center items-center flex-col py-3 px-2">
               <Bot className="h-5 w-5" />
               <span className="text-xs mt-1">AI</span>
-            </TabsTrigger>
-            <TabsTrigger value="shapes" className="flex justify-center items-center flex-col py-3 px-2">
-              <Shapes className="h-5 w-5" />
-              <span className="text-xs mt-1">Shapes</span>
             </TabsTrigger>
             <TabsTrigger value="sketch" className="flex justify-center items-center flex-col py-3 px-2">
               <Pencil className="h-5 w-5" />
@@ -1127,8 +1421,8 @@ export function Sidebar() {
           </TabsList>
           
           <div className="flex-1 overflow-hidden">
-            {/* Uploads Tab */}
-            <TabsContent value="uploads" className="flex-1 overflow-y-auto p-3 space-y-4 h-full">
+            {/* Models Tab */}
+            <TabsContent value="models" className="flex-1 overflow-y-auto p-3 space-y-4 h-full">
               <div className="flex flex-col space-y-2">
                 <Button
                   variant="outline"
@@ -1163,34 +1457,94 @@ export function Sidebar() {
               <ModelList />
             </TabsContent>
             
-            {/* 3D Library Tab */}
+            {/* Library Tab */}
             <TabsContent value="library" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-4">
+                <h3 className="text-lg font-medium">3D Library</h3>
                 <p className="text-sm text-muted-foreground">
-                  The 3D Library offers both ready-made designs and customizable models.
+                  Import and manage your 3D models and designs.
                 </p>
-                <Button
-                  variant="default"
-                  size="default"
-                  className="w-full"
-                  onClick={() => setActiveTab("library")}
-                >
-                  <Box className="mr-2 h-4 w-4" />
-                  Open 3D Library
-                </Button>
-                <Button
-                  variant="outline"
-                  size="default"
-                  className="w-full"
-                  onClick={handleImportClick}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Import STL or SVG
-                </Button>
+
+                {/* Import/Export Section */}
+                <div className="pt-4 space-y-2">
+                  <Button variant="outline" size="sm" className="w-full" onClick={handleImportClick}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import STL or SVG
+                  </Button>
+                </div>
               </div>
             </TabsContent>
-            
-            {/* AI Model Generator Tab */}
+
+            {/* Shapes Tab */}
+            <TabsContent value="shapes" className="flex-1 overflow-y-auto p-3 h-full">
+              <div className="flex flex-col space-y-6">
+                {/* Basic Shapes Section */}
+                <Card className="p-4">
+                  <h3 className="text-lg font-medium mb-3">Basic Shapes</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" size="sm" onClick={handleAddCube} className="justify-center w-full">
+                      Cube
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddSphere} className="justify-center w-full">
+                      Sphere
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddCylinder} className="justify-center w-full">
+                      Cylinder
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddCone} className="justify-center w-full">
+                      Cone
+                    </Button>
+                  </div>
+                </Card>
+
+                {/* Extended Shapes Section */}
+                <Card className="p-4">
+                  <h3 className="text-lg font-medium mb-3">Extended Shapes</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" size="sm" onClick={handleAddTorus} className="justify-center w-full">
+                      Torus
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddCapsule} className="justify-center w-full">
+                      Capsule
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddPyramid} className="justify-center w-full">
+                      Pyramid
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddPrism} className="justify-center w-full">
+                      Prism
+                    </Button>
+                  </div>
+                </Card>
+
+                {/* Advanced Shapes Section */}
+                <Card className="p-4">
+                  <h3 className="text-lg font-medium mb-3">Advanced Shapes</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" size="sm" onClick={handleAddTorusKnot} className="justify-center w-full">
+                      Torus Knot
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddOctahedron} className="justify-center w-full">
+                      Octahedron
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddIcosahedron} className="justify-center w-full">
+                      Icosahedron
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddDodecahedron} className="justify-center w-full">
+                      Dodecahedron
+                    </Button>
+                  </div>
+                </Card>
+
+                {/* Description Card */}
+                <Card className="p-4 bg-muted/40">
+                  <p className="text-sm text-muted-foreground">
+                    All dimensions are in millimeters (mm). Basic shapes are sized to approximately 2 inches (50.8 mm).
+                  </p>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* AI Tab */}
             <TabsContent value="ai" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-6">
                 {/* MagicFish AI Card */}
@@ -1216,7 +1570,7 @@ export function Sidebar() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Shapes className="h-5 w-5" />
+                      <Zap className="h-5 w-5" />
                       BuildFish AI
                     </CardTitle>
                   </CardHeader>
@@ -1225,139 +1579,51 @@ export function Sidebar() {
                       Generate precise 3D designs from text descriptions. Ideal for architectural models, mechanical parts, and technical designs.
                     </p>
                     <Button className="w-full" onClick={() => window.open('#', '_blank')}>
-                      <Shapes className="mr-2 h-4 w-4" />
+                      <Zap className="mr-2 h-4 w-4" />
                       Open BuildFish AI
                     </Button>
                   </CardContent>
                 </Card>
-
-                {/* Import Button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleImportClick}
-                >
-                  <Upload className="mr-1 h-4 w-4" />
-                  Import STL or SVG
-                </Button>
               </div>
             </TabsContent>
-            
-            {/* Shapes Tab */}
-            <TabsContent value="shapes" className="flex-1 overflow-y-auto p-3 h-full">
-              <div className="flex flex-col space-y-2">
-                <h3 className="text-lg font-medium mb-2">Basic Shapes</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddCube}
-                >
-                  Add Cube
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddSphere}
-                >
-                  Add Sphere
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddCylinder}
-                >
-                  Add Cylinder
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddCone}
-                >
-                  Add Cone
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddTorus}
-                >
-                  Add Torus
-                </Button>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddCapsule}
-                >
-                  Add Capsule
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddPyramid}
-                >
-                  Add Pyramid
-                </Button>
-
-                <h3 className="text-lg font-medium mt-4 mb-2">Advanced Shapes</h3>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddTorusKnot}
-                >
-                  Add Torus Knot
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddOctahedron}
-                >
-                  Add Octahedron
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddIcosahedron}
-                >
-                  Add Icosahedron
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleAddDodecahedron}
-                >
-                  Add Dodecahedron
-                </Button>
-              </div>
-            </TabsContent>
-            
             {/* Sketch Tab */}
             <TabsContent value="sketch" className="flex-1 overflow-y-auto p-3 h-full">
               <div className="flex flex-col space-y-4">
                 <h3 className="text-lg font-medium">Sketch & Extrude</h3>
                 <p className="text-sm text-muted-foreground">
-                  Draw a shape and it will be extruded into a 3D model
+                  Draw a shape and convert it to a 3D model
                 </p>
+                
+                {/* Drawing tools */}
+                <div className="flex items-center space-x-2">
+                  <Select
+                    value={sketchMode}
+                    onValueChange={(value: 'freeform' | 'precise' | 'rectangle' | 'circle') => setSketchMode(value)}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Select sketch mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="freeform">Freeform</SelectItem>
+                      <SelectItem value="precise">Line</SelectItem>
+                      <SelectItem value="rectangle">Rectangle</SelectItem>
+                      <SelectItem value="circle">Circle</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Grid settings */}
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="snap-to-grid"
+                      checked={snapToGrid}
+                      onCheckedChange={(checked) => setSnapToGrid(checked === true)}
+                    />
+                    <Label htmlFor="snap-to-grid">Snap to Grid</Label>
+                  </div>
+                </div>
                 
                 {/* Canvas for drawing */}
                 <div className="border rounded-md p-2 bg-white" style={{ height: '300px' }}>
@@ -1371,42 +1637,34 @@ export function Sidebar() {
                   />
                 </div>
                 
-                {/* Controls */}
-                <div className="border rounded-md p-4 space-y-4">
-                  <h4 className="text-sm font-medium mb-2">Extrusion Settings</h4>
-                  
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label className="text-right">Depth</Label>
-                    <div className="col-span-3 flex items-center gap-2">
-                      <Slider
-                        value={[extrusionDepth]}
-                        min={6.35}
-                        max={101.6}
-                        step={3.175}
-                        onValueChange={(value) => setExtrusionDepth(value[0])}
-                        className="flex-1"
-                      />
-                      <span className="w-16 text-sm text-muted-foreground">
-                        {(extrusionDepth / 25.4).toFixed(2)}"
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                
                 {/* Action buttons */}
                 <div className="flex flex-col space-y-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={clearCanvas}
+                    onClick={() => {
+                      setSketchLines([]);
+                      setCurrentLine([]);
+                      setStartPoint(null);
+                      setPreviewLine(null);
+                      const canvas = canvasRef.current;
+                      if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                          ctx.clearRect(0, 0, canvas.width, canvas.height);
+                          drawGrid(ctx, canvas.width, canvas.height);
+                        }
+                      }
+                    }}
                   >
                     Clear Sketch
                   </Button>
                   
                   <Button
                     onClick={convertSketchToModel}
+                    disabled={isSketchProcessing || sketchLines.length === 0}
                   >
-                    Create 3D Model
+                    {isSketchProcessing ? "Creating 3D Model..." : "Create 3D Model"}
                   </Button>
                 </div>
               </div>
@@ -1421,6 +1679,16 @@ export function Sidebar() {
                     ? "Edit your 3D text with the settings below" 
                     : "Configure your text settings and add it to the scene"}
                 </p>
+
+                {/* Preview Canvas */}
+                <div className="p-4">
+                  <h4 className="text-sm font-medium mb-2">Preview</h4>
+                  <canvas
+                    ref={textPreviewCanvasRef}
+                    className="w-full"
+                    style={{ height: '100px', backgroundColor: '#ffffff' }}
+                  />
+                </div>
                 
                 <div className="flex flex-col space-y-4">
                   {/* Text Input */}
@@ -1479,130 +1747,23 @@ export function Sidebar() {
                   
                   {/* Text Style Controls */}
                   <div className="grid gap-6">
+                    {/* Bevel thickness control */}
                     <div className="flex items-center gap-4">
-                      <Label className="w-24 text-right text-sm whitespace-nowrap">Font Size</Label>
+                      <Label className="w-24 text-right text-sm">Thickness</Label>
                       <div className="flex-1 flex items-center gap-3">
                         <Slider
-                          value={[fontSize]}
-                          min={1}
-                          max={20}
-                          step={0.5}
-                          onValueChange={(value) => setFontSize(value[0])}
-                          className="flex-1"
-                        />
-                        <span className="w-8 text-sm text-center">
-                          {fontSize}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-4">
-                      <Label className="w-24 text-right text-sm">Depth</Label>
-                      <div className="flex-1 flex items-center gap-3">
-                        <Slider
-                          value={[height]}
-                          min={0.1}
-                          max={10}
+                          value={[bevelThickness]}
+                          min={0}
+                          max={5}
                           step={0.1}
-                          onValueChange={(value) => setHeight(value[0])}
+                          onValueChange={(value) => setBevelThickness(value[0])}
                           className="flex-1"
                         />
-                        <span className="w-8 text-sm text-center">
-                          {height}
+                        <span className="w-12 text-sm text-center">
+                          {bevelThickness}mm
                         </span>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-4">
-                      <Label className="w-24 text-right text-sm">Segments</Label>
-                      <div className="flex-1 flex items-center gap-3">
-                        <Slider
-                          value={[curveSegments]}
-                          min={1}
-                          max={10}
-                          step={1}
-                          onValueChange={(value) => setCurveSegments(value[0])}
-                          className="flex-1"
-                        />
-                        <span className="w-8 text-sm text-center">
-                          {curveSegments}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-4">
-                      <Label className="w-24 text-right text-sm">Bevel</Label>
-                      <div className="flex-1 flex items-center gap-3">
-                        <Checkbox
-                          checked={bevelEnabled}
-                          onCheckedChange={(checked) => 
-                            setBevelEnabled(checked === true)
-                          }
-                          id="bevel"
-                        />
-                        <Label htmlFor="bevel" className="text-sm font-normal">
-                          Enable bevel
-                        </Label>
-                      </div>
-                    </div>
-                    
-                    {bevelEnabled && (
-                      <>
-                        <div className="flex items-center gap-4">
-                          <Label className="w-24 text-right text-sm">Thickness</Label>
-                          <div className="flex-1 flex items-center gap-3">
-                            <Slider
-                              value={[bevelThickness]}
-                              min={0.01}
-                              max={1}
-                              step={0.01}
-                              disabled={!bevelEnabled}
-                              onValueChange={(value) => setBevelThickness(value[0])}
-                              className="flex-1"
-                            />
-                            <span className="w-8 text-sm text-center">
-                              {bevelThickness}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-4">
-                          <Label className="w-24 text-right text-sm">Size</Label>
-                          <div className="flex-1 flex items-center gap-3">
-                            <Slider
-                              value={[bevelSize]}
-                              min={0.01}
-                              max={1}
-                              step={0.01}
-                              disabled={!bevelEnabled}
-                              onValueChange={(value) => setBevelSize(value[0])}
-                              className="flex-1"
-                            />
-                            <span className="w-8 text-sm text-center">
-                              {bevelSize}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-4">
-                          <Label className="w-24 text-right text-sm">Segments</Label>
-                          <div className="flex-1 flex items-center gap-3">
-                            <Slider
-                              value={[bevelSegments]}
-                              min={1}
-                              max={10}
-                              step={1}
-                              disabled={!bevelEnabled}
-                              onValueChange={(value) => setBevelSegments(value[0])}
-                              className="flex-1"
-                            />
-                            <span className="w-8 text-sm text-center">
-                              {bevelSegments}
-                            </span>
-                          </div>
-                        </div>
-                      </>
-                    )}
                   </div>
                 </div>
               </div>
@@ -1644,249 +1805,10 @@ export function Sidebar() {
                           Apply Color
                         </Button>
                       </div>
-
-                      {/* Scaling Controls */}
-                      <div className="border-t mt-4 pt-4">
-                        <h4 className="text-sm font-medium mb-3">Scale Model</h4>
-                        
-                        {/* Uniform Scale */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-4">
-                            <Label className="w-24 text-right text-sm">Uniform</Label>
-                            <div className="flex-1 flex items-center gap-3">
-                              <Slider
-                                value={[models[selectedModelIndex].mesh.scale.x]}
-                                min={0.01}
-                                max={1000}
-                                step={0.01}
-                                onValueChange={(value) => {
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.set(value[0], value[0], value[0]);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="flex-1"
-                              />
-                              <input
-                                type="number"
-                                value={models[selectedModelIndex].mesh.scale.x}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value) || 0.01;
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.set(value, value, value);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="w-20 text-sm p-1 border rounded"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Individual Axis Controls */}
-                          <div className="flex items-center gap-4">
-                            <Label className="w-24 text-right text-sm">X & Y</Label>
-                            <div className="flex-1 flex items-center gap-3">
-                              <Slider
-                                value={[models[selectedModelIndex].mesh.scale.x]}
-                                min={0.01}
-                                max={1000}
-                                step={0.01}
-                                onValueChange={(value) => {
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setX(value[0]);
-                                  model.mesh.scale.setY(value[0]);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="flex-1"
-                              />
-                              <input
-                                type="number"
-                                value={models[selectedModelIndex].mesh.scale.x}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value) || 0.01;
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setX(value);
-                                  model.mesh.scale.setY(value);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="w-20 text-sm p-1 border rounded"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4">
-                            <Label className="w-24 text-right text-sm">Y & Z</Label>
-                            <div className="flex-1 flex items-center gap-3">
-                              <Slider
-                                value={[models[selectedModelIndex].mesh.scale.y]}
-                                min={0.01}
-                                max={1000}
-                                step={0.01}
-                                onValueChange={(value) => {
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setY(value[0]);
-                                  model.mesh.scale.setZ(value[0]);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="flex-1"
-                              />
-                              <input
-                                type="number"
-                                value={models[selectedModelIndex].mesh.scale.y}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value) || 0.01;
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setY(value);
-                                  model.mesh.scale.setZ(value);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="w-20 text-sm p-1 border rounded"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4">
-                            <Label className="w-24 text-right text-sm">X & Z</Label>
-                            <div className="flex-1 flex items-center gap-3">
-                              <Slider
-                                value={[models[selectedModelIndex].mesh.scale.x]}
-                                min={0.01}
-                                max={1000}
-                                step={0.01}
-                                onValueChange={(value) => {
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setX(value[0]);
-                                  model.mesh.scale.setZ(value[0]);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="flex-1"
-                              />
-                              <input
-                                type="number"
-                                value={models[selectedModelIndex].mesh.scale.x}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value) || 0.01;
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setX(value);
-                                  model.mesh.scale.setZ(value);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="w-20 text-sm p-1 border rounded"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Individual Axis Controls */}
-                          <div className="flex items-center gap-4">
-                            <Label className="w-24 text-right text-sm">X Axis</Label>
-                            <div className="flex-1 flex items-center gap-3">
-                              <Slider
-                                value={[models[selectedModelIndex].mesh.scale.x]}
-                                min={0.01}
-                                max={1000}
-                                step={0.01}
-                                onValueChange={(value) => {
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setX(value[0]);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="flex-1"
-                              />
-                              <input
-                                type="number"
-                                value={models[selectedModelIndex].mesh.scale.x}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value) || 0.01;
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setX(value);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="w-20 text-sm p-1 border rounded"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4">
-                            <Label className="w-24 text-right text-sm">Y Axis</Label>
-                            <div className="flex-1 flex items-center gap-3">
-                              <Slider
-                                value={[models[selectedModelIndex].mesh.scale.y]}
-                                min={0.01}
-                                max={1000}
-                                step={0.01}
-                                onValueChange={(value) => {
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setY(value[0]);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="flex-1"
-                              />
-                              <input
-                                type="number"
-                                value={models[selectedModelIndex].mesh.scale.y}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value) || 0.01;
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setY(value);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="w-20 text-sm p-1 border rounded"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4">
-                            <Label className="w-24 text-right text-sm">Z Axis</Label>
-                            <div className="flex-1 flex items-center gap-3">
-                              <Slider
-                                value={[models[selectedModelIndex].mesh.scale.z]}
-                                min={0.01}
-                                max={1000}
-                                step={0.01}
-                                onValueChange={(value) => {
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setZ(value[0]);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="flex-1"
-                              />
-                              <input
-                                type="number"
-                                value={models[selectedModelIndex].mesh.scale.z}
-                                onChange={(e) => {
-                                  const value = parseFloat(e.target.value) || 0.01;
-                                  const model = models[selectedModelIndex];
-                                  model.mesh.scale.setZ(value);
-                                  scene.needsUpdate = true;
-                                  saveHistoryState();
-                                }}
-                                className="w-20 text-sm p-1 border rounded"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
                     </>
                   )}
                 </div>
+                
                 
                 {/* Scene Visibility */}
                 <div className="border rounded-md p-4 space-y-4">

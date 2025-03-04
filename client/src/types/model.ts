@@ -15,7 +15,7 @@ export interface TextProps {
 export interface Model {
   id: string;
   name: string;
-  type: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'text' | 'model' | 'torusknot' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'capsule' | 'pyramid';
+  type: 'text' | 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'model' | 'torusknot' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'capsule' | 'pyramid' | 'svg';
   mesh: Mesh;
   originalPosition: Vector3;
   originalRotation: Euler;

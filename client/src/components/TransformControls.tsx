@@ -48,8 +48,8 @@ const ROTATION_UNIT = "°";
 const SCALE_UNIT = "";
 const DIMENSION_UNIT = "mm";
 
-// Maximum scale is now based on allowing models to reach 10 inches
-const MAX_SCALE = 1000; // Increased to allow for scaling up very small models to 10 inches
+// Maximum scale is now based on allowing models to reach reasonable size
+const MAX_SCALE = 100; // Reduced from 1000 to 100 for more reasonable scaling
 const MM_PER_INCH = 25.4;
 const MAX_SIZE_MM = 254; // 10 inches in mm
 

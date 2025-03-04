@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,9 +11,17 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
-import { Checkbox } from "./ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { useToast } from "../hooks/use-toast";
 import { useScene } from "../hooks/use-scene";
+
+// Font options with their display names and paths
+const FONTS = [
+  { name: "Helvetica", value: "helvetica" },
+  { name: "Arial", value: "arial" },
+  { name: "Times New Roman", value: "times new roman" },
+  { name: "Courier", value: "courier" }
+];
 
 type TextDialogProps = {
   open: boolean;
@@ -23,16 +31,46 @@ type TextDialogProps = {
 export function TextDialog({ open, onOpenChange }: TextDialogProps) {
   const { toast } = useToast();
   const { loadText } = useScene();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   
   const [text, setText] = useState("Text");
-  const [fontSize, setFontSize] = useState(152.4);
-  const [height, setHeight] = useState(76.2);
-  const [curveSegments, setCurveSegments] = useState(4);
-  const [bevelEnabled, setBevelEnabled] = useState(true);
-  const [bevelThickness, setBevelThickness] = useState(12.7);
-  const [bevelSize, setBevelSize] = useState(6.35);
-  const [bevelSegments, setBevelSegments] = useState(3);
+  const [fontSize, setFontSize] = useState(48);
+  const [selectedFont, setSelectedFont] = useState(FONTS[0].value);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Update the canvas preview whenever text properties change
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set font
+    ctx.font = `${fontSize}px ${selectedFont}`;
+    ctx.fillStyle = 'black';
+    
+    // Calculate text metrics
+    const metrics = ctx.measureText(text);
+    const textWidth = metrics.width;
+    const textHeight = fontSize;
+    
+    // Center the text
+    const x = (canvas.width - textWidth) / 2;
+    const y = (canvas.height + textHeight / 2) / 2;
+    
+    // Draw text
+    ctx.fillText(text, x, y);
+    
+    // Draw bounding box
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y - textHeight, textWidth, textHeight);
+    
+  }, [text, fontSize, selectedFont]);
   
   const handleSubmit = async () => {
     if (!text.trim()) {
@@ -49,25 +87,20 @@ export function TextDialog({ open, onOpenChange }: TextDialogProps) {
     try {
       await loadText(text, {
         text,
-        fontSize,
-        height,
-        curveSegments,
-        bevelEnabled,
-        bevelThickness,
-        bevelSize,
-        bevelSegments,
+        fontSize: fontSize * 0.5, // Convert to appropriate 3D size
+        fontPath: `/fonts/${selectedFont}.typeface.json`,
       });
       
       toast({
         title: "Success",
-        description: "3D text created successfully",
+        description: "Text created successfully",
       });
       
       onOpenChange(false);
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to create 3D text",
+        description: "Failed to create text",
         variant: "destructive",
       });
     } finally {
@@ -79,9 +112,9 @@ export function TextDialog({ open, onOpenChange }: TextDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create 3D Text</DialogTitle>
+          <DialogTitle>Create Text</DialogTitle>
           <DialogDescription>
-            Enter text and customize options to create a 3D text object
+            Enter text and customize its appearance
           </DialogDescription>
         </DialogHeader>
         
@@ -99,129 +132,48 @@ export function TextDialog({ open, onOpenChange }: TextDialogProps) {
           </div>
           
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Font Size</Label>
+            <Label className="text-right">Font</Label>
+            <div className="col-span-3">
+              <Select value={selectedFont} onValueChange={setSelectedFont}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FONTS.map((font) => (
+                    <SelectItem key={font.value} value={font.value}>
+                      {font.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label className="text-right">Size</Label>
             <div className="col-span-3 flex items-center gap-2">
               <Slider
                 value={[fontSize]}
-                min={25.4}
-                max={304.8}
-                step={25.4}
+                min={12}
+                max={144}
+                step={1}
                 onValueChange={(value) => setFontSize(value[0])}
                 className="flex-1"
               />
-              <span className="w-16 text-sm text-muted-foreground">
-                {(fontSize / 25.4).toFixed(1)}"
-              </span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Depth</Label>
-            <div className="col-span-3 flex items-center gap-2">
-              <Slider
-                value={[height]}
-                min={25.4}
-                max={152.4}
-                step={25.4}
-                onValueChange={(value) => setHeight(value[0])}
-                className="flex-1"
-              />
-              <span className="w-16 text-sm text-muted-foreground">
-                {(height / 25.4).toFixed(1)}"
-              </span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Segments</Label>
-            <div className="col-span-3 flex items-center gap-2">
-              <Slider
-                value={[curveSegments]}
-                min={1}
-                max={10}
-                step={1}
-                onValueChange={(value) => setCurveSegments(value[0])}
-                className="flex-1"
-              />
               <span className="w-12 text-sm text-muted-foreground">
-                {curveSegments}
+                {fontSize}px
               </span>
             </div>
           </div>
           
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Bevel</Label>
-            <div className="col-span-3 flex items-center gap-2">
-              <Checkbox
-                checked={bevelEnabled}
-                onCheckedChange={(checked) => 
-                  setBevelEnabled(checked === true)
-                }
-                id="bevel"
-              />
-              <Label htmlFor="bevel" className="text-sm font-normal">
-                Enable bevel
-              </Label>
-            </div>
+          <div className="border rounded-md p-4 bg-background">
+            <canvas
+              ref={canvasRef}
+              width={400}
+              height={200}
+              className="w-full border-2 border-dashed border-gray-200 bg-white"
+            />
           </div>
-          
-          {bevelEnabled && (
-            <>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Bevel Thickness</Label>
-                <div className="col-span-3 flex items-center gap-2">
-                  <Slider
-                    value={[bevelThickness]}
-                    min={0.01}
-                    max={1}
-                    step={0.01}
-                    disabled={!bevelEnabled}
-                    onValueChange={(value) => setBevelThickness(value[0])}
-                    className="flex-1"
-                  />
-                  <span className="w-12 text-sm text-muted-foreground">
-                    {bevelThickness}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Bevel Size</Label>
-                <div className="col-span-3 flex items-center gap-2">
-                  <Slider
-                    value={[bevelSize]}
-                    min={0.01}
-                    max={1}
-                    step={0.01}
-                    disabled={!bevelEnabled}
-                    onValueChange={(value) => setBevelSize(value[0])}
-                    className="flex-1"
-                  />
-                  <span className="w-12 text-sm text-muted-foreground">
-                    {bevelSize}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Bevel Segments</Label>
-                <div className="col-span-3 flex items-center gap-2">
-                  <Slider
-                    value={[bevelSegments]}
-                    min={1}
-                    max={10}
-                    step={1}
-                    disabled={!bevelEnabled}
-                    onValueChange={(value) => setBevelSegments(value[0])}
-                    className="flex-1"
-                  />
-                  <span className="w-12 text-sm text-muted-foreground">
-                    {bevelSegments}
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
         </div>
         
         <DialogFooter>
@@ -230,7 +182,7 @@ export function TextDialog({ open, onOpenChange }: TextDialogProps) {
             onClick={handleSubmit} 
             disabled={isLoading}
           >
-            {isLoading ? "Creating..." : "Create 3D Text"}
+            {isLoading ? "Creating..." : "Create Text"}
           </Button>
         </DialogFooter>
       </DialogContent>

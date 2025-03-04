@@ -28,16 +28,27 @@ export function ModelList() {
       
       // Check if it's an STL file
       if (!file.name.toLowerCase().endsWith('.stl')) {
-        toast.error("Please select an STL file");
+        toast({
+          title: "Invalid file",
+          description: "Please select an STL file",
+          variant: "destructive",
+        });
         return;
       }
       
       await loadSTL(file);
-      toast.success(`Loaded ${file.name}`);
+      toast({
+        title: "Success",
+        description: `Loaded ${file.name}`,
+      });
       
     } catch (error) {
       console.error(error);
-      toast.error("Failed to load model");
+      toast({
+        title: "Error",
+        description: "Failed to load model",
+        variant: "destructive",
+      });
     } finally {
       // Reset the input
       event.target.value = '';
@@ -68,12 +79,11 @@ export function ModelList() {
     selectSecondaryModel(index);
     
     const modelName = models[index]?.name || 'Model';
-    toast.info(
-      `Selected ${modelName}`,
-      {
-        description: "Now you can transform or combine models"
-      }
-    );
+    toast({
+      title: "Model Selected",
+      description: `Selected ${modelName}`,
+      duration: 2000,
+    });
   };
 
   const handleCopyModel = (index: number) => {
@@ -225,7 +235,10 @@ export function ModelList() {
                 models.forEach((_, index) => removeModel(0));
                 selectModel(null);
                 selectSecondaryModel(null);
-                toast.info("All models deleted");
+                toast({
+                  title: "All models deleted",
+                  duration: 2000,
+                });
               }}
             >
               <TrashIcon className="h-4 w-4 mr-2" />

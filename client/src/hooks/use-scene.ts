@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client';
 import { ImportScaleDialog } from '../components/ImportScaleDialog';
 import { Vector3 } from "three";
 import * as React from 'react';
+import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 // Scene configuration
 const GRID_SIZE = 500; // Much larger grid for better visibility
@@ -35,7 +36,7 @@ const SNAP_GRID_SIZE = 2.0;
 type Model = {
   id: string;
   name: string;
-  type: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'text' | 'model' | 'torusknot' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'capsule' | 'pyramid';
+  type: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'text' | 'model' | 'torusknot' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'capsule' | 'pyramid' | 'svg';
   mesh: THREE.Mesh;
   originalPosition: THREE.Vector3;
   originalRotation: THREE.Euler;
@@ -1092,7 +1093,7 @@ export const useScene = create<SceneState>((set, get) => {
             console.log("Using direct geometry merging for union to preserve all faces");
             
             // Skip CSG entirely for union operations to preserve all faces including intersections
-            const combinedGeometry = mergeGeometries([geomA, geomB]);
+            const combinedGeometry = BufferGeometryUtils.mergeGeometries([geomA, geomB]);
             
             // Keep original colors
             const material = new THREE.MeshStandardMaterial({
@@ -1562,220 +1563,124 @@ export const useScene = create<SceneState>((set, get) => {
       const state = get();
       
       if (!state.isSceneReady) {
-        console.error("Scene not ready, can't load SVG");
-        return;
+        throw new Error("Scene not ready");
       }
       
-      try {
-        console.log("Loading SVG file:", file.name, "with extrusion depth:", extrudeDepth);
-        const loader = new SVGLoader();
+      // Create a URL for the file
+      const url = URL.createObjectURL(file);
+      
+      // Load the SVG
+      const loader = new SVGLoader();
+      const svgData = await loader.loadAsync(url);
+      
+      // Clean up the URL
+      URL.revokeObjectURL(url);
+      
+      // Create a group to hold our shapes
+      const group = new THREE.Group();
+      
+      // Create a material with a random color
+      const material = new THREE.MeshStandardMaterial({
+        color: getRandomColor(),
+        side: THREE.DoubleSide,
+      });
+      
+      // Extrusion settings with bevel for better 3D appearance
+      const extrudeSettings = {
+        depth: extrudeDepth,
+        bevelEnabled: true,
+        bevelThickness: 1,
+        bevelSize: 1,
+        bevelOffset: 0,
+        bevelSegments: 3
+      };
+      
+      // Process all paths in the SVG
+      svgData.paths.forEach((path) => {
+        // Convert all subpaths to shapes
+        const shapes = path.toShapes(true);
         
-        // Load the SVG file
-        const svgData = await new Promise<SVGResult>((resolve, reject) => {
-          const reader = new FileReader();
+        shapes.forEach((shape) => {
+          // Ensure the shape is properly oriented for solid extrusion
+          shape.autoClose = true;
           
-          reader.onload = (event) => {
-            try {
-              if (event.target?.result) {
-                const result = event.target.result;
-                const svgData = loader.parse(result as string);
-                resolve(svgData as SVGResult);
-              } else {
-                reject(new Error("Failed to read SVG file"));
-              }
-            } catch (error) {
-              reject(error);
-            }
-          };
-          
-          reader.onerror = () => reject(new Error("Error reading SVG file"));
-          reader.readAsText(file);
-        });
-        
-        // Create material with random color
-        const material = new THREE.MeshStandardMaterial({ 
-          color: getRandomColor(),
-          metalness: 0.1,
-          roughness: 0.8,
-          side: THREE.DoubleSide,
-        });
-        
-        // Create an empty geometry to merge all paths into
-        const group = new THREE.Group();
-        
-        // Extrusion settings
-        const extrudeSettings = {
-          depth: extrudeDepth,
-          bevelEnabled: false
-        };
-        
-        // Process all paths in the SVG
-        svgData.paths.forEach((path) => {
-          const shapes = path.toShapes(true);
-          
-          shapes.forEach((shape) => {
-            // Extrude the shape to create a 3D object
-            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-            const mesh = new THREE.Mesh(geometry, material);
-            group.add(mesh);
-          });
-        });
-        
-        // If no valid paths were found, throw an error
-        if (group.children.length === 0) {
-          throw new Error("No valid paths found in SVG");
-        }
-        
-        // Combine all meshes into a single mesh
-        const buffers: THREE.BufferGeometry[] = [];
-        group.children.forEach((child) => {
-          if (child instanceof THREE.Mesh) {
-            buffers.push(child.geometry.clone());
+          // Create holes array if the shape has holes
+          const holes = [];
+          if (shape.holes && shape.holes.length > 0) {
+            shape.holes.forEach((hole) => {
+              hole.autoClose = true;
+              holes.push(hole);
+            });
           }
+          
+          // Extrude the shape to create a solid 3D object
+          const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+          
+          // Create mesh with the geometry
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          
+          group.add(mesh);
         });
-        
-        // Use BufferGeometryUtils to merge geometries
-        let mergedGeometry: THREE.BufferGeometry;
-        if (buffers.length === 1) {
-          mergedGeometry = buffers[0];
-        } else {
-          // Create a manual merged geometry
-          const meshesToMerge: THREE.Mesh[] = [];
-          group.children.forEach((child) => {
-            if (child instanceof THREE.Mesh) {
-              meshesToMerge.push(child);
-            }
-          });
-          
-          const finalGeometry = new THREE.BufferGeometry();
-          let verticesArray: Float32Array[] = [];
-          let normalsArray: Float32Array[] = [];
-          let uvsArray: Float32Array[] = [];
-          let indicesArray: number[][] = [];
-          let vertexOffset = 0;
-          
-          meshesToMerge.forEach((mesh) => {
-            const geo = mesh.geometry;
-            const vertices = geo.attributes.position.array as Float32Array;
-            const normals = geo.attributes.normal?.array as Float32Array;
-            const uvs = geo.attributes.uv?.array as Float32Array;
-            const indices = geo.index ? Array.from(geo.index.array) : [];
-            
-            verticesArray.push(vertices);
-            if (normals) normalsArray.push(normals);
-            if (uvs) uvsArray.push(uvs);
-            
-            // Adjust indices to account for merged vertices
-            if (indices.length > 0) {
-              const adjustedIndices = indices.map(i => i + vertexOffset);
-              indicesArray.push(adjustedIndices);
-            }
-            
-            vertexOffset += vertices.length / 3;
-          });
-          
-          // Merge arrays
-          const mergedVertices = mergeFloat32Arrays(verticesArray);
-          const mergedNormals = normalsArray.length > 0 ? mergeFloat32Arrays(normalsArray) : undefined;
-          const mergedUvs = uvsArray.length > 0 ? mergeFloat32Arrays(uvsArray) : undefined;
-          const mergedIndices = indicesArray.flat();
-          
-          // Set attributes
-          finalGeometry.setAttribute('position', new THREE.BufferAttribute(mergedVertices, 3));
-          if (mergedNormals) finalGeometry.setAttribute('normal', new THREE.BufferAttribute(mergedNormals, 3));
-          if (mergedUvs) finalGeometry.setAttribute('uv', new THREE.BufferAttribute(mergedUvs, 2));
-          if (mergedIndices.length > 0) finalGeometry.setIndex(mergedIndices);
-          
-          finalGeometry.computeVertexNormals();
-          mergedGeometry = finalGeometry;
-        }
-        
-        // Center the geometry
-        mergedGeometry.computeBoundingBox();
-        const center = new THREE.Vector3();
-        if (mergedGeometry.boundingBox) {
-          mergedGeometry.boundingBox.getCenter(center);
-          mergedGeometry.translate(-center.x, -center.y, -center.z);
-        }
-        
-        // Show scaling dialog
-        const dialogRoot = document.createElement('div');
-        dialogRoot.id = 'scale-dialog-root';
-        document.body.appendChild(dialogRoot);
-        
-        // Create a promise that resolves when scaling is complete
-        const scale = await new Promise<THREE.Vector3>((resolve) => {
-          const root = createRoot(dialogRoot);
-          root.render(
-            React.createElement(ImportScaleDialog, {
-              isOpen: true,
-              onClose: () => {
-                root.unmount();
-                dialogRoot.remove();
-                resolve(new THREE.Vector3(1, 1, 1)); // Default scale if dialog is closed
-              },
-              geometry: mergedGeometry,
-              onScale: (scale) => {
-                root.unmount();
-                dialogRoot.remove();
-                resolve(scale);
-              }
-            })
-          );
-        });
-        
-        // Create the final mesh
-        const mesh = new THREE.Mesh(mergedGeometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        
-        // Apply the chosen scale
-        mesh.scale.copy(scale);
-        
-        // Position mesh slightly above the grid
-        mesh.position.y = 0;
-        
-        // Store original transform
-        const originalPosition = mesh.position.clone();
-        const originalRotation = mesh.rotation.clone();
-        const originalScale = mesh.scale.clone();
-        
-        // Add to scene
-        scene.add(mesh);
-        console.log("Added SVG mesh to scene:", mesh);
-        
-        // Create model object
-        const newModel: Model = {
-          id: `svg-model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: file.name,
-          type: 'model',
-          mesh,
-          originalPosition,
-          originalRotation,
-          originalScale
-        };
-        
-        // Add to models array
-        const models = [...state.models, newModel];
-        set({ models });
-        
-        // Update grid position
-        get().updateGridPosition();
-        
-        // Select the new model
-        const newIndex = models.length - 1;
-        get().selectModel(newIndex);
-        
-        // Force a render
-        state.renderer.render(state.scene, state.camera);
-        
-        // Save to history after adding a model
-        get().saveHistoryState();
-        
-      } catch (error) {
-        console.error("Error loading SVG:", error);
-        throw new Error("Failed to load SVG file");
+      });
+      
+      // If no valid paths were found, throw an error
+      if (group.children.length === 0) {
+        throw new Error("No valid paths found in SVG");
       }
+      
+      // Combine all meshes into a single mesh for better performance
+      const buffers: THREE.BufferGeometry[] = [];
+      group.children.forEach((child) => {
+        if (child instanceof THREE.Mesh) {
+          buffers.push(child.geometry.clone());
+        }
+      });
+      
+      // Use BufferGeometryUtils to merge geometries
+      const mergedGeometry = BufferGeometryUtils.mergeGeometries(buffers);
+      
+      // Create the final mesh
+      const finalMesh = new THREE.Mesh(mergedGeometry, material);
+      finalMesh.castShadow = true;
+      finalMesh.receiveShadow = true;
+      
+      // Center the model
+      const box = new THREE.Box3().setFromObject(finalMesh);
+      const center = box.getCenter(new THREE.Vector3());
+      finalMesh.position.sub(center);
+      finalMesh.position.y = extrudeDepth / 2; // Place on the grid
+      
+      // Store original transform
+      const originalPosition = finalMesh.position.clone();
+      const originalRotation = finalMesh.rotation.clone();
+      const originalScale = finalMesh.scale.clone();
+      
+      // Add to scene
+      state.scene.add(finalMesh);
+      
+      // Create model object
+      const model: Model = {
+        id: `svg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        name: file.name,
+        type: 'svg',
+        mesh: finalMesh,
+        originalPosition,
+        originalRotation,
+        originalScale
+      };
+      
+      // Add to models array
+      const updatedModels = [...state.models, model];
+      set({ models: updatedModels });
+      
+      // Select the new model
+      const newIndex = updatedModels.length - 1;
+      state.selectModel(newIndex);
+      
+      // Save to history
+      state.saveHistoryState();
     },
     
     // Create 3D text

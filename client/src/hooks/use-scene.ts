@@ -1558,15 +1558,15 @@ export const useScene = create<SceneState>((set, get) => {
       // Make sure we re-apply the current rendering mode after camera view change
       // This prevents the camera view change from affecting the rendering mode
       setTimeout(() => {
-        const { models, scene, camera, renderer } = get();
+        const { models, scene, camera, renderer, selectedModelIndex, secondaryModelIndex } = get();
         
         // Re-apply rendering mode to ensure consistency
         models.forEach(model => {
+          // Call updateModelMaterial with force=true to ensure the rendering mode is correctly applied
           updateModelMaterial(model.mesh, renderingMode);
         });
         
         // Re-apply selection highlights if needed
-        const { selectedModelIndex, secondaryModelIndex } = get();
         if (selectedModelIndex !== null && models[selectedModelIndex]) {
           const selectedModel = models[selectedModelIndex];
           if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial || 
@@ -1586,6 +1586,7 @@ export const useScene = create<SceneState>((set, get) => {
         // Force a render to apply changes
         if (renderer && camera) {
           renderer.render(scene, camera);
+          console.log(`Reapplied rendering mode '${renderingMode}' after camera view change to: ${view}`);
         }
       }, 50); // Small delay to ensure camera position is updated first
       
@@ -1604,11 +1605,15 @@ export const useScene = create<SceneState>((set, get) => {
 
     // Add function to set rendering mode
     setRenderingMode: (mode: 'standard' | 'wireframe' | 'realistic' | 'xray') => {
+      const prevMode = get().renderingMode;
       set({ renderingMode: mode });
+      
+      console.log(`Changing rendering mode from ${prevMode} to ${mode}`);
       
       // Update all models with the new rendering mode
       const { models, scene, camera, renderer, selectedModelIndex, secondaryModelIndex } = get();
       
+      // Apply new rendering mode to all models
       models.forEach(model => {
         updateModelMaterial(model.mesh, mode);
       });
@@ -1616,18 +1621,22 @@ export const useScene = create<SceneState>((set, get) => {
       // Re-apply selection highlights if needed
       if (selectedModelIndex !== null && models[selectedModelIndex]) {
         const selectedModel = models[selectedModelIndex];
-        if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial || 
-            selectedModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
-          selectedModel.mesh.material.emissive.set(0x222222);
+        if (mode !== 'wireframe' && mode !== 'xray') {
+          if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial || 
+              selectedModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+            selectedModel.mesh.material.emissive.set(0x222222);
+          }
         }
       }
       
       // Re-apply secondary selection highlights if needed
       if (secondaryModelIndex !== null && models[secondaryModelIndex]) {
         const secondaryModel = models[secondaryModelIndex];
-        if (secondaryModel.mesh.material instanceof THREE.MeshStandardMaterial || 
-            secondaryModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
-          secondaryModel.mesh.material.emissive.set(0x004444);
+        if (mode !== 'wireframe' && mode !== 'xray') {
+          if (secondaryModel.mesh.material instanceof THREE.MeshStandardMaterial || 
+              secondaryModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
+            secondaryModel.mesh.material.emissive.set(0x004444);
+          }
         }
       }
       
@@ -2310,44 +2319,63 @@ function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 
     currentColor = mesh.material.color;
   }
   
+  // Check if the current material is highlighted (emissive)
+  const isHighlighted = mesh.material instanceof THREE.MeshStandardMaterial || 
+                        mesh.material instanceof THREE.MeshPhysicalMaterial 
+                        ? (mesh.material.emissive && mesh.material.emissive.r > 0) 
+                        : false;
+  
+  // Store the highlight state to restore after changing material
+  const emissiveColor = isHighlighted ? new THREE.Color(0x222222) : new THREE.Color(0x000000);
+  
   switch (mode) {
     case 'standard':
-      if (!(mesh.material instanceof THREE.MeshStandardMaterial)) {
+      if (!(mesh.material instanceof THREE.MeshStandardMaterial) || 
+          mesh.material.wireframe) { // Check if it's currently wireframe
         const material = new THREE.MeshStandardMaterial({
           color: currentColor,
           roughness: 0.7,
-          metalness: 0.2
+          metalness: 0.2,
+          emissive: emissiveColor // Preserve highlight state
         });
         mesh.material = material;
+      } else if (isHighlighted) {
+        // Just update the emissive to preserve highlight
+        mesh.material.emissive = emissiveColor;
       }
       break;
       
     case 'wireframe':
-      if (!(mesh.material instanceof THREE.MeshBasicMaterial) || !(mesh.material as THREE.MeshBasicMaterial).wireframe) {
-        const material = new THREE.MeshBasicMaterial({
-          color: currentColor,
-          wireframe: true
-        });
-        mesh.material = material;
-      }
+      // Always recreate the wireframe material to ensure it stays wireframe
+      const material = new THREE.MeshBasicMaterial({
+        color: currentColor,
+        wireframe: true
+      });
+      mesh.material = material;
       break;
       
     case 'realistic':
-      if (!(mesh.material instanceof THREE.MeshPhysicalMaterial)) {
+      if (!(mesh.material instanceof THREE.MeshPhysicalMaterial) || 
+          (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.wireframe)) {
         const material = new THREE.MeshPhysicalMaterial({
           color: currentColor,
           roughness: 0.3,
           metalness: 0.8,
           clearcoat: 0.5,
           clearcoatRoughness: 0.2,
-          reflectivity: 1
+          reflectivity: 1,
+          emissive: emissiveColor // Preserve highlight state
         });
         mesh.material = material;
+      } else if (isHighlighted) {
+        // Just update the emissive to preserve highlight
+        mesh.material.emissive = emissiveColor;
       }
       break;
       
     case 'xray':
-      if (!(mesh.material instanceof THREE.MeshBasicMaterial) || !(mesh.material as THREE.MeshBasicMaterial).transparent) {
+      if (!(mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.transparent) || 
+          (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.wireframe)) {
         const material = new THREE.MeshBasicMaterial({
           color: currentColor,
           transparent: true,

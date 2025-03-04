@@ -1085,7 +1085,7 @@ export function Sidebar() {
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 flex items-center justify-between border-b">
-        <h1 className="text-xl font-bold">Model Fusion Studio</h1>
+        <h1 className="text-xl font-bold">Fish CAD</h1>
       </div>
       
       <div className="flex-1 flex flex-col">
@@ -1095,7 +1095,7 @@ export function Sidebar() {
           value={activeTab}
           onValueChange={handleTabChange}
         >
-          <TabsList className="flex flex-col h-full py-4 border-r space-y-2 w-20 shrink-0 overflow-y-auto">
+          <TabsList className="flex flex-col h-full py-4 border-r space-y-2 w-20 shrink-0 overflow-y-auto overflow-x-hidden">
             <TabsTrigger value="uploads" className="flex justify-center items-center flex-col py-3 px-2">
               <Upload className="h-5 w-5" />
               <span className="text-xs mt-1">Uploads</span>
@@ -1621,7 +1621,7 @@ export function Sidebar() {
                     <div className="flex flex-col items-center justify-center py-4">
                       <Paintbrush className="h-8 w-8 text-muted-foreground mb-2" />
                       <p className="text-sm text-muted-foreground text-center">
-                        Select a model to change its color
+                        Select a model to change its appearance
                       </p>
                     </div>
                   ) : (
@@ -1643,6 +1643,246 @@ export function Sidebar() {
                         >
                           Apply Color
                         </Button>
+                      </div>
+
+                      {/* Scaling Controls */}
+                      <div className="border-t mt-4 pt-4">
+                        <h4 className="text-sm font-medium mb-3">Scale Model</h4>
+                        
+                        {/* Uniform Scale */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-4">
+                            <Label className="w-24 text-right text-sm">Uniform</Label>
+                            <div className="flex-1 flex items-center gap-3">
+                              <Slider
+                                value={[models[selectedModelIndex].mesh.scale.x]}
+                                min={0.01}
+                                max={1000}
+                                step={0.01}
+                                onValueChange={(value) => {
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.set(value[0], value[0], value[0]);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                value={models[selectedModelIndex].mesh.scale.x}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0.01;
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.set(value, value, value);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="w-20 text-sm p-1 border rounded"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Individual Axis Controls */}
+                          <div className="flex items-center gap-4">
+                            <Label className="w-24 text-right text-sm">X & Y</Label>
+                            <div className="flex-1 flex items-center gap-3">
+                              <Slider
+                                value={[models[selectedModelIndex].mesh.scale.x]}
+                                min={0.01}
+                                max={1000}
+                                step={0.01}
+                                onValueChange={(value) => {
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setX(value[0]);
+                                  model.mesh.scale.setY(value[0]);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                value={models[selectedModelIndex].mesh.scale.x}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0.01;
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setX(value);
+                                  model.mesh.scale.setY(value);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="w-20 text-sm p-1 border rounded"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <Label className="w-24 text-right text-sm">Y & Z</Label>
+                            <div className="flex-1 flex items-center gap-3">
+                              <Slider
+                                value={[models[selectedModelIndex].mesh.scale.y]}
+                                min={0.01}
+                                max={1000}
+                                step={0.01}
+                                onValueChange={(value) => {
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setY(value[0]);
+                                  model.mesh.scale.setZ(value[0]);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                value={models[selectedModelIndex].mesh.scale.y}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0.01;
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setY(value);
+                                  model.mesh.scale.setZ(value);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="w-20 text-sm p-1 border rounded"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <Label className="w-24 text-right text-sm">X & Z</Label>
+                            <div className="flex-1 flex items-center gap-3">
+                              <Slider
+                                value={[models[selectedModelIndex].mesh.scale.x]}
+                                min={0.01}
+                                max={1000}
+                                step={0.01}
+                                onValueChange={(value) => {
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setX(value[0]);
+                                  model.mesh.scale.setZ(value[0]);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                value={models[selectedModelIndex].mesh.scale.x}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0.01;
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setX(value);
+                                  model.mesh.scale.setZ(value);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="w-20 text-sm p-1 border rounded"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Individual Axis Controls */}
+                          <div className="flex items-center gap-4">
+                            <Label className="w-24 text-right text-sm">X Axis</Label>
+                            <div className="flex-1 flex items-center gap-3">
+                              <Slider
+                                value={[models[selectedModelIndex].mesh.scale.x]}
+                                min={0.01}
+                                max={1000}
+                                step={0.01}
+                                onValueChange={(value) => {
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setX(value[0]);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                value={models[selectedModelIndex].mesh.scale.x}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0.01;
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setX(value);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="w-20 text-sm p-1 border rounded"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <Label className="w-24 text-right text-sm">Y Axis</Label>
+                            <div className="flex-1 flex items-center gap-3">
+                              <Slider
+                                value={[models[selectedModelIndex].mesh.scale.y]}
+                                min={0.01}
+                                max={1000}
+                                step={0.01}
+                                onValueChange={(value) => {
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setY(value[0]);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                value={models[selectedModelIndex].mesh.scale.y}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0.01;
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setY(value);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="w-20 text-sm p-1 border rounded"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <Label className="w-24 text-right text-sm">Z Axis</Label>
+                            <div className="flex-1 flex items-center gap-3">
+                              <Slider
+                                value={[models[selectedModelIndex].mesh.scale.z]}
+                                min={0.01}
+                                max={1000}
+                                step={0.01}
+                                onValueChange={(value) => {
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setZ(value[0]);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                value={models[selectedModelIndex].mesh.scale.z}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0.01;
+                                  const model = models[selectedModelIndex];
+                                  model.mesh.scale.setZ(value);
+                                  scene.needsUpdate = true;
+                                  saveHistoryState();
+                                }}
+                                className="w-20 text-sm p-1 border rounded"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </>
                   )}

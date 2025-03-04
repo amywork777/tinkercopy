@@ -48,13 +48,14 @@ const ROTATION_UNIT = "°";
 const SCALE_UNIT = "";
 const DIMENSION_UNIT = "mm";
 
-// Maximum scale is now more conservative to prevent exceeding 10 inches
-const MAX_SCALE = 42; // This allows scaling up to 10 inches for models that start at 6mm
+// Maximum scale is now based on allowing models to reach 10 inches
+const MAX_SCALE = 1000; // Increased to allow for scaling up very small models to 10 inches
 const MM_PER_INCH = 25.4;
+const MAX_SIZE_MM = 254; // 10 inches in mm
 
 // Helper function to format scale display
 const formatScale = (scale: number) => {
-  return `${scale.toFixed(2)}${SCALE_UNIT}`;
+  return scale >= 10 ? scale.toFixed(1) : scale.toFixed(2);
 };
 
 export function TransformControls({ className }: { className?: string }) {
@@ -215,11 +216,9 @@ export function TransformControls({ className }: { className?: string }) {
       newScale.x = value;
       setXScale(value);
     } else if (axis === 'y') {
-      // Y input controls Z scale
       newScale.z = value;
       setZScale(value);
     } else {
-      // Z input controls Y scale
       newScale.y = value;
       setYScale(value);
     }

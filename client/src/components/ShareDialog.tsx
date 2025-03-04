@@ -47,7 +47,7 @@ export function ShareDialog() {
   const handleShare = (platform: 'email' | 'twitter' | 'linkedin') => {
     const url = encodeURIComponent(getShareableUrl());
     const title = "Check out my 3D model!";
-    const text = encodeURIComponent("Check out my 3D model created with Model Fusion Studio!");
+    const text = encodeURIComponent("Check out my 3D model created with Taiyaki.ai!");
     
     let shareUrl = '';
     switch (platform) {

@@ -14,7 +14,7 @@ export function Header() {
   return (
     <header className="w-full py-2 px-4 border-b bg-background flex items-center justify-between">
       <div className="flex items-center">
-        <h1 className="text-xl font-semibold">Model Fusion Studio</h1>
+        <h1 className="text-xl font-semibold">Taiyaki.ai</h1>
       </div>
       
       <div className="flex items-center gap-2">

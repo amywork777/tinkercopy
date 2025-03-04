@@ -7,6 +7,11 @@ import { CSG } from 'three-csg-ts';
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry, TextGeometryParameters } from "three/examples/jsm/geometries/TextGeometry.js";
+import { Font } from 'three/examples/jsm/loaders/FontLoader';
+import { createRoot } from 'react-dom/client';
+import { ImportScaleDialog } from '../components/ImportScaleDialog';
+import { Vector3 } from "three";
+import * as React from 'react';
 
 // Scene configuration
 const GRID_SIZE = 500; // Much larger grid for better visibility
@@ -15,15 +20,16 @@ const BACKGROUND_COLOR = 0x333333; // Dark gray
 const getRandomColor = () => new THREE.Color(Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5);
 
 // Maximum model size in inches - set to exactly 10 inches
-const MAX_SIZE_INCHES = 10; // Maximum dimension allowed for any model
-const MM_PER_INCH = 25.4; // Standard conversion
+const MAX_SIZE_INCHES = 10;
+const MM_PER_INCH = 25.4;
+const MAX_SIZE_MM = MAX_SIZE_INCHES * MM_PER_INCH; // 254mm
 
 // Helper constants for transformation
-const TRANSFORM_STEP = 5.0; // Increased from 1.0 to 5.0 for much faster movement
-const ROTATION_STEP = Math.PI / 18; // 10 degrees in radians
-const SCALE_STEP = 0.2; // Increased from 0.1 to 0.2 for faster scaling (20% scale step)
-const SNAP_THRESHOLD = 1.0; // Increased from 0.5 to 1.0 for larger models
-const SNAP_GRID_SIZE = 2.0; // Increased from 1.0 to 2.0 for larger models
+const TRANSFORM_STEP = 5.0;
+const ROTATION_STEP = Math.PI / 18;
+const SCALE_STEP = 0.2;
+const SNAP_THRESHOLD = 1.0;
+const SNAP_GRID_SIZE = 2.0;
 
 // Type for our 3D models
 type Model = {
@@ -478,7 +484,33 @@ export const useScene = create<SceneState>((set, get) => {
       const arrayBuffer = await file.arrayBuffer();
       const geometry = loader.parse(arrayBuffer);
       
-      // Create mesh with random color
+      // Show scaling dialog
+      const dialogRoot = document.createElement('div');
+      dialogRoot.id = 'scale-dialog-root';
+      document.body.appendChild(dialogRoot);
+      
+      // Create a promise that resolves when scaling is complete
+      const scale = await new Promise<THREE.Vector3>((resolve) => {
+        const root = createRoot(dialogRoot);
+        root.render(
+          React.createElement(ImportScaleDialog, {
+            isOpen: true,
+            onClose: () => {
+              root.unmount();
+              dialogRoot.remove();
+              resolve(new THREE.Vector3(1, 1, 1)); // Default scale if dialog is closed
+            },
+            geometry: geometry,
+            onScale: (scale) => {
+              root.unmount();
+              dialogRoot.remove();
+              resolve(scale);
+            }
+          })
+        );
+      });
+      
+      // Create mesh with random color and apply scale
       const material = new THREE.MeshStandardMaterial({ 
         color: getRandomColor(),
         metalness: 0.5,
@@ -487,6 +519,9 @@ export const useScene = create<SceneState>((set, get) => {
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      
+      // Apply the chosen scale
+      mesh.scale.copy(scale);
 
       // Center geometry
       geometry.computeBoundingBox();
@@ -860,8 +895,8 @@ export const useScene = create<SceneState>((set, get) => {
       const model = models[selectedModelIndex];
       const mesh = model.mesh;
       
-      // Ensure minimum scale
-      const minScale = 0.01; // Smaller minimum scale for more flexibility
+      // Ensure minimum scale is very small to allow for tiny models
+      const minScale = 0.0001;
       let validX = Math.max(minScale, x);
       let validY = Math.max(minScale, y);
       let validZ = Math.max(minScale, z);
@@ -875,75 +910,56 @@ export const useScene = create<SceneState>((set, get) => {
         const size = new THREE.Vector3();
         boundingBox.getSize(size);
         const originalWidth = size.x;
-        const originalHeight = size.y; 
+        const originalHeight = size.y;
         const originalDepth = size.z;
         
-        // Log original dimensions for debugging
-        console.log(`Original model dimensions (mm): ${originalWidth.toFixed(2)} × ${originalHeight.toFixed(2)} × ${originalDepth.toFixed(2)}`);
-        console.log(`Original model dimensions (in): ${(originalWidth/MM_PER_INCH).toFixed(2)} × ${(originalHeight/MM_PER_INCH).toFixed(2)} × ${(originalDepth/MM_PER_INCH).toFixed(2)}`);
-        
-        // Convert max size to current unit (254mm for 10 inches)
-        const maxSizeInMM = MAX_SIZE_INCHES * MM_PER_INCH;
-        
-        // Calculate maximum allowed scale for each dimension
-        if (originalWidth > 0) {
-          const maxScaleX = maxSizeInMM / originalWidth;
-          if (validX > maxScaleX) {
-            console.log(`X scale capped from ${validX.toFixed(2)} to ${maxScaleX.toFixed(2)} to respect 10-inch limit`);
-            validX = maxScaleX;
-          }
-        }
-        
-        if (originalHeight > 0) {
-          const maxScaleY = maxSizeInMM / originalHeight;
-          if (validY > maxScaleY) {
-            console.log(`Y scale capped from ${validY.toFixed(2)} to ${maxScaleY.toFixed(2)} to respect 10-inch limit`);
-            validY = maxScaleY;
-          }
-        }
-        
-        if (originalDepth > 0) {
-          const maxScaleZ = maxSizeInMM / originalDepth;
-          if (validZ > maxScaleZ) {
-            console.log(`Z scale capped from ${validZ.toFixed(2)} to ${maxScaleZ.toFixed(2)} to respect 10-inch limit`);
-            validZ = maxScaleZ;
-          }
-        }
-        
-        // Calculate final dimensions after scaling
+        // Calculate final dimensions after proposed scaling
         const finalWidth = originalWidth * validX;
         const finalHeight = originalHeight * validY;
         const finalDepth = originalDepth * validZ;
         
-        // Log final dimensions in both mm and inches for debugging
-        console.log(`Final dimensions (mm): ${finalWidth.toFixed(2)} × ${finalHeight.toFixed(2)} × ${finalDepth.toFixed(2)}`);
-        console.log(`Final dimensions (in): ${(finalWidth/MM_PER_INCH).toFixed(2)} × ${(finalHeight/MM_PER_INCH).toFixed(2)} × ${(finalDepth/MM_PER_INCH).toFixed(2)}`);
+        // Check if any dimension would exceed 10 inches (254mm)
+        const maxAllowedSize = MAX_SIZE_MM; // 254mm (10 inches)
         
-        // Check if any dimension is close to the maximum limit
-        const tolerance = 0.1; // Add a small tolerance for floating point comparisons
-        const atLimit = (
-          (originalWidth > 0 && Math.abs(finalWidth - maxSizeInMM) < tolerance) || 
-          (originalHeight > 0 && Math.abs(finalHeight - maxSizeInMM) < tolerance) || 
-          (originalDepth > 0 && Math.abs(finalDepth - maxSizeInMM) < tolerance)
-        );
-          
-        if (atLimit) {
-          console.log(`At least one dimension is at the maximum ${MAX_SIZE_INCHES} inch (${maxSizeInMM.toFixed(2)} mm) limit`);
-        }
+        // Calculate scale factors that would achieve exactly 10 inches for each dimension
+        const maxScaleX = originalWidth > 0 ? maxAllowedSize / originalWidth : Infinity;
+        const maxScaleY = originalHeight > 0 ? maxAllowedSize / originalHeight : Infinity;
+        const maxScaleZ = originalDepth > 0 ? maxAllowedSize / originalDepth : Infinity;
+        
+        // Apply the limits
+        validX = Math.min(validX, maxScaleX);
+        validY = Math.min(validY, maxScaleY);
+        validZ = Math.min(validZ, maxScaleZ);
+        
+        // Calculate final dimensions for logging
+        const finalDimensions = {
+          width: originalWidth * validX,
+          height: originalHeight * validY,
+          depth: originalDepth * validZ
+        };
+        
+        // Log dimensions in both units
+        console.log('Final dimensions (mm):', {
+          width: finalDimensions.width.toFixed(2),
+          height: finalDimensions.height.toFixed(2),
+          depth: finalDimensions.depth.toFixed(2)
+        });
+        
+        console.log('Final dimensions (inches):', {
+          width: (finalDimensions.width / MM_PER_INCH).toFixed(3),
+          height: (finalDimensions.height / MM_PER_INCH).toFixed(3),
+          depth: (finalDimensions.depth / MM_PER_INCH).toFixed(3)
+        });
       }
       
       // Set the new scale
       mesh.scale.set(validX, validY, validZ);
-      
-      // Update the matrix
       mesh.updateMatrix();
-      
-      console.log(`Set scale for model ${model.name}:`, { x: validX, y: validY, z: validZ });
       
       // Render to show changes
       state.renderer.render(state.scene, state.camera);
       
-      // Save history state after direct scale change
+      // Save history state after scale change
       get().saveHistoryState();
     },
     
@@ -1682,22 +1698,39 @@ export const useScene = create<SceneState>((set, get) => {
           mergedGeometry.translate(-center.x, -center.y, -center.z);
         }
         
-        // Normalize size
-        mergedGeometry.computeBoundingSphere();
-        if (mergedGeometry.boundingSphere) {
-          const radius = mergedGeometry.boundingSphere.radius;
-          if (radius > 0) {
-            const scaleFactor = radius > 5 ? 5 / radius : 1;
-            if (scaleFactor !== 1) {
-              mergedGeometry.scale(scaleFactor, scaleFactor, scaleFactor);
-            }
-          }
-        }
+        // Show scaling dialog
+        const dialogRoot = document.createElement('div');
+        dialogRoot.id = 'scale-dialog-root';
+        document.body.appendChild(dialogRoot);
+        
+        // Create a promise that resolves when scaling is complete
+        const scale = await new Promise<THREE.Vector3>((resolve) => {
+          const root = createRoot(dialogRoot);
+          root.render(
+            React.createElement(ImportScaleDialog, {
+              isOpen: true,
+              onClose: () => {
+                root.unmount();
+                dialogRoot.remove();
+                resolve(new THREE.Vector3(1, 1, 1)); // Default scale if dialog is closed
+              },
+              geometry: mergedGeometry,
+              onScale: (scale) => {
+                root.unmount();
+                dialogRoot.remove();
+                resolve(scale);
+              }
+            })
+          );
+        });
         
         // Create the final mesh
         const mesh = new THREE.Mesh(mergedGeometry, material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        
+        // Apply the chosen scale
+        mesh.scale.copy(scale);
         
         // Position mesh slightly above the grid
         mesh.position.y = 0;
@@ -1748,67 +1781,44 @@ export const useScene = create<SceneState>((set, get) => {
     // Create 3D text
     loadText: async (text: string, options: TextOptions = { text }) => {
       const state = get();
-
+      const loader = new FontLoader();
+      const fontPath = options?.fontPath || defaultFontPath;
+      
       if (!state.isSceneReady) {
         console.error("Scene not ready, can't create text");
         return;
       }
       
       try {
-        console.log("Creating 3D text:", text);
-        
-        // Default text options
-        const defaultOptions = {
-          text: "Text",
-          fontSize: 152.4, // 6 inches
-          height: 76.2, // 3 inches
-          curveSegments: 4,
-          bevelEnabled: true,
-          bevelThickness: 12.7, // 0.5 inches
-          bevelSize: 6.35, // 0.25 inches
-          bevelSegments: 3,
-          fontPath: "/fonts/helvetiker_regular.typeface.json" // Using local font path
-        };
-        
-        // Merge defaults with provided options
-        const mergedOptions = { ...defaultOptions, ...options };
-        
-        // Load font
-        const fontLoader = new FontLoader();
-        const font = await new Promise((resolve, reject) => {
-          console.log("Loading font from:", mergedOptions.fontPath);
-          fontLoader.load(
-            mergedOptions.fontPath, 
-            (font) => resolve(font),
-            undefined,
-            (err) => {
-              console.error("Error loading font:", err);
-              // If the specified font fails, try the default as fallback
-              if (mergedOptions.fontPath !== defaultFontPath) {
-                console.log("Trying fallback font:", defaultFontPath);
-                fontLoader.load(
-                  defaultFontPath,
-                  (font) => resolve(font),
-                  undefined,
-                  (fallbackErr) => reject(new Error(`Failed to load both specified and fallback fonts`))
-                );
-              } else {
-                reject(new Error(`Failed to load font: ${(err as Error).message}`));
-              }
-            }
-          );
+        const font = await new Promise<Font>((resolve, reject) => {
+          loader.load(fontPath, resolve, undefined, reject);
         });
+        
+        // Set default size to 2 inches (50.8mm)
+        const defaultSize = 50.8; // 2 inches in mm
+        
+        const textProps: TextProps = {
+          text,
+          fontSize: options?.fontSize || defaultSize,
+          height: options?.height || defaultSize * 0.2, // 20% of size for depth
+          curveSegments: options?.curveSegments || 12,
+          bevelEnabled: options?.bevelEnabled ?? true,
+          bevelThickness: options?.bevelThickness || defaultSize * 0.02, // 2% of size
+          bevelSize: options?.bevelSize || defaultSize * 0.01, // 1% of size
+          bevelSegments: options?.bevelSegments || 5,
+          fontPath
+        };
         
         // Create text geometry parameters
         const geometryParams: TextGeometryParameters = {
           font: font as any,
-          size: mergedOptions.fontSize,
-          depth: mergedOptions.height,
-          curveSegments: mergedOptions.curveSegments,
-          bevelEnabled: mergedOptions.bevelEnabled,
-          bevelThickness: mergedOptions.bevelThickness,
-          bevelSize: mergedOptions.bevelSize,
-          bevelSegments: mergedOptions.bevelSegments,
+          size: textProps.fontSize,
+          depth: textProps.height,
+          curveSegments: textProps.curveSegments,
+          bevelEnabled: textProps.bevelEnabled,
+          bevelThickness: textProps.bevelThickness,
+          bevelSize: textProps.bevelSize,
+          bevelSegments: textProps.bevelSegments,
         };
         
         // Create text geometry
@@ -1816,15 +1826,10 @@ export const useScene = create<SceneState>((set, get) => {
         
         // Create material with specified or random color
         const material = new THREE.MeshStandardMaterial({ 
-          color: mergedOptions.color || getRandomColor(),
+          color: options?.color || getRandomColor(),
           metalness: 0.1,
           roughness: 0.8,
         });
-        
-        // Create mesh
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
         
         // Center the geometry
         geometry.computeBoundingBox();
@@ -1833,6 +1838,40 @@ export const useScene = create<SceneState>((set, get) => {
           geometry.boundingBox.getCenter(center);
           geometry.translate(-center.x, -center.y, -center.z);
         }
+        
+        // Show scaling dialog
+        const dialogRoot = document.createElement('div');
+        dialogRoot.id = 'scale-dialog-root';
+        document.body.appendChild(dialogRoot);
+        
+        // Create a promise that resolves when scaling is complete
+        const scale = await new Promise<THREE.Vector3>((resolve) => {
+          const root = createRoot(dialogRoot);
+          root.render(
+            React.createElement(ImportScaleDialog, {
+              isOpen: true,
+              onClose: () => {
+                root.unmount();
+                dialogRoot.remove();
+                resolve(new THREE.Vector3(1, 1, 1)); // Default scale if dialog is closed
+              },
+              geometry: geometry,
+              onScale: (scale) => {
+                root.unmount();
+                dialogRoot.remove();
+                resolve(scale);
+              }
+            })
+          );
+        });
+        
+        // Create mesh
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        
+        // Apply the chosen scale
+        mesh.scale.copy(scale);
         
         // Position mesh slightly above the grid
         mesh.position.y = 0;
@@ -1855,7 +1894,7 @@ export const useScene = create<SceneState>((set, get) => {
           originalPosition,
           originalRotation,
           originalScale,
-          textProps: mergedOptions
+          textProps
         };
         
         // Add to models array

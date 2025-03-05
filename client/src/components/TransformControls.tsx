@@ -147,10 +147,11 @@ export function TransformControls({ className }: { className?: string }) {
         const size = new Vector3();
         bbox.getSize(size);
         
-        // Apply scale to get actual dimensions
+        // Apply scale to get actual dimensions with swapped Y and Z
         const width = parseFloat((size.x * sclX).toFixed(2));
-        const height = parseFloat((size.y * sclY).toFixed(2));
-        const depth = parseFloat((size.z * sclZ).toFixed(2));
+        // Swap depth and height to match our label swap in the UI
+        const depth = parseFloat((size.y * sclZ).toFixed(2)); // Y dimension (controlled by Z scale) is depth
+        const height = parseFloat((size.z * sclY).toFixed(2)); // Z dimension (controlled by Y scale) is height
         
         setDimensions({ width, height, depth });
       }
@@ -243,8 +244,9 @@ export function TransformControls({ className }: { className?: string }) {
           
           // Apply the current scale to get actual dimensions with Y and Z swapped
           const width = parseFloat((size.x * newScale.x).toFixed(2));
-          const height = parseFloat((size.y * newScale.z).toFixed(2)); // Use Z scale for Y dimension
-          const depth = parseFloat((size.z * newScale.y).toFixed(2));  // Use Y scale for Z dimension
+          // Swap depth and height to match our label swap in the UI
+          const depth = parseFloat((size.y * newScale.z).toFixed(2)); // Y dimension (controlled by Z scale) is depth
+          const height = parseFloat((size.z * newScale.y).toFixed(2)); // Z dimension (controlled by Y scale) is height
           
           console.log(`Updated dimensions: ${width.toFixed(2)}mm × ${height.toFixed(2)}mm × ${depth.toFixed(2)}mm`);
           console.log(`Updated dimensions: ${(width/25.4).toFixed(2)}in × ${(height/25.4).toFixed(2)}in × ${(depth/25.4).toFixed(2)}in`);
@@ -281,8 +283,9 @@ export function TransformControls({ className }: { className?: string }) {
           
           // Apply the uniform scale to get actual dimensions
           const width = parseFloat((size.x * value).toFixed(2));
-          const height = parseFloat((size.y * value).toFixed(2));
-          const depth = parseFloat((size.z * value).toFixed(2));
+          // Swap depth and height to match our label swap in the UI
+          const depth = parseFloat((size.y * value).toFixed(2)); // Y dimension is depth
+          const height = parseFloat((size.z * value).toFixed(2)); // Z dimension is height
           
           console.log(`Updated dimensions (uniform): ${width.toFixed(2)}mm × ${height.toFixed(2)}mm × ${depth.toFixed(2)}mm`);
           console.log(`Updated dimensions (uniform): ${(width/25.4).toFixed(2)}in × ${(height/25.4).toFixed(2)}in × ${(depth/25.4).toFixed(2)}in`);

@@ -109,8 +109,8 @@ const MobileView: React.FC = () => {
   };
 
   const handleSwitchToDesktop = () => {
-    // Set localStorage flag to skip the mobile warning
-    localStorage.setItem("temp-use-desktop", "true");
+    // Set sessionStorage flag to skip the mobile warning for this session
+    sessionStorage.setItem("temp-use-desktop", "true");
     // Reload the page to get the desktop version
     window.location.reload();
   };
@@ -136,17 +136,17 @@ const MobileView: React.FC = () => {
 
       {/* Persistent banner at the top */}
       {showBanner && (
-        <div className="absolute top-0 left-0 right-0 bg-primary/20 backdrop-blur-sm p-2 flex justify-between items-center z-30">
+        <div className="absolute top-0 left-0 right-0 bg-primary text-primary-foreground p-2 flex justify-between items-center z-30">
           <div className="flex items-center text-xs">
-            <InfoIcon className="h-3 w-3 mr-1 text-primary" />
-            <span>Mobile version (limited features)</span>
+            <InfoIcon className="h-3 w-3 mr-1" />
+            <span>FishCAD Mobile Viewer (Limited)</span>
           </div>
           <div className="flex space-x-2">
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={returnToTaiyaki} 
-              className="h-6 px-2 text-xs"
+              className="h-6 px-2 text-xs text-primary-foreground"
             >
               <ExternalLinkIcon className="h-3 w-3 mr-1" />
               taiyaki.ai
@@ -155,7 +155,7 @@ const MobileView: React.FC = () => {
               variant="ghost" 
               size="sm" 
               onClick={closeBanner} 
-              className="h-6 w-6 p-0"
+              className="h-6 w-6 p-0 text-primary-foreground"
             >
               <XIcon className="h-3 w-3" />
             </Button>
@@ -165,7 +165,7 @@ const MobileView: React.FC = () => {
 
       {/* Top toolbar */}
       <div className="absolute top-0 left-0 right-0 p-2 flex justify-between items-center bg-background/70 backdrop-blur-sm z-10">
-        <h1 className="text-lg font-bold text-primary">taiyaki.ai</h1>
+        <h1 className="text-lg font-bold text-primary">FishCAD</h1>
         <Button 
           variant="ghost" 
           size="sm" 
@@ -173,7 +173,7 @@ const MobileView: React.FC = () => {
           className="flex items-center text-xs"
         >
           <ComputerIcon className="h-3 w-3 mr-1" />
-          Desktop
+          Switch to Desktop
         </Button>
       </div>
       
@@ -184,10 +184,10 @@ const MobileView: React.FC = () => {
             <Button size="sm" variant="outline" onClick={handleImportModel}>
               <UploadIcon className="h-4 w-4" />
             </Button>
-            <Button size="sm" variant="outline" onClick={() => handleTransform('scale', 1)}>
+            <Button size="sm" variant="outline" onClick={() => handleTransform('scaleX', 1)}>
               <ZoomInIcon className="h-4 w-4" />
             </Button>
-            <Button size="sm" variant="outline" onClick={() => handleTransform('scale', -1)}>
+            <Button size="sm" variant="outline" onClick={() => handleTransform('scaleX', -1)}>
               <ZoomOutIcon className="h-4 w-4" />
             </Button>
             <Button size="sm" variant="outline" onClick={handleReset}>
@@ -237,7 +237,7 @@ const MobileView: React.FC = () => {
           <div className="text-xs text-center mt-2 text-muted-foreground">
             {models.length > 0 
               ? `${models.length} model(s) - ${selectedModelIndex !== null ? 'Model ' + (selectedModelIndex + 1) + ' selected' : 'No selection'}`
-              : 'No models - Tap Import to add a model'
+              : 'Tap ↑ to import a 3D model'
             }
           </div>
         </Card>
@@ -249,25 +249,25 @@ const MobileView: React.FC = () => {
           <Card className="max-w-xs p-4 relative">
             <div className="flex items-center mb-2">
               <AlertCircleIcon className="h-5 w-5 text-primary mr-2" />
-              <h2 className="text-lg font-bold">Mobile Mode</h2>
+              <h2 className="text-lg font-bold">FishCAD Mobile Viewer</h2>
             </div>
             
             <p className="text-sm mb-3">
-              You're using the simplified mobile version with limited functionality.
+              You're using the simplified mobile viewer with limited functionality.
             </p>
             
             <ul className="text-xs space-y-2 mb-4">
               <li className="flex items-start">
                 <Box className="h-3 w-3 mr-1 mt-0.5 text-primary" />
-                <span>Drag with one finger to rotate the model</span>
+                <span>Touch and drag to rotate the model</span>
               </li>
               <li className="flex items-start">
                 <MaximizeIcon className="h-3 w-3 mr-1 mt-0.5 text-primary" />
-                <span>Pinch to zoom in and out</span>
+                <span>Pinch with two fingers to zoom</span>
               </li>
               <li className="flex items-start">
                 <UploadIcon className="h-3 w-3 mr-1 mt-0.5 text-primary" />
-                <span>Use the buttons to import and transform models</span>
+                <span>Use the buttons to import and move models</span>
               </li>
             </ul>
             

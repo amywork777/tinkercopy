@@ -23,13 +23,12 @@ export default function Home() {
     // Set up the message listener and get the cleanup function
     const cleanup = initTaiyakiMessageListener();
     
-    // Check for temporary desktop preference
-    const tempUseDesktop = localStorage.getItem("temp-use-desktop");
+    // Check for temporary desktop preference (session-only)
+    const tempUseDesktop = sessionStorage.getItem("temp-use-desktop");
     if (tempUseDesktop === "true") {
-      // This is a one-time skip of the mobile warning
+      // This is a one-time skip of the mobile warning for this session only
       setSkipMobileWarning(true);
-      // Clear the flag immediately
-      localStorage.removeItem("temp-use-desktop");
+      // We don't clear the flag as it should persist for the session
     }
     
     // Log that the listener is active
@@ -53,7 +52,7 @@ export default function Home() {
   return (
     <TooltipProvider>
       <div className="flex flex-col h-screen">
-        {/* Mobile Warning Overlay - Only skip if explicitly set */}
+        {/* Mobile Warning Overlay - Only skip if explicitly set for this session */}
         {!skipMobileWarning && <MobileWarning onUseMobileVersion={handleUseMobileVersion} />}
         
         {/* Header bar */}

@@ -65,9 +65,8 @@ const MobileWarning: React.FC<MobileWarningProps> = ({ onUseMobileVersion }) => 
 
   // User clicked to continue with desktop version
   const handleContinueToDesktop = () => {
-    // We don't store this preference anymore since we want the warning to always appear
-    // Just call the mobile version handler but with a flag to use desktop layout
-    localStorage.setItem("temp-use-desktop", "true");
+    // Just use a session-only flag so it shows again on next visit
+    sessionStorage.setItem("temp-use-desktop", "true");
     window.location.reload();
   };
 
@@ -88,25 +87,25 @@ const MobileWarning: React.FC<MobileWarningProps> = ({ onUseMobileVersion }) => 
         </div>
         
         <p className="text-md mb-2 z-10">
-          This CAD application works best on desktop computers.
+          FishCAD works best on a desktop or laptop computer.
         </p>
         
         <div className="bg-muted/80 p-4 rounded-md mb-2 z-10 text-left">
           <p className="text-sm mb-3">
-            For the best modeling experience, please consider:
+            Why a desktop is recommended:
           </p>
           <ul className="text-sm space-y-2 pl-2">
             <li className="flex items-start">
               <ArrowLeftIcon className="h-3 w-3 mr-2 mt-1 text-primary" />
-              <span>Returning to the main Taiyaki website</span>
+              <span>Precision 3D modeling needs a larger screen and mouse</span>
             </li>
             <li className="flex items-start">
               <ArrowLeftIcon className="h-3 w-3 mr-2 mt-1 text-primary" />
-              <span>Using a desktop computer for full CAD functionality</span>
+              <span>Full CAD tools are only available on desktop</span>
             </li>
             <li className="flex items-start">
               <ArrowLeftIcon className="h-3 w-3 mr-2 mt-1 text-primary" />
-              <span>Trying our simplified mobile version with limited features</span>
+              <span>Complex designs are difficult to create on mobile</span>
             </li>
           </ul>
         </div>
@@ -123,12 +122,12 @@ const MobileWarning: React.FC<MobileWarningProps> = ({ onUseMobileVersion }) => 
           
           <Button onClick={handleUseMobileVersion} variant="outline">
             <SmartphoneIcon className="h-4 w-4 mr-2" />
-            Try Simplified Mobile Version
+            Try Simple Mobile Viewer (Limited)
           </Button>
           
           <Button onClick={handleContinueToDesktop} variant="outline" className="text-sm opacity-70">
             <ComputerIcon className="h-4 w-4 mr-2" />
-            Continue to Desktop Version Anyway
+            Continue to Desktop Version
           </Button>
         </div>
       </Card>

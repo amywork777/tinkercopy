@@ -1221,19 +1221,25 @@ export const useScene = create<SceneState>((set, get) => {
           if (operationType === 'union') {
             console.log("Using direct geometry merging for union to preserve all faces");
             
-            // Skip CSG entirely for union operations to preserve all faces including intersections
-            const combinedGeometry = BufferGeometryUtils.mergeGeometries([geomA, geomB]);
-            
-            // Keep original colors
-            const material = new THREE.MeshStandardMaterial({
-              color: meshA.material instanceof THREE.Material ? 
-                    (meshA.material as THREE.MeshStandardMaterial).color.clone() : 
-                    (meshA.material[0] as THREE.MeshStandardMaterial).color.clone(),
-              side: THREE.DoubleSide
-            });
-            
-            resultMesh = new THREE.Mesh(combinedGeometry, material);
-            console.log("Created union by direct geometry merging, preserving all faces");
+            try {
+              // Skip CSG entirely for union operations to preserve all faces including intersections
+              const combinedGeometry = BufferGeometryUtils.mergeGeometries([geomA, geomB]);
+              
+              // Keep original colors
+              const material = new THREE.MeshStandardMaterial({
+                color: meshA.material instanceof THREE.Material ? 
+                      (meshA.material as THREE.MeshStandardMaterial).color.clone() : 
+                      (meshA.material[0] as THREE.MeshStandardMaterial).color.clone(),
+                side: THREE.DoubleSide
+              });
+              
+              resultMesh = new THREE.Mesh(combinedGeometry, material);
+              console.log("Created union by direct geometry merging, preserving all faces");
+            } catch (e) {
+              // If direct merging fails, fall back to CSG union
+              console.warn("Direct geometry merging failed, falling back to CSG union", e);
+              resultMesh = CSG.union(csgMeshA, csgMeshB);
+            }
           } else {
             // For subtract and intersect, use the standard CSG approach
             switch(operationType) {
@@ -1249,7 +1255,21 @@ export const useScene = create<SceneState>((set, get) => {
           }
         } catch (error) {
           console.error("CSG operation failed:", error);
-          throw new Error(`The CSG ${operationType} operation failed. The models may have complex geometry or non-manifold surfaces.`);
+          
+          // Provide more detailed error messages based on the operation
+          let errorMessage = `The CSG ${operationType} operation failed.`;
+          
+          if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+            if (error.message.includes("non-manifold")) {
+              errorMessage += " One or both models have non-manifold (non-watertight) geometry.";
+            } else if (error.message.includes("intersection")) {
+              errorMessage += " The models don't intersect properly.";
+            }
+          }
+          
+          errorMessage += " Try simplifying your models or repositioning them.";
+          
+          throw new Error(errorMessage);
         }
         
         // Step 4: Process the result to ensure clean mesh

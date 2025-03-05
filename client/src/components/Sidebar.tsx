@@ -744,46 +744,21 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddPyramid = () => {
-    // Create a pyramid with a square base using a custom geometry approach
-    const geometry = new THREE.BufferGeometry();
+    // Use TetrahedronGeometry which is guaranteed to be watertight
+    const geometry = new THREE.TetrahedronGeometry(30);
     
-    // Define vertices for a proper watertight square-based pyramid
-    const vertices = new Float32Array([
-      // Base vertices (square on XZ plane)
-      -25.4, 0, -25.4,    // 0: Bottom left
-      25.4, 0, -25.4,     // 1: Bottom right
-      25.4, 0, 25.4,      // 2: Top right
-      -25.4, 0, 25.4,     // 3: Top left
-      
-      // Apex (top point)
-      0, 50.8, 0          // 4: Top point
-    ]);
+    // Scale to make it more pyramid-like with square base
+    geometry.scale(1.5, 1.7, 1.5);
     
-    // Define indices for all 6 triangles that make up the pyramid (4 sides + 2 for base)
-    const indices = new Uint16Array([
-      // Base (square divided into 2 triangles)
-      0, 2, 1,  // First triangle 
-      0, 3, 2,  // Second triangle
-      
-      // Front face
-      3, 4, 2,
-      
-      // Right face
-      2, 4, 1,
-      
-      // Back face
-      1, 4, 0,
-      
-      // Left face
-      0, 4, 3
-    ]);
+    // Rotate to make the pointy end up
+    geometry.rotateX(Math.PI);
     
-    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    geometry.computeVertexNormals();
+    // Move it so the base is at y=0
+    geometry.translate(0, 15, 0);
 
     const material = new THREE.MeshStandardMaterial({ 
-      color: getRandomColor()
+      color: getRandomColor(),
+      flatShading: true // Better for 3D printing
     });
     
     const mesh = new THREE.Mesh(geometry, material);

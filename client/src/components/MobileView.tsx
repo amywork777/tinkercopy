@@ -12,7 +12,10 @@ import {
   RotateCcw,
   Home,
   Trash,
-  Plus
+  Plus,
+  Check,
+  CheckSquare,
+  Square
 } from "lucide-react";
 import {
   Popover,
@@ -76,6 +79,10 @@ const MobileView: React.FC = () => {
   const [isCsgLoading, setIsCsgLoading] = useState(false);
   const [lastTapTime, setLastTapTime] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Model selection for boolean operations
+  const [booleanPrimaryIndex, setBooleanPrimaryIndex] = useState<number | null>(null);
+  const [booleanSecondaryIndex, setBooleanSecondaryIndex] = useState<number | null>(null);
 
   useEffect(() => {
     // Make sure the renderer fills the mobile screen
@@ -286,19 +293,69 @@ const MobileView: React.FC = () => {
   };
   
   const handleCSGOperation = async (operation: 'union' | 'subtract' | 'intersect') => {
-    if (selectedModelIndex === null || secondaryModelIndex === null) {
+    if (booleanPrimaryIndex === null || booleanSecondaryIndex === null) {
       toast.error("Select two models for boolean operation");
       return;
     }
+    
+    // Select the models using the scene state functions
+    selectModel(booleanPrimaryIndex);
+    selectSecondaryModel(booleanSecondaryIndex);
     
     setIsCsgLoading(true);
     try {
       await performCSGOperation(operation);
       toast.success(`${operation.charAt(0).toUpperCase() + operation.slice(1)} operation completed`);
+      
+      // Reset selections after successful operation
+      setBooleanPrimaryIndex(null);
+      setBooleanSecondaryIndex(null);
     } catch (error) {
       toast.error(`Failed to perform ${operation} operation`);
     } finally {
       setIsCsgLoading(false);
+    }
+  };
+  
+  // Helper function to toggle model selection for boolean operations
+  const toggleBooleanModelSelection = (index: number) => {
+    // If it's already the primary selection, deselect it
+    if (booleanPrimaryIndex === index) {
+      setBooleanPrimaryIndex(null);
+      return;
+    }
+    
+    // If it's already the secondary selection, deselect it
+    if (booleanSecondaryIndex === index) {
+      setBooleanSecondaryIndex(null);
+      return;
+    }
+    
+    // If primary is not set, set it
+    if (booleanPrimaryIndex === null) {
+      setBooleanPrimaryIndex(index);
+      return;
+    }
+    
+    // If secondary is not set, set it
+    if (booleanSecondaryIndex === null) {
+      setBooleanSecondaryIndex(index);
+      return;
+    }
+    
+    // If both are set, replace primary and set this as secondary
+    setBooleanPrimaryIndex(booleanSecondaryIndex);
+    setBooleanSecondaryIndex(index);
+  };
+  
+  // Get model selection status
+  const getModelSelectionIcon = (index: number) => {
+    if (booleanPrimaryIndex === index) {
+      return <CheckSquare className="h-4 w-4 text-primary" />;
+    } else if (booleanSecondaryIndex === index) {
+      return <CheckSquare className="h-4 w-4 text-secondary" />;
+    } else {
+      return <Square className="h-4 w-4 text-muted-foreground" />;
     }
   };
   
@@ -407,49 +464,100 @@ const MobileView: React.FC = () => {
               <PopoverTrigger asChild>
                 <Button 
                   variant="ghost" 
-                  className="flex flex-col h-auto items-center justify-center py-2 space-y-1"
+                  className="flex flex-col h-auto items-center justify-center py-2 space-y-1 relative"
                 >
                   <UnionIcon />
                   <span className="text-xs font-normal">Boolean</span>
+                  
+                  {/* Selection indicator badge */}
+                  {(booleanPrimaryIndex !== null || booleanSecondaryIndex !== null) && (
+                    <div className="absolute -top-1 -right-1 flex items-center justify-center">
+                      <div className="h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center">
+                        {booleanPrimaryIndex !== null && booleanSecondaryIndex !== null ? 2 : 1}
+                      </div>
+                    </div>
+                  )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent side="top" className="w-56 p-2">
+              <PopoverContent side="top" className="w-72 p-3">
+                <h3 className="font-medium mb-2">Boolean Operations</h3>
+                
+                {/* Model Selection List */}
+                <div className="mb-3 max-h-40 overflow-auto pr-1">
+                  <p className="text-xs mb-2 text-muted-foreground">Select two models:</p>
+                  {models.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No models available</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {models.map((model, index) => (
+                        <div 
+                          key={model.id} 
+                          className={`flex items-center justify-between p-1.5 rounded text-xs
+                            ${booleanPrimaryIndex === index ? 'bg-primary/10' : ''}
+                            ${booleanSecondaryIndex === index ? 'bg-secondary/10' : ''}
+                          `}
+                          onClick={() => toggleBooleanModelSelection(index)}
+                        >
+                          <div className="flex items-center space-x-2">
+                            {getModelSelectionIcon(index)}
+                            <span>{model.name}</span>
+                          </div>
+                          <div className="text-muted-foreground text-[10px]">
+                            {booleanPrimaryIndex === index ? 'Primary' : ''}
+                            {booleanSecondaryIndex === index ? 'Secondary' : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Boolean Operation Buttons */}
                 <div className="grid grid-cols-3 gap-2">
                   <Button 
-                    variant="ghost" 
+                    variant="outline" 
                     size="sm" 
                     onClick={() => handleCSGOperation('union')} 
-                    className="flex flex-col items-center p-1 h-auto"
-                    disabled={isCsgLoading || selectedModelIndex === null || secondaryModelIndex === null}
+                    className="flex flex-col items-center p-1.5 h-auto"
+                    disabled={isCsgLoading || booleanPrimaryIndex === null || booleanSecondaryIndex === null}
                   >
                     <UnionIcon />
-                    <span className="text-[10px]">Union</span>
+                    <span className="text-[10px] mt-1">Union</span>
                   </Button>
                   <Button 
-                    variant="ghost" 
+                    variant="outline" 
                     size="sm" 
                     onClick={() => handleCSGOperation('subtract')} 
-                    className="flex flex-col items-center p-1 h-auto"
-                    disabled={isCsgLoading || selectedModelIndex === null || secondaryModelIndex === null}
+                    className="flex flex-col items-center p-1.5 h-auto"
+                    disabled={isCsgLoading || booleanPrimaryIndex === null || booleanSecondaryIndex === null}
                   >
                     <DifferenceIcon />
-                    <span className="text-[10px]">Subtract</span>
+                    <span className="text-[10px] mt-1">Subtract</span>
                   </Button>
                   <Button 
-                    variant="ghost" 
+                    variant="outline" 
                     size="sm" 
                     onClick={() => handleCSGOperation('intersect')} 
-                    className="flex flex-col items-center p-1 h-auto"
-                    disabled={isCsgLoading || selectedModelIndex === null || secondaryModelIndex === null}
+                    className="flex flex-col items-center p-1.5 h-auto"
+                    disabled={isCsgLoading || booleanPrimaryIndex === null || booleanSecondaryIndex === null}
                   >
                     <IntersectionIcon />
-                    <span className="text-[10px]">Intersect</span>
+                    <span className="text-[10px] mt-1">Intersect</span>
                   </Button>
                 </div>
-                <div className="mt-2 p-2 bg-muted rounded text-xs">
-                  <p>{(selectedModelIndex === null || secondaryModelIndex === null) 
-                    ? "⚠️ Select two models first" 
-                    : "Ready for boolean operation"}</p>
+                
+                {/* Status indication */}
+                <div className="mt-2 p-2 bg-muted rounded-sm text-xs text-center">
+                  {booleanPrimaryIndex !== null && booleanSecondaryIndex !== null ? (
+                    <p className="text-green-600 dark:text-green-400">✓ Ready for boolean operation</p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      {models.length < 2 ? 
+                        "Need at least 2 models" : 
+                        `Select ${booleanPrimaryIndex === null ? 'primary' : 'secondary'} model`}
+                    </p>
+                  )}
+                  {isCsgLoading && <p className="mt-1 text-primary animate-pulse">Processing...</p>}
                 </div>
               </PopoverContent>
             </Popover>

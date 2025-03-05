@@ -219,7 +219,7 @@ export const ToolBar = () => {
   };
 
   return (
-    <div className="bg-background/90 backdrop-blur-sm rounded-lg shadow-lg p-2 flex items-center justify-center space-x-2 border border-border">
+    <div className="bg-background/90 backdrop-blur-sm rounded-lg shadow-lg p-1.5 flex items-center justify-center space-x-1.5 border border-border max-w-fit mx-auto">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button 
@@ -227,8 +227,9 @@ export const ToolBar = () => {
             size="icon" 
             onClick={handleUndo} 
             disabled={!canUndo}
+            className="h-7 w-7"
           >
-            <Undo className={canUndo ? "text-foreground" : "text-muted-foreground"} size={18} />
+            <Undo className={canUndo ? "text-foreground" : "text-muted-foreground"} size={16} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
@@ -243,8 +244,9 @@ export const ToolBar = () => {
             size="icon" 
             onClick={handleRedo} 
             disabled={!canRedo}
+            className="h-7 w-7"
           >
-            <Redo className={canRedo ? "text-foreground" : "text-muted-foreground"} size={18} />
+            <Redo className={canRedo ? "text-foreground" : "text-muted-foreground"} size={16} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
@@ -252,15 +254,18 @@ export const ToolBar = () => {
         </TooltipContent>
       </Tooltip>
 
+      <Separator orientation="vertical" className="h-6 mx-0.5" />
+      
       <Tooltip>
         <TooltipTrigger asChild>
           <Button 
             variant="ghost" 
             size="icon"
+            className="h-7 w-7"
             onClick={handleCopyModel}
             disabled={selectedModelIndex === null}
           >
-            <Copy className={selectedModelIndex !== null ? "text-foreground" : "text-muted-foreground"} size={18} />
+            <Copy className={selectedModelIndex !== null ? "text-foreground" : "text-muted-foreground"} size={16} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
@@ -273,10 +278,11 @@ export const ToolBar = () => {
           <Button 
             variant="ghost" 
             size="icon"
+            className="h-7 w-7"
             onClick={handleDeleteModel}
             disabled={selectedModelIndex === null}
           >
-            <Trash2 className={selectedModelIndex !== null ? "text-destructive" : "text-muted-foreground"} size={18} />
+            <Trash2 className={selectedModelIndex !== null ? "text-destructive" : "text-muted-foreground"} size={16} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
@@ -284,146 +290,210 @@ export const ToolBar = () => {
         </TooltipContent>
       </Tooltip>
 
-      <Separator orientation="vertical" className="h-8 mx-1" />
+      <Separator orientation="vertical" className="h-6 mx-0.5" />
 
-      {/* View Options Popover */}
+      {/* Combine Models Popover */}
       <Tooltip>
         <TooltipTrigger asChild>
-          <Popover open={viewOptionsOpen} onOpenChange={setViewOptionsOpen}>
+          <Popover open={combineOptionsOpen} onOpenChange={setCombineOptionsOpen}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="px-3">
-                <span className="text-foreground text-sm">Views</span>
+              <Button variant="ghost" size="sm" className="px-2 h-7 text-xs">
+                <span className="text-foreground">Combine</span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[220px] p-0" align="center">
-              <div className="p-3">
-                <h3 className="text-sm font-semibold mb-3">View Options</h3>
+            <PopoverContent className="w-[400px] p-2" align="center">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm leading-none">Model Selection for Boolean Operations</h4>
                 
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'top' ? 'default' : 'outline'}
-                      className="w-full h-8"
-                      onClick={() => setCameraView('top')}
+                <div className="grid grid-cols-2 gap-1.5 py-1.5">
+                  <div>
+                    <Label htmlFor="primary-model" className="text-xs mb-1 block">Primary Model</Label>
+                    <Select
+                      value={selectedModelIndex !== null ? selectedModelIndex.toString() : ''}
+                      onValueChange={handlePrimaryModelSelect}
+                      disabled={models.length < 1}
                     >
-                      Top
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'front' ? 'default' : 'outline'}
-                      className="w-full h-8"
-                      onClick={() => setCameraView('front')}
-                    >
-                      Front
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'right' ? 'default' : 'outline'}
-                      className="w-full h-8"
-                      onClick={() => setCameraView('right')}
-                    >
-                      Side
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'isometric' ? 'default' : 'outline'}
-                      className="w-full h-8"
-                      onClick={() => setCameraView('isometric')}
-                    >
-                      Isometric
-                    </Button>
+                      <SelectTrigger id="primary-model" className="text-xs py-1.5">
+                        <SelectValue placeholder="Select model..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {models.map((model, index) => (
+                          <SelectItem key={`primary-${index}`} value={index.toString()} className="text-xs py-1">
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="toolbar-show-grid" 
-                        checked={showGrid}
-                        onCheckedChange={(checked) => setShowGrid(!!checked)}
-                      />
-                      <Label htmlFor="toolbar-show-grid" className="text-sm">Show Grid</Label>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="toolbar-show-axes" 
-                        checked={showAxes}
-                        onCheckedChange={(checked) => setShowAxes(!!checked)}
-                      />
-                      <Label htmlFor="toolbar-show-axes" className="text-sm">Show Axes</Label>
-                    </div>
+                  <div>
+                    <Label htmlFor="secondary-model" className="text-xs mb-1 block">Secondary Model</Label>
+                    <Select
+                      value={secondaryModelIndex !== null ? secondaryModelIndex.toString() : ''}
+                      onValueChange={handleSecondaryModelSelect}
+                      disabled={models.length < 2}
+                    >
+                      <SelectTrigger id="secondary-model" className="text-xs py-1.5">
+                        <SelectValue placeholder="Select model..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {models.map((model, index) => (
+                          <SelectItem key={`secondary-${index}`} value={index.toString()} className="text-xs py-1">
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
+                </div>
+                
+                <Separator className="my-1" />
+                
+                {/* Model list with checkboxes */}
+                <div className="max-h-[200px] overflow-y-auto border rounded p-1.5">
+                  {models.map((model, index) => (
+                    <div 
+                      key={`model-${index}`}
+                      className={`flex items-center justify-between p-1 rounded mb-1 text-xs ${
+                        index === selectedModelIndex || index === secondaryModelIndex
+                        ? 'bg-muted/80'
+                        : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-1.5">
+                        <Checkbox 
+                          id={`model-${index}`}
+                          checked={index === selectedModelIndex || index === secondaryModelIndex}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              if (selectedModelIndex === null) {
+                                selectModel(index);
+                              } else if (secondaryModelIndex === null) {
+                                selectSecondaryModel(index);
+                              } else {
+                                // If both are already selected, update the secondary selection
+                                selectSecondaryModel(index);
+                              }
+                            } else {
+                              // Deselect the appropriate model
+                              if (index === selectedModelIndex) {
+                                selectModel(null);
+                              } else if (index === secondaryModelIndex) {
+                                selectSecondaryModel(null);
+                              }
+                            }
+                          }}
+                        />
+                        <Label htmlFor={`model-${index}`} className="cursor-pointer">
+                          {model.name}
+                        </Label>
+                      </div>
+                      <div className="flex items-center">
+                        {(index === selectedModelIndex || index === secondaryModelIndex) && (
+                          <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded mr-1.5 text-[10px]">
+                            {index === selectedModelIndex ? "Primary" : "Secondary"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                <Separator className="my-1" />
+                
+                <div className="grid grid-cols-3 gap-1.5">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleCSGOperation('union')}
+                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
+                    className="h-7 text-xs"
+                  >
+                    {isCSGOperationLoading ? <span className="animate-pulse">Processing...</span> : "Union"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleCSGOperation('subtract')}
+                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
+                    className="h-7 text-xs"
+                  >
+                    {isCSGOperationLoading ? <span className="animate-pulse">Processing...</span> : "Subtract"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleCSGOperation('intersect')}
+                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
+                    className="h-7 text-xs"
+                  >
+                    {isCSGOperationLoading ? <span className="animate-pulse">Processing...</span> : "Intersect"}
+                  </Button>
                 </div>
               </div>
             </PopoverContent>
           </Popover>
         </TooltipTrigger>
         <TooltipContent>
-          <p>View Options</p>
+          <p>Boolean Operations</p>
         </TooltipContent>
       </Tooltip>
 
-      <Separator orientation="vertical" className="h-8 mx-1" />
+      <Separator orientation="vertical" className="h-6 mx-0.5" />
 
-      {/* Models Selection Status */}
+      {/* Model List */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="px-3">
-                <span className="text-foreground text-sm">Models ({models.length})</span>
+              <Button variant="ghost" size="sm" className="px-2 h-7 text-xs">
+                <span className="text-foreground">Models</span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[280px] p-0" align="center">
-              <div className="p-3">
-                <h3 className="text-sm font-semibold mb-3">Current Models</h3>
+            <PopoverContent className="w-[250px] p-2" align="center">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm leading-none">Available Models</h4>
                 {models.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No models in scene</p>
+                  <div className="text-center p-2 text-xs text-muted-foreground">
+                    No models available
+                  </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="max-h-[200px] overflow-y-auto border rounded p-1.5">
                     {models.map((model, index) => (
                       <div 
-                        key={model.id} 
-                        className={`flex items-center justify-between p-2 rounded-md ${
-                          index === selectedModelIndex ? 'bg-accent' : 'hover:bg-accent/50'
+                        key={model.id}
+                        className={`flex items-center justify-between p-1.5 rounded mb-1 cursor-pointer ${
+                          index === selectedModelIndex ? 'bg-muted/80' : 'hover:bg-muted/50'
                         }`}
+                        onClick={() => selectModel(index)}
                       >
-                        <span 
-                          className="text-sm truncate flex-1 cursor-pointer"
-                          onClick={() => selectModel(index)}
-                        >
-                          {model.name || `Model ${index + 1}`}
-                        </span>
-                        <div className="flex items-center gap-1">
+                        <div className="text-xs truncate max-w-[120px]">{model.name}</div>
+                        <div className="flex items-center">
                           {index === selectedModelIndex && (
-                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded mr-2">
+                            <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded mr-1.5">
                               Selected
                             </span>
                           )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7"
+                            className="h-6 w-6"
                             onClick={(e) => {
                               e.stopPropagation();
                               selectModel(index);
                               handleCopyModel();
                             }}
                           >
-                            <Copy className="h-4 w-4" />
+                            <Copy className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7"
+                            className="h-6 w-6"
                             onClick={(e) => {
                               e.stopPropagation();
                               selectModel(index);
                               handleDeleteModel();
                             }}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
@@ -439,148 +509,102 @@ export const ToolBar = () => {
         </TooltipContent>
       </Tooltip>
 
-      <Separator orientation="vertical" className="h-8 mx-1" />
+      <Separator orientation="vertical" className="h-6 mx-0.5" />
 
-      {/* Combine Models Popover */}
+      {/* Rendering Mode */}
+      <div className="flex items-center space-x-1.5">
+        <Select value={renderingMode} onValueChange={handleRenderingModeChange}>
+          <SelectTrigger className="w-[110px] h-7 text-xs px-2">
+            <SelectValue placeholder="Rendering Mode" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem key="standard" value="standard" className="text-xs py-1">Standard</SelectItem>
+            <SelectItem key="wireframe" value="wireframe" className="text-xs py-1">Wireframe</SelectItem>
+            <SelectItem key="realistic" value="realistic" className="text-xs py-1">Realistic</SelectItem>
+            <SelectItem key="xray" value="xray" className="text-xs py-1">X-Ray</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Separator orientation="vertical" className="h-6 mx-0.5" />
+
+      {/* View Options */}
       <Tooltip>
         <TooltipTrigger asChild>
-          <Popover open={combineOptionsOpen} onOpenChange={setCombineOptionsOpen}>
+          <Popover open={viewOptionsOpen} onOpenChange={setViewOptionsOpen}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="px-3">
-                <span className="text-foreground text-sm">Combine</span>
+              <Button variant="ghost" size="sm" className="px-2 h-7 text-xs">
+                <span className="text-foreground">Views</span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[320px] p-0" align="center">
-              <div className="p-4">
-                <h3 className="text-sm font-semibold mb-3">Combine Models</h3>
+            <PopoverContent className="w-[220px] p-2" align="center">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm leading-none mb-1.5">View Options</h4>
                 
-                {models.length < 2 ? (
-                  <div className="bg-muted/50 rounded-md p-2 mb-4">
-                    <p className="text-sm text-muted-foreground">
-                      You need at least two models to combine
-                    </p>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'top' ? 'default' : 'outline'}
+                      className="w-full h-7 text-xs"
+                      onClick={() => setCameraView('top')}
+                    >
+                      Top
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'front' ? 'default' : 'outline'}
+                      className="w-full h-7 text-xs"
+                      onClick={() => setCameraView('front')}
+                    >
+                      Front
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'right' ? 'default' : 'outline'}
+                      className="w-full h-7 text-xs"
+                      onClick={() => setCameraView('right')}
+                    >
+                      Side
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={cameraView === 'isometric' ? 'default' : 'outline'}
+                      className="w-full h-7 text-xs"
+                      onClick={() => setCameraView('isometric')}
+                    >
+                      Iso
+                    </Button>
                   </div>
-                ) : (
-                  <div className="space-y-4 mb-4">
-                    {/* Primary Model Selection */}
-                    <div>
-                      <Label htmlFor="primary-model" className="text-sm font-medium mb-1.5 block">
-                        Primary Model
-                      </Label>
-                      <Select 
-                        value={selectedModelIndex !== null ? selectedModelIndex.toString() : undefined}
-                        onValueChange={handlePrimaryModelSelect}
-                        disabled={models.length === 0}
-                      >
-                        <SelectTrigger id="primary-model" className="w-full">
-                          <SelectValue placeholder="Select primary model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {models.map((model, index) => (
-                            <SelectItem key={`primary-${index}`} value={index.toString()}>
-                              {model.name || `Model ${index + 1}`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  
+                  <div className="space-y-1 pt-1">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="toolbar-show-grid" 
+                        checked={showGrid}
+                        onCheckedChange={(checked) => setShowGrid(!!checked)}
+                      />
+                      <Label htmlFor="toolbar-show-grid" className="text-xs">Show Grid</Label>
                     </div>
                     
-                    {/* Secondary Model Selection */}
-                    <div>
-                      <Label htmlFor="secondary-model" className="text-sm font-medium mb-1.5 block">
-                        Secondary Model
-                      </Label>
-                      <Select 
-                        value={secondaryModelIndex !== null ? secondaryModelIndex.toString() : undefined}
-                        onValueChange={handleSecondaryModelSelect}
-                        disabled={models.length === 0}
-                      >
-                        <SelectTrigger id="secondary-model" className="w-full">
-                          <SelectValue placeholder="Select secondary model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {models.map((model, index) => (
-                            <SelectItem key={`secondary-${index}`} value={index.toString()}>
-                              {model.name || `Model ${index + 1}`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="toolbar-show-axes" 
+                        checked={showAxes}
+                        onCheckedChange={(checked) => setShowAxes(!!checked)}
+                      />
+                      <Label htmlFor="toolbar-show-axes" className="text-xs">Show Axes</Label>
                     </div>
                   </div>
-                )}
-                
-                <div className="space-y-3">
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className="justify-start h-auto py-2 w-full"
-                    onClick={() => handleCSGOperation('union')}
-                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
-                  >
-                    <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
-                    <div className="flex flex-col items-start">
-                      <span className="text-sm font-medium">Merge</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">Combine both models</span>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className="justify-start h-auto py-2 w-full"
-                    onClick={() => handleCSGOperation('subtract')}
-                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
-                  >
-                    <Minus className="h-5 w-5 mr-3 flex-shrink-0" />
-                    <div className="flex flex-col items-start">
-                      <span className="text-sm font-medium">Cut Out</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">Remove secondary from primary</span>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className="justify-start h-auto py-2 w-full"
-                    onClick={() => handleCSGOperation('intersect')}
-                    disabled={selectedModelIndex === null || secondaryModelIndex === null || isCSGOperationLoading}
-                  >
-                    <XCircle className="h-5 w-5 mr-3 flex-shrink-0" />
-                    <div className="flex flex-col items-start">
-                      <span className="text-sm font-medium">Intersect</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">Keep overlapping parts</span>
-                    </div>
-                  </Button>
                 </div>
               </div>
             </PopoverContent>
           </Popover>
         </TooltipTrigger>
         <TooltipContent>
-          <p>Combine Models</p>
+          <p>View Options</p>
         </TooltipContent>
       </Tooltip>
-
-      <Separator orientation="vertical" className="h-8 mx-1" />
-
-      {/* Render Mode Selection */}
-      <div className="flex items-center gap-2">
-        <Select 
-          value={renderingMode} 
-          onValueChange={handleRenderingModeChange}
-        >
-          <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Select mode" />
-          </SelectTrigger>
-          <SelectContent className="min-w-[120px]">
-            <SelectItem key="standard" value="standard">Standard</SelectItem>
-            <SelectItem key="wireframe" value="wireframe">Wireframe</SelectItem>
-            <SelectItem key="realistic" value="realistic">Realistic</SelectItem>
-            <SelectItem key="xray" value="xray">X-Ray</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
     </div>
   );
 };

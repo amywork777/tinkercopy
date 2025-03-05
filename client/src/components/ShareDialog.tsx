@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Share2, Copy, Download, Mail, Twitter, Linkedin } from "lucide-react";
+import { Share2, Copy, Download, Mail, Twitter, Linkedin, Camera, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -11,54 +11,118 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function ShareDialog() {
   const { toast } = useToast();
-  const { exportSelectedModelAsSTL, selectedModelIndex, models } = useScene();
-  const [isPrivate, setIsPrivate] = useState(false);
+  const { exportSelectedModelAsSTL, selectedModelIndex, models, scene, camera, renderer } = useScene();
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Generate a shareable URL for the current model
-  const getShareableUrl = () => {
-    if (selectedModelIndex === null || !models[selectedModelIndex]) {
-      return window.location.origin;
-    }
-    // Using the current URL as the base and adding the model ID as a query parameter
-    const url = new URL(window.location.href);
-    url.searchParams.set('model', models[selectedModelIndex].id);
-    return url.toString();
-  };
-
-  // Copy URL to clipboard
-  const handleCopyUrl = async () => {
-    const url = getShareableUrl();
-    try {
-      await navigator.clipboard.writeText(url);
+  // Take a screenshot of the current view
+  const takeScreenshot = () => {
+    if (!renderer) {
       toast({
-        title: "URL Copied",
-        description: "Share link has been copied to clipboard",
-      });
-    } catch (err) {
-      toast({
-        title: "Copy Failed",
-        description: "Failed to copy URL to clipboard",
+        title: "Screenshot Failed",
+        description: "Unable to capture the viewport",
         variant: "destructive",
       });
+      return null;
+    }
+
+    try {
+      // Preserve the current renderer size
+      const originalSize = {
+        width: renderer.domElement.width,
+        height: renderer.domElement.height
+      };
+
+      // Ensure we're rendering at a good resolution for sharing
+      renderer.setSize(1920, 1080);
+      // Render the scene
+      renderer.render(scene, camera);
+      
+      // Get the data URL from the renderer
+      const dataUrl = renderer.domElement.toDataURL('image/png');
+      
+      // Restore the original size
+      renderer.setSize(originalSize.width, originalSize.height);
+      renderer.render(scene, camera);
+
+      // Set the screenshot URL for display and sharing
+      setScreenshotUrl(dataUrl);
+
+      toast({
+        title: "Screenshot Captured",
+        description: "Your design has been captured and is ready to share",
+      });
+
+      return dataUrl;
+    } catch (error) {
+      console.error("Error taking screenshot:", error);
+      toast({
+        title: "Screenshot Failed",
+        description: "Failed to capture screenshot",
+        variant: "destructive",
+      });
+      return null;
     }
   };
 
   // Handle sharing via email, Twitter, or LinkedIn
-  const handleShare = (platform: 'email' | 'twitter' | 'linkedin') => {
-    const url = encodeURIComponent(getShareableUrl());
+  const handleShare = async (platform: 'email' | 'twitter' | 'linkedin') => {
+    // For screenshot sharing, ensure we have a screenshot
+    let screenshot = screenshotUrl;
+    if (!screenshot) {
+      screenshot = takeScreenshot();
+      if (!screenshot) return;
+    }
+
     const title = "Check out my 3D model!";
     const text = encodeURIComponent("Check out my 3D model created with Taiyaki.ai!");
     
     let shareUrl = '';
     switch (platform) {
       case 'email':
-        shareUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${text}%0A%0A${url}`;
+        // For emails with screenshots, we'll prepare the image for download
+        // since most email clients don't support direct image sharing via mailto:
+        const link = document.createElement('a');
+        link.href = screenshot;
+        link.download = 'taiyaki-design-screenshot.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Then open an email with link
+        shareUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${text}%0A%0A(Screenshot attached)`;
         break;
-      case 'twitter':
-        shareUrl = `https://twitter.com/intent/tweet?url=${url}&text=${text}`;
+      case 'twitter': // X/Twitter
+        // For screenshots, we need to download them first since Twitter doesn't support direct image URLs
+        const twitterLink = document.createElement('a');
+        twitterLink.href = screenshot;
+        twitterLink.download = 'taiyaki-design-screenshot.png';
+        document.body.appendChild(twitterLink);
+        twitterLink.click();
+        document.body.removeChild(twitterLink);
+        
+        shareUrl = `https://twitter.com/intent/tweet?text=${text}`;
+        
+        toast({
+          title: "Screenshot Downloaded",
+          description: "Upload the downloaded image to X/Twitter when the share page opens",
+        });
         break;
       case 'linkedin':
-        shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${url}`;
+        // For screenshots, download first since LinkedIn doesn't support direct image URLs
+        const linkedinLink = document.createElement('a');
+        linkedinLink.href = screenshot;
+        linkedinLink.download = 'taiyaki-design-screenshot.png';
+        document.body.appendChild(linkedinLink);
+        linkedinLink.click();
+        document.body.removeChild(linkedinLink);
+        
+        shareUrl = `https://www.linkedin.com/sharing/share-offsite/`;
+        
+        toast({
+          title: "Screenshot Downloaded",
+          description: "Upload the downloaded image to LinkedIn when the share page opens",
+        });
         break;
     }
     
@@ -86,7 +150,9 @@ export function ShareDialog() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `model-export.stl`;
+        const modelName = models[selectedModelIndex].name || 'model';
+        const safeModelName = modelName.replace(/[^\w\-\.]/g, '_');
+        link.download = `${safeModelName}.stl`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -106,6 +172,26 @@ export function ShareDialog() {
     }
   };
 
+  // Download screenshot
+  const handleDownloadScreenshot = () => {
+    if (!screenshotUrl) {
+      const newScreenshotUrl = takeScreenshot();
+      if (!newScreenshotUrl) return;
+    }
+    
+    const link = document.createElement('a');
+    link.href = screenshotUrl || '';
+    link.download = 'taiyaki-design-screenshot.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Screenshot Downloaded",
+      description: "Your design screenshot has been saved",
+    });
+  };
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -116,60 +202,78 @@ export function ShareDialog() {
       <PopoverContent className="w-[425px] p-4" align="end">
         <div className="space-y-4">
           <h4 className="font-medium leading-none mb-2">Share & Export</h4>
-          <Tabs defaultValue="share" className="w-full">
+          <Tabs defaultValue="screenshot" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="share">Share</TabsTrigger>
-              <TabsTrigger value="export">Export</TabsTrigger>
+              <TabsTrigger value="screenshot">Share Screenshot</TabsTrigger>
+              <TabsTrigger value="export">Export STL</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="share" className="space-y-4">
+            <TabsContent value="screenshot" className="space-y-4">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="private">Private Link</Label>
-                  <Switch
-                    id="private"
-                    checked={isPrivate}
-                    onCheckedChange={setIsPrivate}
-                  />
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Share a screenshot of your current design view.</p>
                 </div>
                 
-                <div className="flex space-x-2">
-                  <Input
-                    readOnly
-                    value={getShareableUrl()}
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="icon" onClick={handleCopyUrl}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
+                <div className="flex justify-center mb-2">
+                  {screenshotUrl ? (
+                    <div className="relative w-full border rounded-md overflow-hidden">
+                      <img 
+                        src={screenshotUrl} 
+                        alt="Design Screenshot" 
+                        className="w-full h-auto max-h-48 object-contain"
+                      />
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="absolute top-1 right-1 h-6 w-6 bg-background/80 rounded-full hover:bg-background"
+                        onClick={() => setScreenshotUrl(null)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button onClick={takeScreenshot} className="w-full">
+                      <Camera className="mr-2 h-4 w-4" />
+                      Capture Screenshot
+                    </Button>
+                  )}
                 </div>
                 
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => handleShare('email')}
-                  >
-                    <Mail className="mr-2 h-4 w-4" />
-                    Email
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => handleShare('twitter')}
-                  >
-                    <Twitter className="mr-2 h-4 w-4" />
-                    Twitter
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => handleShare('linkedin')}
-                  >
-                    <Linkedin className="mr-2 h-4 w-4" />
-                    LinkedIn
-                  </Button>
-                </div>
+                {screenshotUrl && (
+                  <>
+                    <Button onClick={handleDownloadScreenshot} className="w-full mb-2">
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Screenshot
+                    </Button>
+                    
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => handleShare('email')}
+                      >
+                        <Mail className="mr-2 h-4 w-4" />
+                        Email
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => handleShare('twitter')}
+                      >
+                        <Twitter className="mr-2 h-4 w-4" />
+                        X/Twitter
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => handleShare('linkedin')}
+                      >
+                        <Linkedin className="mr-2 h-4 w-4" />
+                        LinkedIn
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             </TabsContent>
             

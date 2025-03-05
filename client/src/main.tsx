@@ -2,15 +2,17 @@ import { createRoot } from "react-dom/client";
 import Home from "./app/page";
 import "./index.css";
 import { ThemeProvider } from "./components/ui/theme-provider";
-import { AuthProvider } from "./lib/auth-context";
-import { Protected } from "./components/Protected";
+import { AuthProvider } from "./context/AuthContext";
+import { AuthWrapper } from "./components/AuthWrapper";
+import { Toaster } from "sonner";
 
 createRoot(document.getElementById("root")!).render(
   <ThemeProvider defaultTheme="light" storageKey="taiyaki-theme">
     <AuthProvider>
-      <Protected>
+      <AuthWrapper>
         <Home />
-      </Protected>
+        <Toaster position="top-right" />
+      </AuthWrapper>
     </AuthProvider>
   </ThemeProvider>
 );

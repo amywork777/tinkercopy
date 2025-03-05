@@ -1,14 +1,44 @@
 import { useState, CSSProperties } from 'react';
 import { useScene } from '@/hooks/use-scene';
 import { cn } from "@/lib/utils";
+import { ZoomIn } from 'lucide-react';
 
 export function ViewCube() {
-  const { setCameraView, cameraView } = useScene();
+  const { setCameraView, cameraView, camera, orbitControls } = useScene();
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   
-  // Simple function to change the camera view
+  // Function to change the camera view and reset zoom
   const changeView = (view: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'isometric') => {
     setCameraView(view);
+    
+    // Reset zoom by resetting the camera to its original distance
+    if (orbitControls) {
+      // Reset zoom distance based on view
+      setTimeout(() => {
+        if (camera && orbitControls) {
+          // Set a consistent zoom level for all views
+          const distance = view === 'isometric' ? 50 : 50;
+          const direction = camera.position.clone().sub(orbitControls.target).normalize();
+          camera.position.copy(direction.multiplyScalar(distance).add(orbitControls.target));
+          
+          // Update the controls
+          orbitControls.update();
+        }
+      }, 10);
+    }
+  };
+  
+  // Function to reset zoom only without changing view
+  const resetZoom = () => {
+    if (camera && orbitControls) {
+      // Set a consistent zoom level based on current view
+      const distance = cameraView === 'isometric' ? 50 : 50;
+      const direction = camera.position.clone().sub(orbitControls.target).normalize();
+      camera.position.copy(direction.multiplyScalar(distance).add(orbitControls.target));
+      
+      // Update the controls
+      orbitControls.update();
+    }
   };
   
   // Button style creator with hover and active states
@@ -156,7 +186,7 @@ export function ViewCube() {
         onMouseEnter={() => setHoveredButton('isometric')}
         onMouseLeave={() => setHoveredButton(null)}
         className={cn(
-          "flex flex-col items-center justify-center rounded border p-1 col-span-3",
+          "flex flex-col items-center justify-center rounded border p-1 col-span-2",
           cameraView === 'isometric' ? "bg-accent text-accent-foreground border-primary" : "bg-muted hover:bg-muted/80 text-foreground border-border",
           hoveredButton === 'isometric' ? "bg-muted/80" : ""
         )}
@@ -169,6 +199,24 @@ export function ViewCube() {
           </svg>
         </div>
         <span className="text-[8px]">3D</span>
+      </button>
+      
+      {/* Reset Zoom Button */}
+      <button
+        onClick={resetZoom}
+        onMouseEnter={() => setHoveredButton('reset-zoom')}
+        onMouseLeave={() => setHoveredButton(null)}
+        className={cn(
+          "flex flex-col items-center justify-center rounded border p-1",
+          "bg-muted hover:bg-muted/80 text-foreground border-border",
+          hoveredButton === 'reset-zoom' ? "bg-muted/80" : ""
+        )}
+        style={createButtonStyle('reset-zoom')}
+      >
+        <div className="mb-0.5 h-4 flex items-center justify-center">
+          <ZoomIn size={14} />
+        </div>
+        <span className="text-[8px]">Reset</span>
       </button>
     </div>
   );

@@ -6,21 +6,27 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from "firebase/auth";
+import { getAnalytics } from "firebase/analytics";
 
 // Your Firebase configuration
-// Replace these with your actual Firebase config values
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyD5jEQV3jxCVHn4t5Ruopklmjyt0ZfL3M8",
+  authDomain: "taiyaki-test1.firebaseapp.com",
+  projectId: "taiyaki-test1",
+  storageBucket: "taiyaki-test1.firebasestorage.app",
+  messagingSenderId: "815257559066",
+  appId: "1:815257559066:web:0972b748161292aca0b1a3",
+  measurementId: "G-FJ8C8CZJJ2"
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// Initialize Analytics (if in browser environment)
+let analytics;
+if (typeof window !== 'undefined') {
+  analytics = getAnalytics(app);
+}
 
 // Google provider setup
 const googleProvider = new GoogleAuthProvider();
@@ -56,4 +62,4 @@ export const onAuthStateChange = (callback: (user: any) => void) => {
   return onAuthStateChanged(auth, callback);
 };
 
-export { auth }; 
+export { auth, analytics }; 

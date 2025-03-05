@@ -5,19 +5,30 @@ import { TransformControls } from "@/components/TransformControls";
 import ToolBar from "@/components/ToolBar";
 import { RightSidebar } from "@/components/RightSidebar";
 import { Button } from "@/components/ui/button";
-import { Printer, PanelLeft } from "lucide-react";
+import { Printer, PanelLeft, LogIn, LogOut, User, Share2 } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { initTaiyakiMessageListener } from "@/lib/iframeInterceptor";
 import MobileWarning from "@/components/MobileWarning";
 import MobileView from "@/components/MobileView";
-import { UserMenu } from "@/components/UserMenu";
+import { useAuth } from "@/context/AuthContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ShareDialog } from "@/components/ShareDialog";
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [useMobileVersion, setUseMobileVersion] = useState(false);
   const [skipMobileWarning, setSkipMobileWarning] = useState(false);
+  const { user, isAuthenticated, login, logout } = useAuth();
   
   // Initialize the Taiyaki message listener when the component mounts
   useEffect(() => {
@@ -59,11 +70,46 @@ export default function Home() {
         {/* Header bar */}
         <div className="w-full h-12 bg-background border-b border-border flex items-center justify-between px-4">
           <div className="flex items-center">
-            <h1 className="text-xl font-bold text-primary">fishcad</h1>
+            <h1 className="text-xl font-bold text-primary">taiyaki.ai</h1>
           </div>
           <div className="flex items-center space-x-2">
             <ThemeToggle />
-            <UserMenu />
+            
+            {/* User Avatar or Login Button */}
+            {isAuthenticated ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Avatar className="h-8 w-8 cursor-pointer">
+                    {user?.profilePicture ? (
+                      <AvatarImage src={user.profilePicture} alt={user.displayName} />
+                    ) : (
+                      <AvatarFallback>
+                        {user?.displayName?.substring(0, 2) || <User className="h-4 w-4" />}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>{user?.displayName}</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">{user?.email}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={logout}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={login}
+                data-auth-skip
+              >
+                <LogIn className="h-4 w-4 mr-2" />
+                <span>Sign in</span>
+              </Button>
+            )}
           </div>
         </div>
 
@@ -101,8 +147,14 @@ export default function Home() {
               <TransformControls />
             </div>
             
-            {/* 3D Print Button */}
-            <div className="absolute top-4 right-4 z-10">
+            {/* Buttons Container - Combines Share and 3D Print */}
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
+              {/* Share Button */}
+              <div className="flex items-center">
+                <ShareDialog />
+              </div>
+              
+              {/* 3D Print Button */}
               <Button 
                 variant="primary"
                 onClick={() => setRightSidebarOpen(true)}

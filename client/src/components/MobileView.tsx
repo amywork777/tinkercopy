@@ -303,15 +303,37 @@ const MobileView: React.FC = () => {
     selectSecondaryModel(booleanSecondaryIndex);
     
     setIsCsgLoading(true);
+    
+    // Operation names for user feedback
+    const operationNames = {
+      union: "Merge",
+      subtract: "Cut Out", 
+      intersect: "Intersect"
+    };
+    
+    // Show in-progress toast
+    toast.loading(`${operationNames[operation]} operation in progress...`);
+    
     try {
       await performCSGOperation(operation);
-      toast.success(`${operation.charAt(0).toUpperCase() + operation.slice(1)} operation completed`);
+      
+      // Dismiss any loading toasts
+      toast.dismiss();
+      
+      // Show success toast
+      toast.success(`${operationNames[operation]} operation completed`);
       
       // Reset selections after successful operation
       setBooleanPrimaryIndex(null);
       setBooleanSecondaryIndex(null);
-    } catch (error) {
-      toast.error(`Failed to perform ${operation} operation`);
+    } catch (error: any) {
+      // Dismiss any loading toasts
+      toast.dismiss();
+      
+      // Show detailed error message
+      toast.error(error.message || `Failed to perform ${operation} operation`);
+      
+      console.error(`Boolean operation ${operation} failed:`, error);
     } finally {
       setIsCsgLoading(false);
     }

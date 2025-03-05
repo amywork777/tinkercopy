@@ -381,11 +381,11 @@ export function TransformControls({ className }: { className?: string }) {
           <div className="space-y-2">
             <div className="flex space-x-1">
               <Button
-                variant={transformMode === "translate" ? "default" : "outline"}
+                variant={transformMode === "scale" ? "default" : "outline"}
                 className="flex-1 h-7 text-xs"
-                onClick={() => setTransformMode("translate")}
+                onClick={() => setTransformMode("scale")}
               >
-                Move
+                Scale
               </Button>
               <Button
                 variant={transformMode === "rotate" ? "default" : "outline"}
@@ -395,11 +395,11 @@ export function TransformControls({ className }: { className?: string }) {
                 Rotate
               </Button>
               <Button
-                variant={transformMode === "scale" ? "default" : "outline"}
+                variant={transformMode === "translate" ? "default" : "outline"}
                 className="flex-1 h-7 text-xs"
-                onClick={() => setTransformMode("scale")}
+                onClick={() => setTransformMode("translate")}
               >
-                Scale
+                Move
               </Button>
             </div>
 

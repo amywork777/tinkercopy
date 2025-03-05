@@ -2,29 +2,28 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { Object3D } from 'three';
 import { useScene } from '@/hooks/use-scene';
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { setGizmoActive } from '@/lib/dragState';
 
 // Custom simplified implementation that doesn't rely on TransformControls
 export function TransformGizmo() {
   // References to our custom transform objects
+  const transformGroupRef = useRef<THREE.Group | null>(null);
   const xArrowRef = useRef<THREE.ArrowHelper | null>(null);
   const yArrowRef = useRef<THREE.ArrowHelper | null>(null);
   const zArrowRef = useRef<THREE.ArrowHelper | null>(null);
-  const transformGroupRef = useRef<THREE.Group | null>(null);
   
-  // Scene elements and state from useScene
   const { 
     scene, 
     camera, 
     renderer, 
-    selectedModelIndex, 
     models, 
+    selectedModelIndex, 
     transformMode,
+    setModelPosition,
     orbitControls,
     saveHistoryState,
-    syncTransformUIState,
-    setModelPosition,
-    setModelRotation,
-    setModelScale
+    syncTransformUIState
   } = useScene();
 
   // Create our custom transform controls when component mounts
@@ -95,7 +94,7 @@ export function TransformGizmo() {
     
     // Track which arrow is being dragged
     let activeDragAxis: 'x' | 'y' | 'z' | null = null;
-    let dragStartPosition = new THREE.Vector3();
+    let dragStartPosition = new THREE.Vector2();
     let originalModelPosition = new THREE.Vector3();
     
     // Function to update transform group position
@@ -126,6 +125,9 @@ export function TransformGizmo() {
       const intersects = raycaster.intersectObjects(arrowObjects, true);
       
       if (intersects.length > 0) {
+        // Set gizmo as active
+        setGizmoActive(true);
+        
         // Disable orbit controls while dragging
         if (orbitControls) {
           orbitControls.enabled = false;
@@ -153,7 +155,7 @@ export function TransformGizmo() {
           console.log(`TransformGizmo: Started dragging ${activeDragAxis} axis`);
           
           // Store the starting position for reference
-          dragStartPosition.set(mouse.x, mouse.y, 0);
+          dragStartPosition.set(mouse.x, mouse.y);
           
           // Store the original model position
           originalModelPosition.copy(models[selectedModelIndex].mesh.position);
@@ -218,6 +220,9 @@ export function TransformGizmo() {
       if (activeDragAxis) {
         console.log(`TransformGizmo: Finished dragging ${activeDragAxis} axis`);
         
+        // Mark gizmo as inactive
+        setGizmoActive(false);
+        
         // Re-enable orbit controls
         if (orbitControls) {
           orbitControls.enabled = true;
@@ -251,6 +256,9 @@ export function TransformGizmo() {
         scene.remove(transformGroupRef.current);
         transformGroupRef.current = null;
       }
+      
+      // Reset gizmo active state
+      setGizmoActive(false);
       
       console.log("TransformGizmo: Cleaned up custom controls");
     };

@@ -576,7 +576,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddCylinder = () => {
-    const geometry = new THREE.CylinderGeometry(25.4, 25.4, 50.8, 32);
+    const geometry = new THREE.CylinderGeometry(25.4, 25.4, 50.8, 32, 2, false); // Increased segments, closed ends
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
@@ -597,7 +597,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddCone = () => {
-    const geometry = new THREE.ConeGeometry(25.4, 50.8, 32);
+    const geometry = new THREE.ConeGeometry(25.4, 50.8, 32, 2, false); // Increased height segments, closed base
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
@@ -744,10 +744,17 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddPyramid = () => {
-    const geometry = new THREE.ConeGeometry(25.4, 50.8, 4);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    // Create a proper pyramid with a square base for better 3D printing
+    const geometry = new THREE.ConeGeometry(25.4, 50.8, 4, 1, true); // Square base, open-ended, higher radial segments
+    const material = new THREE.MeshStandardMaterial({ 
+      color: getRandomColor(),
+      side: THREE.DoubleSide // Ensure all faces are visible
+    });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(0, 0, 0);
+    
+    // Rotate to match the expected orientation (base is parallel to ground)
+    mesh.rotation.x = Math.PI;
+    
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -770,8 +777,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       new THREE.Vector3(-25.4, -25.4, 0),    // -1 inch, -1 inch, 0
       new THREE.Vector3(0, 25.4, 0),         // 0, 1 inch, 0
       new THREE.Vector3(25.4, -25.4, 0)      // 1 inch, -1 inch, 0
-    ]);
-    const geometry = new THREE.TubeGeometry(curve, 20, 8, 8, false); // tube radius ~0.3 inch
+    ], true); // Make the curve closed
+    const geometry = new THREE.TubeGeometry(curve, 64, 8, 16, true); // Increased segments, closed=true
     const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -793,28 +800,49 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const handleAddPrism = () => {
     // Create a triangular prism using custom geometry
     const geometry = new THREE.BufferGeometry();
+    
+    // Define vertices for a proper watertight triangular prism
     const vertices = new Float32Array([
-      // Front face (scaled to ~2 inches)
-      -25.4, -25.4, 25.4,    // Bottom left
-      25.4, -25.4, 25.4,     // Bottom right
-      0, 25.4, 25.4,         // Top
-      // Back face
-      -25.4, -25.4, -25.4,   // Bottom left
-      25.4, -25.4, -25.4,    // Bottom right
-      0, 25.4, -25.4,        // Top
+      // Front face triangle (z+)
+      -25.4, -25.4, 25.4,    // 0: Bottom left front
+      25.4, -25.4, 25.4,     // 1: Bottom right front
+      0, 25.4, 25.4,         // 2: Top front
+      
+      // Back face triangle (z-)
+      -25.4, -25.4, -25.4,   // 3: Bottom left back
+      25.4, -25.4, -25.4,    // 4: Bottom right back
+      0, 25.4, -25.4,        // 5: Top back
     ]);
+    
+    // Define indices for all 8 triangles that make up the prism
     const indices = new Uint16Array([
-      0, 1, 2, // front
-      3, 4, 5, // back
-      0, 3, 4, 0, 4, 1, // bottom
-      1, 4, 5, 1, 5, 2, // right side
-      0, 2, 5, 0, 5, 3  // left side
+      // Front triangle
+      0, 1, 2,
+      
+      // Back triangle
+      3, 5, 4, // Note the winding order is reversed for proper normals
+      
+      // Bottom face (rectangle split into 2 triangles)
+      0, 4, 1, // First triangle
+      0, 3, 4, // Second triangle
+      
+      // Left side (rectangle split into 2 triangles)
+      0, 2, 5,
+      0, 5, 3,
+      
+      // Right side (rectangle split into 2 triangles)
+      1, 4, 5,
+      1, 5, 2
     ]);
+    
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const material = new THREE.MeshStandardMaterial({ 
+      color: getRandomColor(),
+      side: THREE.DoubleSide // This ensures the mesh is visible from both sides
+    });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

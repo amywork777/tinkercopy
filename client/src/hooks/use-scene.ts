@@ -5,14 +5,15 @@ import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSG } from 'three-csg-ts';
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
-import { FontLoader } from "three/examples/jsm/loaders/FontLoader";
+import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry, TextGeometryParameters } from "three/examples/jsm/geometries/TextGeometry.js";
-import { Font } from 'three/examples/jsm/loaders/FontLoader';
+import { Font } from 'three/examples/jsm/loaders/FontLoader.js';
 import { createRoot } from 'react-dom/client';
 import { ImportScaleDialog } from '../components/ImportScaleDialog';
 import { Vector3 } from "three";
 import * as React from 'react';
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { isGizmoBeingDragged } from '@/lib/dragState';
 
 // Scene configuration
 const GRID_SIZE = 500; // Much larger grid for better visibility
@@ -387,6 +388,11 @@ export const useScene = create<SceneState>((set, get) => {
       canvas.addEventListener('pointerdown', (event) => {
           const currentState = get();
           
+        // Check if the gizmo is being dragged to avoid conflicts
+        if (isGizmoBeingDragged()) {
+          return;
+        }
+        
         // We're skipping complicated checks for debugging purposes
         // This avoids potential conflicts between selection and transformation
         const isTransformActive = false; // Allow selection to work for debugging
@@ -424,6 +430,78 @@ export const useScene = create<SceneState>((set, get) => {
             if (modelIndex !== -1) {
               console.log(`Clicked on model ${modelIndex}:`, currentModels[modelIndex].name);
               get().selectModel(modelIndex);
+              
+              // Initialize free dragging if a model is selected
+              const selectedModel = currentModels[modelIndex];
+              
+              // Create a drag plane perpendicular to the camera direction
+              const dragPlane = new THREE.Plane();
+              const cameraDirection = new THREE.Vector3();
+              camera.getWorldDirection(cameraDirection);
+              dragPlane.setFromNormalAndCoplanarPoint(
+                cameraDirection,
+                selectedModel.mesh.position
+              );
+              
+              // Save initial intersection point
+              const initialIntersection = new THREE.Vector3();
+              const initialRay = new THREE.Ray(camera.position, raycaster.ray.direction);
+              initialRay.intersectPlane(dragPlane, initialIntersection);
+              
+              // Save the initial model position
+              const initialModelPosition = selectedModel.mesh.position.clone();
+              
+              // Disable orbit controls during dragging
+              orbitControls.enabled = false;
+              
+              // Define pointermove handler
+              const handlePointerMove = (moveEvent: PointerEvent) => {
+                // Get current mouse position
+                const rect = canvas.getBoundingClientRect();
+                const x = ((moveEvent.clientX - rect.left) / rect.width) * 2 - 1;
+                const y = -((moveEvent.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                // Update raycaster with new mouse position
+                mouse.set(x, y);
+                raycaster.setFromCamera(mouse, camera);
+                
+                // Find the new intersection point with the drag plane
+                const currentIntersection = new THREE.Vector3();
+                const currentRay = new THREE.Ray(camera.position, raycaster.ray.direction);
+                if (currentRay.intersectPlane(dragPlane, currentIntersection)) {
+                  // Calculate the offset
+                  const offset = new THREE.Vector3().subVectors(
+                    currentIntersection,
+                    initialIntersection
+                  );
+                  
+                  // Apply offset to model position
+                  const newPosition = new THREE.Vector3().addVectors(
+                    initialModelPosition,
+                    offset
+                  );
+                  
+                  // Update the model position
+                  get().setModelPosition(newPosition.x, newPosition.y, newPosition.z);
+                }
+              };
+              
+              // Define pointerup handler
+              const handlePointerUp = () => {
+                // Remove event listeners
+                window.removeEventListener('pointermove', handlePointerMove);
+                window.removeEventListener('pointerup', handlePointerUp);
+                
+                // Re-enable orbit controls
+                orbitControls.enabled = true;
+                
+                // Save the state for undo/redo
+                get().saveHistoryState();
+              };
+              
+              // Add event listeners for dragging
+              window.addEventListener('pointermove', handlePointerMove);
+              window.addEventListener('pointerup', handlePointerUp);
             }
           } else {
             // Clicked on empty space, deselect

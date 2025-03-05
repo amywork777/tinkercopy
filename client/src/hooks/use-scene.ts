@@ -182,8 +182,8 @@ type SceneState = {
   initializeScene: (container: HTMLDivElement) => () => void;
   
   // Model management
-  loadSTL: (file: File) => Promise<void>;
-  loadSVG: (file: File, extrudeDepth?: number) => Promise<void>;
+  loadSTL: (file: File | string) => Promise<void>;
+  loadSVG: (file: File | string, extrudeDepth?: number) => Promise<void>;
   loadText: (text: string, options?: TextOptions) => Promise<void>;
   removeModel: (index: number) => void;
   selectModel: (index: number | null) => void;
@@ -599,10 +599,24 @@ export const useScene = create<SceneState>((set, get) => {
     },
     
     // Load an STL file
-    loadSTL: async (file: File) => {
+    loadSTL: async (file: File | string) => {
       const loader = new STLLoader();
-      const arrayBuffer = await file.arrayBuffer();
-      const geometry = loader.parse(arrayBuffer);
+      let geometry: THREE.BufferGeometry;
+      
+      if (typeof file === 'string') {
+        // If file is a URL string, load it directly
+        try {
+          // Use the STLLoader to load from URL
+          geometry = await loader.loadAsync(file);
+        } catch (error) {
+          console.error("Error loading STL from URL:", error);
+          throw new Error(`Failed to load STL from URL: ${error}`);
+        }
+      } else {
+        // Original file handling logic
+        const arrayBuffer = await file.arrayBuffer();
+        geometry = loader.parse(arrayBuffer);
+      }
       
       // Show scaling dialog
       const dialogRoot = document.createElement('div');
@@ -667,8 +681,8 @@ export const useScene = create<SceneState>((set, get) => {
         // Create model object
       const model: Model = {
           id: `model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: file.name,
-        type: 'model',
+          name: typeof file === 'string' ? file.split('/').pop() || 'Model from URL' : file.name,
+          type: 'model',
           mesh,
           originalPosition,
           originalRotation,
@@ -1770,134 +1784,144 @@ export const useScene = create<SceneState>((set, get) => {
     },
 
     // Load an SVG file and convert to 3D by extruding
-    loadSVG: async (file: File, extrudeDepth = 2) => {
+    loadSVG: async (file: File | string, extrudeDepth = 2) => {
       const state = get();
       
-      if (!state.isSceneReady) {
-        throw new Error("Scene not ready");
-      }
-      
-      // Create a URL for the file
-      const url = URL.createObjectURL(file);
-      
-      // Load the SVG
-        const loader = new SVGLoader();
-      const svgData = await loader.loadAsync(url);
-      
-      // Clean up the URL
-      URL.revokeObjectURL(url);
-      
-      // Create a group to hold our shapes
-      const group = new THREE.Group();
-      
-      // Create a material with a random color
-        const material = new THREE.MeshStandardMaterial({ 
-          color: getRandomColor(),
-          side: THREE.DoubleSide,
-        });
-        
-      // Extrusion settings with bevel for better 3D appearance
-        const extrudeSettings = {
-          depth: extrudeDepth,
-        bevelEnabled: true,
-        bevelThickness: 1,
-        bevelSize: 1,
-        bevelOffset: 0,
-        bevelSegments: 3
-        };
-        
-        // Process all paths in the SVG
-        svgData.paths.forEach((path) => {
-        // Convert all subpaths to shapes
-          const shapes = path.toShapes(true);
-          
-          shapes.forEach((shape) => {
-          // Ensure the shape is properly oriented for solid extrusion
-          shape.autoClose = true;
-          
-          // Create holes array if the shape has holes
-          const holes = [];
-          if (shape.holes && shape.holes.length > 0) {
-            shape.holes.forEach((hole) => {
-              hole.autoClose = true;
-              holes.push(hole);
-            });
-          }
-          
-          // Extrude the shape to create a solid 3D object
-            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-          
-          // Create mesh with the geometry
-            const mesh = new THREE.Mesh(geometry, material);
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          
-            group.add(mesh);
-          });
-        });
-        
-        // If no valid paths were found, throw an error
-        if (group.children.length === 0) {
-          throw new Error("No valid paths found in SVG");
+      try {
+        // Create a URL for the file
+        let url: string;
+        if (typeof file === 'string') {
+          // If file is already a URL string, use it directly
+          url = file;
+        } else {
+          // Otherwise create a URL from the File object
+          url = URL.createObjectURL(file);
         }
         
-      // Combine all meshes into a single mesh for better performance
-        const buffers: THREE.BufferGeometry[] = [];
-        group.children.forEach((child) => {
-          if (child instanceof THREE.Mesh) {
-            buffers.push(child.geometry.clone());
+        // Load the SVG
+        const loader = new SVGLoader();
+        const svgData = await loader.loadAsync(url);
+        
+        // Clean up the URL if we created it from a File
+        if (typeof file !== 'string') {
+          URL.revokeObjectURL(url);
+        }
+        
+        // Create a group to hold our shapes
+        const group = new THREE.Group();
+        
+        // Create a material with a random color
+          const material = new THREE.MeshStandardMaterial({ 
+            color: getRandomColor(),
+            side: THREE.DoubleSide,
+          });
+          
+        // Extrusion settings with bevel for better 3D appearance
+          const extrudeSettings = {
+            depth: extrudeDepth,
+          bevelEnabled: true,
+          bevelThickness: 1,
+          bevelSize: 1,
+          bevelOffset: 0,
+          bevelSegments: 3
+          };
+          
+          // Process all paths in the SVG
+          svgData.paths.forEach((path) => {
+          // Convert all subpaths to shapes
+            const shapes = path.toShapes(true);
+            
+            shapes.forEach((shape) => {
+            // Ensure the shape is properly oriented for solid extrusion
+            shape.autoClose = true;
+            
+            // Create holes array if the shape has holes
+            const holes = [];
+            if (shape.holes && shape.holes.length > 0) {
+              shape.holes.forEach((hole) => {
+                hole.autoClose = true;
+                holes.push(hole);
+              });
+            }
+            
+            // Extrude the shape to create a solid 3D object
+              const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            
+            // Create mesh with the geometry
+              const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            
+              group.add(mesh);
+            });
+          });
+          
+          // If no valid paths were found, throw an error
+          if (group.children.length === 0) {
+            throw new Error("No valid paths found in SVG");
           }
-        });
+          
+        // Combine all meshes into a single mesh for better performance
+          const buffers: THREE.BufferGeometry[] = [];
+          group.children.forEach((child) => {
+            if (child instanceof THREE.Mesh) {
+              buffers.push(child.geometry.clone());
+            }
+          });
+          
+          // Use BufferGeometryUtils to merge geometries
+        const mergedGeometry = BufferGeometryUtils.mergeGeometries(buffers);
         
-        // Use BufferGeometryUtils to merge geometries
-      const mergedGeometry = BufferGeometryUtils.mergeGeometries(buffers);
-      
-      // Create the final mesh
-      const finalMesh = new THREE.Mesh(mergedGeometry, material);
-      finalMesh.castShadow = true;
-      finalMesh.receiveShadow = true;
-      
-      // Center the model
-      const box = new THREE.Box3().setFromObject(finalMesh);
-      const center = box.getCenter(new THREE.Vector3());
-      finalMesh.position.sub(center);
-      finalMesh.position.y = extrudeDepth / 2; // Place on the grid
-      
-      // Fix the orientation for SVG models created from sketches
-      if (file.name.startsWith('sketch-')) {
-        // Apply 180 degrees rotation around Z-axis to correct sketch orientation
-        finalMesh.rotateZ(Math.PI);
+        // Create the final mesh
+        const finalMesh = new THREE.Mesh(mergedGeometry, material);
+        finalMesh.castShadow = true;
+        finalMesh.receiveShadow = true;
+        
+        // Center the model
+        const box = new THREE.Box3().setFromObject(finalMesh);
+        const center = box.getCenter(new THREE.Vector3());
+        finalMesh.position.sub(center);
+        finalMesh.position.y = extrudeDepth / 2; // Place on the grid
+        
+        // Fix the orientation for SVG models created from sketches
+        if (typeof file !== 'string' && file.name.startsWith('sketch-')) {
+          // Apply 180 degrees rotation around Z-axis to correct sketch orientation
+          finalMesh.rotateZ(Math.PI);
+        }
+          
+          // Store original transform
+        const originalPosition = finalMesh.position.clone();
+        const originalRotation = finalMesh.rotation.clone();
+        const originalScale = finalMesh.scale.clone();
+          
+          // Add to scene
+        state.scene.add(finalMesh);
+          
+          // Create model object
+        const model: Model = {
+          id: `svg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            name: typeof file === 'string' ? file.split('/').pop() || 'SVG from URL' : file.name,
+          type: 'svg',
+          mesh: finalMesh,
+            originalPosition,
+            originalRotation,
+            originalScale
+          };
+          
+          // Add to models array
+        const updatedModels = [...state.models, model];
+        set({ models: updatedModels });
+          
+          // Select the new model
+        const newIndex = updatedModels.length - 1;
+        state.selectModel(newIndex);
+        
+        // Save to history
+        state.saveHistoryState();
+      } catch (error) {
+        console.error("Error loading SVG:", error);
+        throw new Error("Failed to load SVG file");
       }
-        
-        // Store original transform
-      const originalPosition = finalMesh.position.clone();
-      const originalRotation = finalMesh.rotation.clone();
-      const originalScale = finalMesh.scale.clone();
-        
-        // Add to scene
-      state.scene.add(finalMesh);
-        
-        // Create model object
-      const model: Model = {
-        id: `svg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: file.name,
-        type: 'svg',
-        mesh: finalMesh,
-          originalPosition,
-          originalRotation,
-          originalScale
-        };
-        
-        // Add to models array
-      const updatedModels = [...state.models, model];
-      set({ models: updatedModels });
-        
-        // Select the new model
-      const newIndex = updatedModels.length - 1;
-      state.selectModel(newIndex);
-      
-      // Save to history
-      state.saveHistoryState();
     },
     
     // Create 3D text

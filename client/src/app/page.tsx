@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Viewport } from "@/components/Viewport";
 import { TransformControls } from "@/components/TransformControls";
@@ -8,10 +8,23 @@ import { Button } from "@/components/ui/button";
 import { Printer, PanelLeft } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { initTaiyakiMessageListener } from "@/lib/iframeInterceptor";
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  
+  // Initialize the Taiyaki message listener when the component mounts
+  useEffect(() => {
+    // Set up the message listener and get the cleanup function
+    const cleanup = initTaiyakiMessageListener();
+    
+    // Log that the listener is active
+    console.log("Taiyaki STL import message listener initialized");
+    
+    // Return the cleanup function to be called when the component unmounts
+    return cleanup;
+  }, []);
   
   return (
     <TooltipProvider>

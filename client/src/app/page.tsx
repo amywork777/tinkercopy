@@ -9,6 +9,7 @@ import { Printer, PanelLeft } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { initTaiyakiMessageListener } from "@/lib/iframeInterceptor";
+import MobileWarning from "@/components/MobileWarning";
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
@@ -29,6 +30,9 @@ export default function Home() {
   return (
     <TooltipProvider>
       <div className="flex flex-col h-screen">
+        {/* Mobile Warning Overlay */}
+        <MobileWarning />
+        
         {/* Header bar */}
         <div className="w-full h-12 bg-background border-b border-border flex items-center justify-between px-4">
           <div className="flex items-center">

@@ -410,14 +410,19 @@ export function TransformControls({ className }: { className?: string }) {
               >
                 {unit.toUpperCase()}
               </Button>
-              <div className="flex gap-1">
-                <span className="text-red-500">W:</span>{formatDimension(dimensions.width)}
-              </div>
-              <div className="flex gap-1">
-                <span className="text-blue-500">H:</span>{formatDimension(dimensions.height)}
-              </div>
-              <div className="flex gap-1">
-                <span className="text-green-500">D:</span>{formatDimension(dimensions.depth)}
+              <div className="flex justify-between text-[10px]">
+                <div>
+                  <span className="text-red-500">W:</span>{formatDimension(dimensions.width)}
+                </div>
+                <div>
+                  <span className="text-blue-500">D:</span>{formatDimension(dimensions.height)}
+                </div>
+                <div>
+                  <span className="text-green-500">H:</span>{formatDimension(dimensions.depth)}
+                </div>
+                <div className="cursor-pointer" onClick={toggleUnit}>
+                  {getDimensionUnit()}
+                </div>
               </div>
             </div>
 

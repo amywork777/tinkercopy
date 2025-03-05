@@ -701,4 +701,4 @@ const MobileView: React.FC = () => {
   );
 };
 
-export default MobileView; 
+export default MobileView; // Added a comment

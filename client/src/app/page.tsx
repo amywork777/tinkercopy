@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { initTaiyakiMessageListener } from "@/lib/iframeInterceptor";
 import MobileWarning from "@/components/MobileWarning";
 import MobileView from "@/components/MobileView";
+import { UserMenu } from "@/components/UserMenu";
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
@@ -58,10 +59,11 @@ export default function Home() {
         {/* Header bar */}
         <div className="w-full h-12 bg-background border-b border-border flex items-center justify-between px-4">
           <div className="flex items-center">
-            <h1 className="text-xl font-bold text-primary">taiyaki.ai</h1>
+            <h1 className="text-xl font-bold text-primary">fishcad</h1>
           </div>
           <div className="flex items-center space-x-2">
             <ThemeToggle />
+            <UserMenu />
           </div>
         </div>
 

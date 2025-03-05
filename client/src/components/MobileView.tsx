@@ -403,7 +403,7 @@ const MobileView: React.FC = () => {
         <div className="absolute top-0 left-0 right-0 bg-primary text-primary-foreground px-2 py-1 flex justify-between items-center z-30 text-xs">
           <div className="flex items-center">
             <Info className="h-3 w-3 mr-1" />
-            <span>Mobile Modeler</span>
+            <span>fishcad Mobile Modeler</span>
           </div>
           <div className="flex space-x-2">
             <Button 

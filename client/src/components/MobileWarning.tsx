@@ -1,18 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { ComputerIcon, SmartphoneIcon, X } from "lucide-react";
+import { ComputerIcon, SmartphoneIcon, ExternalLinkIcon, ArrowLeftIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
-const MobileWarning: React.FC = () => {
+interface MobileWarningProps {
+  onUseMobileVersion: () => void;
+}
+
+const MobileWarning: React.FC<MobileWarningProps> = ({ onUseMobileVersion }) => {
   const [isMobile, setIsMobile] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-
+  
   useEffect(() => {
-    // Check localStorage first for user preference
-    const hasUserDismissed = localStorage.getItem("mobile-warning-dismissed");
-    if (hasUserDismissed === "true") {
-      setDismissed(true);
-    }
-
     // More comprehensive mobile detection
     const checkMobile = () => {
       // Get user agent string
@@ -55,67 +53,85 @@ const MobileWarning: React.FC = () => {
     };
   }, []);
 
-  // Dismiss the warning and remember the choice
-  const handleDismiss = () => {
-    setDismissed(true);
-    localStorage.setItem("mobile-warning-dismissed", "true");
+  // Navigate user back to taiyaki.ai website
+  const handleReturnToTaiyaki = () => {
+    window.location.href = "https://taiyaki.ai";
+  };
+  
+  // User clicked to use the mobile version
+  const handleUseMobileVersion = () => {
+    onUseMobileVersion();
   };
 
-  // User clicked the "continue to desktop version" button
-  const handleContinue = () => {
-    // Just dismiss without saving preference so it shows again next visit
-    setDismissed(true);
+  // User clicked to continue with desktop version
+  const handleContinueToDesktop = () => {
+    // We don't store this preference anymore since we want the warning to always appear
+    // Just call the mobile version handler but with a flag to use desktop layout
+    localStorage.setItem("temp-use-desktop", "true");
+    window.location.reload();
   };
 
-  if (!isMobile || dismissed) {
+  if (!isMobile) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-6 text-center">
-      <div className="bg-card shadow-lg rounded-lg p-6 max-w-md flex flex-col items-center space-y-4 border relative">
-        {/* Close button */}
-        <button 
-          onClick={handleDismiss}
-          className="absolute top-2 right-2 p-1 rounded-full hover:bg-muted"
-          aria-label="Dismiss"
-        >
-          <X className="h-4 w-4" />
-        </button>
+    <div className="fixed inset-0 bg-gradient-to-b from-background/95 to-background/90 backdrop-blur-lg z-50 flex flex-col items-center justify-center p-4 text-center">
+      <Card className="bg-card shadow-lg rounded-lg max-w-md flex flex-col items-center space-y-4 border border-primary/20 p-6 relative overflow-hidden">
+        {/* Decorative elements */}
+        <div className="absolute -top-10 -right-10 w-40 h-40 bg-primary/5 rounded-full blur-xl"></div>
+        <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-primary/5 rounded-full blur-xl"></div>
         
-        <div className="flex items-center space-x-3 mb-2">
-          <SmartphoneIcon className="h-8 w-8 text-destructive" />
+        <div className="flex items-center space-x-3 mb-2 z-10">
+          <SmartphoneIcon className="h-8 w-8 text-primary" />
           <span className="text-xl font-bold">Mobile Device Detected</span>
         </div>
         
-        <p className="text-md mb-2">
-          This CAD application requires a computer for the best experience.
+        <p className="text-md mb-2 z-10">
+          This CAD application works best on desktop computers.
         </p>
         
-        <div className="bg-muted p-4 rounded-md mb-2">
-          <p className="text-sm">
-            CAD modeling requires precise inputs and interactions that are 
-            difficult on mobile devices. For the full functionality and best experience, 
-            please use a desktop or laptop computer.
+        <div className="bg-muted/80 p-4 rounded-md mb-2 z-10 text-left">
+          <p className="text-sm mb-3">
+            For the best modeling experience, please consider:
           </p>
+          <ul className="text-sm space-y-2 pl-2">
+            <li className="flex items-start">
+              <ArrowLeftIcon className="h-3 w-3 mr-2 mt-1 text-primary" />
+              <span>Returning to the main Taiyaki website</span>
+            </li>
+            <li className="flex items-start">
+              <ArrowLeftIcon className="h-3 w-3 mr-2 mt-1 text-primary" />
+              <span>Using a desktop computer for full CAD functionality</span>
+            </li>
+            <li className="flex items-start">
+              <ArrowLeftIcon className="h-3 w-3 mr-2 mt-1 text-primary" />
+              <span>Trying our simplified mobile version with limited features</span>
+            </li>
+          </ul>
         </div>
         
-        <div className="flex items-center justify-center my-2">
-          <SmartphoneIcon className="h-10 w-10 text-destructive mx-4" />
-          <span className="text-xl">→</span>
-          <ComputerIcon className="h-12 w-12 text-primary mx-4" />
-        </div>
-        
-        <div className="flex flex-col w-full space-y-2 mt-2">
-          <Button onClick={handleContinue} variant="default">
-            Continue to Desktop Version Anyway
+        <div className="flex flex-col w-full space-y-3 mt-2 z-10">
+          <Button 
+            onClick={handleReturnToTaiyaki} 
+            variant="default" 
+            className="bg-primary hover:bg-primary/90"
+          >
+            <ExternalLinkIcon className="h-4 w-4 mr-2" />
+            Return to taiyaki.ai
           </Button>
           
-          <Button onClick={handleDismiss} variant="outline">
-            Don't Show Again
+          <Button onClick={handleUseMobileVersion} variant="outline">
+            <SmartphoneIcon className="h-4 w-4 mr-2" />
+            Try Simplified Mobile Version
+          </Button>
+          
+          <Button onClick={handleContinueToDesktop} variant="outline" className="text-sm opacity-70">
+            <ComputerIcon className="h-4 w-4 mr-2" />
+            Continue to Desktop Version Anyway
           </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 };

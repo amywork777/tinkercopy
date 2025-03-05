@@ -10,15 +10,27 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { initTaiyakiMessageListener } from "@/lib/iframeInterceptor";
 import MobileWarning from "@/components/MobileWarning";
+import MobileView from "@/components/MobileView";
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [useMobileVersion, setUseMobileVersion] = useState(false);
+  const [skipMobileWarning, setSkipMobileWarning] = useState(false);
   
   // Initialize the Taiyaki message listener when the component mounts
   useEffect(() => {
     // Set up the message listener and get the cleanup function
     const cleanup = initTaiyakiMessageListener();
+    
+    // Check for temporary desktop preference
+    const tempUseDesktop = localStorage.getItem("temp-use-desktop");
+    if (tempUseDesktop === "true") {
+      // This is a one-time skip of the mobile warning
+      setSkipMobileWarning(true);
+      // Clear the flag immediately
+      localStorage.removeItem("temp-use-desktop");
+    }
     
     // Log that the listener is active
     console.log("Taiyaki STL import message listener initialized");
@@ -27,11 +39,22 @@ export default function Home() {
     return cleanup;
   }, []);
   
+  // Enable mobile version
+  const handleUseMobileVersion = () => {
+    setUseMobileVersion(true);
+  };
+
+  // If mobile version is active, render the simplified mobile view
+  if (useMobileVersion) {
+    return <MobileView />;
+  }
+  
+  // Otherwise render the full desktop version
   return (
     <TooltipProvider>
       <div className="flex flex-col h-screen">
-        {/* Mobile Warning Overlay */}
-        <MobileWarning />
+        {/* Mobile Warning Overlay - Only skip if explicitly set */}
+        {!skipMobileWarning && <MobileWarning onUseMobileVersion={handleUseMobileVersion} />}
         
         {/* Header bar */}
         <div className="w-full h-12 bg-background border-b border-border flex items-center justify-between px-4">

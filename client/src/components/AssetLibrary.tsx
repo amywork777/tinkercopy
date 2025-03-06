@@ -11,6 +11,7 @@ import { Upload, Plus, Trash2, RefreshCw, Save } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { eventBus, EVENTS } from '@/lib/events';
 
 interface Asset {
   id: string;
@@ -33,10 +34,23 @@ export function AssetLibrary() {
   const [modelName, setModelName] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Fetch user assets when component mounts
+  // Fetch user assets when component mounts or when triggered by events
   useEffect(() => {
     if (isAuthenticated && user) {
       fetchUserAssets();
+      
+      // Set up event listener for refreshing drafts
+      const handleRefreshDrafts = () => {
+        fetchUserAssets();
+      };
+      
+      // Subscribe to refresh event
+      eventBus.on(EVENTS.REFRESH_DRAFTS, handleRefreshDrafts);
+      
+      // Cleanup function to remove event listener
+      return () => {
+        eventBus.off(EVENTS.REFRESH_DRAFTS, handleRefreshDrafts);
+      };
     } else {
       setAssets([]);
       setLoading(false);

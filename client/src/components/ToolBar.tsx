@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Undo, Redo, Combine, Plus, Minus, XCircle, Copy, Trash2, Move, RotateCw, Maximize2, BookmarkPlus } from "lucide-react";
+import { Undo, Redo, Combine, Plus, Minus, XCircle, Copy, Trash2, Move, RotateCw, Maximize2, FileText, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
 import { uploadAsset } from '@/lib/firebase';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
+import { eventBus, EVENTS } from '@/lib/events';
 
 export const ToolBar = () => {
   const { 
@@ -52,6 +53,7 @@ export const ToolBar = () => {
   const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
   const [combineOptionsOpen, setCombineOptionsOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [isSavingToDrafts, setIsSavingToDrafts] = useState(false);
 
   const handleUndo = () => {
     if (canUndo) {
@@ -237,8 +239,8 @@ export const ToolBar = () => {
     return new Uint8Array(result.buffer);
   };
 
-  // Internal utility function to upload STL to assets
-  const uploadSTLToAssets = async (userId: string, file: File, modelName: string) => {
+  // Internal utility function to upload STL to drafts
+  const uploadSTLToDrafts = async (userId: string, file: File, modelName: string) => {
     if (!userId) {
       throw new Error("User ID is required");
     }
@@ -246,11 +248,11 @@ export const ToolBar = () => {
     return await uploadAsset(userId, file, modelName);
   };
 
-  // Add this function to handle saving to assets
-  const handleAddToAssets = async () => {
+  // Add this function to handle saving to drafts
+  const handleSaveToDrafts = async () => {
     if (!isAuthenticated) {
       toast({
-        description: "Please sign in to save models to your assets",
+        description: "Please sign in to save models to your drafts",
       });
       return;
     }
@@ -270,6 +272,8 @@ export const ToolBar = () => {
       return;
     }
 
+    setIsSavingToDrafts(true);
+    
     try {
       // Get the selected model
       const model = models[selectedModelIndex];
@@ -282,17 +286,22 @@ export const ToolBar = () => {
       const file = new File([blob], `${model.name || 'model'}.stl`, { type: 'application/vnd.ms-pki.stl' });
       
       // Upload to Firebase
-      await uploadSTLToAssets(user.id, file, model.name);
+      await uploadSTLToDrafts(user.id, file, model.name);
       
       toast({
-        description: "Model added to your assets",
+        description: "Model saved to your drafts",
       });
+      
+      // Emit event to refresh drafts
+      eventBus.emit(EVENTS.REFRESH_DRAFTS);
     } catch (error) {
-      console.error("Error saving to assets:", error);
+      console.error("Error saving to drafts:", error);
       toast({
-        description: "Failed to save model to assets",
+        description: "Failed to save model to drafts",
         variant: "destructive",
       });
+    } finally {
+      setIsSavingToDrafts(false);
     }
   };
 
@@ -370,19 +379,23 @@ export const ToolBar = () => {
 
       <Separator orientation="vertical" className="h-6 mx-0.5" />
 
-      {/* Add to Assets Button */}
+      {/* Save to Drafts Button */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
             variant="outline"
             size="icon"
-            onClick={handleAddToAssets}
-            disabled={selectedModelIndex === null || !isAuthenticated}
+            onClick={handleSaveToDrafts}
+            disabled={selectedModelIndex === null || !isAuthenticated || isSavingToDrafts}
           >
-            <BookmarkPlus className="h-4 w-4" />
+            {isSavingToDrafts ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4" />
+            )}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Add to Assets</TooltipContent>
+        <TooltipContent>Save to Drafts</TooltipContent>
       </Tooltip>
 
       <Separator orientation="vertical" className="h-6 mx-0.5" />

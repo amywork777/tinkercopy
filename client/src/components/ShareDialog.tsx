@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Share2, Copy, Download, Mail, Twitter, Linkedin, Camera, X } from "lucide-react";
+import { Share2, Copy, Download, Mail, Twitter, Linkedin, Camera, X, Clipboard, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -14,6 +14,7 @@ export function ShareDialog() {
   const { exportSelectedModelAsSTL, selectedModelIndex, models, scene, camera, renderer } = useScene();
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [copying, setCopying] = useState(false);
 
   // Take a screenshot of the current view
   const takeScreenshot = () => {
@@ -65,6 +66,72 @@ export function ShareDialog() {
     }
   };
 
+  // Add this function for copying reminder text to clipboard
+  const copyReminderToClipboard = () => {
+    const reminderText = "Remember to attach the downloaded screenshot (taiyaki-design-screenshot.png) from your Downloads folder!";
+    navigator.clipboard.writeText(reminderText).then(() => {
+      setCopying(true);
+      setTimeout(() => setCopying(false), 2000);
+      
+      toast({
+        title: "Copied to clipboard",
+        description: "Reminder text copied. Paste it in your message.",
+      });
+    }).catch(err => {
+      toast({
+        title: "Failed to copy",
+        description: "Please remember to attach the screenshot manually.",
+        variant: "destructive",
+      });
+    });
+  };
+
+  // Add this function for copying the image to clipboard
+  const copyImageToClipboard = async () => {
+    if (!screenshotUrl) {
+      toast({
+        title: "No Screenshot",
+        description: "Please capture a screenshot first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Convert dataURL to blob
+      const response = await fetch(screenshotUrl);
+      const blob = await response.blob();
+
+      // Try to use the modern clipboard API
+      if (navigator.clipboard && navigator.clipboard.write) {
+        const clipboardItem = new ClipboardItem({
+          [blob.type]: blob
+        });
+        
+        await navigator.clipboard.write([clipboardItem]);
+        
+        toast({
+          title: "Image Copied to Clipboard",
+          description: "You can now paste the image directly into your application",
+        });
+      } else {
+        // Fallback for browsers that don't support clipboard.write()
+        toast({
+          title: "Copy Not Supported",
+          description: "Your browser doesn't support copying images. Please use the download option instead.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error copying image to clipboard:", error);
+      toast({
+        title: "Copy Failed",
+        description: "Failed to copy image to clipboard. Try downloading instead.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle sharing via email, Twitter, or LinkedIn
   const handleShare = async (platform: 'email' | 'twitter' | 'linkedin') => {
     // For screenshot sharing, ensure we have a screenshot
@@ -75,53 +142,133 @@ export function ShareDialog() {
     }
 
     const title = "Check out my 3D model!";
-    const text = encodeURIComponent("Check out my 3D model created with Taiyaki.ai!");
+    const text = "Check out my 3D model created with Taiyaki.ai!";
+    
+    // Try to use Web Share API first if available
+    if (navigator.share && platform !== 'email') {
+      try {
+        // Convert data URL to blob
+        const response = await fetch(screenshot);
+        const blob = await response.blob();
+        const file = new File([blob], "taiyaki-design-screenshot.png", { type: "image/png" });
+        
+        await navigator.share({
+          title: title,
+          text: text,
+          files: [file]
+        });
+        
+        toast({
+          title: "Shared Successfully",
+          description: "Your screenshot has been shared!",
+        });
+        
+        return;
+      } catch (error) {
+        console.error("Error using Web Share API:", error);
+        // Fall back to clipboard copy method
+      }
+    }
+    
+    // For all platforms, try to copy the image to clipboard first
+    if (navigator.clipboard && navigator.clipboard.write) {
+      try {
+        // Convert data URL to blob
+        const response = await fetch(screenshot);
+        const blob = await response.blob();
+        
+        // Copy image to clipboard
+        const clipboardItem = new ClipboardItem({
+          [blob.type]: blob
+        });
+        
+        await navigator.clipboard.write([clipboardItem]);
+        
+        let shareUrl = '';
+        let description = '';
+        
+        switch (platform) {
+          case 'email':
+            shareUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text)}%0A%0A(Paste the screenshot from your clipboard)`;
+            description = "Paste the image into your email after your email client opens";
+            break;
+          case 'twitter':
+            shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+            description = "Paste the image when composing your tweet";
+            break;
+          case 'linkedin':
+            shareUrl = `https://www.linkedin.com/sharing/share-offsite/`;
+            description = "Paste the image when composing your LinkedIn post";
+            break;
+        }
+        
+        toast({
+          title: "Image Copied to Clipboard",
+          description: description,
+        });
+        
+        // Open sharing platform
+        if (platform === 'email') {
+          window.location.href = shareUrl;
+        } else {
+          window.open(shareUrl, '_blank', 'width=600,height=400');
+        }
+        
+        return;
+      } catch (error) {
+        console.error(`Error copying image to clipboard for ${platform}:`, error);
+        // Continue with traditional method as fallback
+      }
+    }
+    
+    // Traditional sharing method as fallback (download + open)
+    const link = document.createElement('a');
+    link.href = screenshot;
+    link.download = 'taiyaki-design-screenshot.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     
     let shareUrl = '';
     switch (platform) {
       case 'email':
-        // For emails with screenshots, we'll prepare the image for download
-        // since most email clients don't support direct image sharing via mailto:
-        const link = document.createElement('a');
-        link.href = screenshot;
-        link.download = 'taiyaki-design-screenshot.png';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        // Then open an email with link
-        shareUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${text}%0A%0A(Screenshot attached)`;
-        break;
-      case 'twitter': // X/Twitter
-        // For screenshots, we need to download them first since Twitter doesn't support direct image URLs
-        const twitterLink = document.createElement('a');
-        twitterLink.href = screenshot;
-        twitterLink.download = 'taiyaki-design-screenshot.png';
-        document.body.appendChild(twitterLink);
-        twitterLink.click();
-        document.body.removeChild(twitterLink);
-        
-        shareUrl = `https://twitter.com/intent/tweet?text=${text}`;
+        // For email, provide clearer instructions
+        shareUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text)}%0A%0A(Please attach the downloaded screenshot manually)`;
         
         toast({
           title: "Screenshot Downloaded",
-          description: "Upload the downloaded image to X/Twitter when the share page opens",
+          description: "Please attach the downloaded image to your email manually after the email client opens.",
+          action: (
+            <Button variant="outline" size="sm" onClick={copyReminderToClipboard}>
+              {copying ? <Check className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
+            </Button>
+          ),
+        });
+        break;
+      case 'twitter': // X/Twitter
+        shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+        
+        toast({
+          title: "Screenshot Downloaded",
+          description: "Please attach the downloaded image when composing your tweet.",
+          action: (
+            <Button variant="outline" size="sm" onClick={copyReminderToClipboard}>
+              {copying ? <Check className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
+            </Button>
+          ),
         });
         break;
       case 'linkedin':
-        // For screenshots, download first since LinkedIn doesn't support direct image URLs
-        const linkedinLink = document.createElement('a');
-        linkedinLink.href = screenshot;
-        linkedinLink.download = 'taiyaki-design-screenshot.png';
-        document.body.appendChild(linkedinLink);
-        linkedinLink.click();
-        document.body.removeChild(linkedinLink);
-        
         shareUrl = `https://www.linkedin.com/sharing/share-offsite/`;
         
         toast({
           title: "Screenshot Downloaded",
-          description: "Upload the downloaded image to LinkedIn when the share page opens",
+          description: "Please attach the downloaded image when composing your LinkedIn post.",
+          action: (
+            <Button variant="outline" size="sm" onClick={copyReminderToClipboard}>
+              {copying ? <Check className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
+            </Button>
+          ),
         });
         break;
     }
@@ -241,10 +388,20 @@ export function ShareDialog() {
                 
                 {screenshotUrl && (
                   <>
-                    <Button onClick={handleDownloadScreenshot} className="w-full mb-2">
-                      <Download className="mr-2 h-4 w-4" />
-                      Download Screenshot
-                    </Button>
+                    <div className="flex space-x-2 mb-2">
+                      <Button onClick={handleDownloadScreenshot} className="flex-1">
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
+                      </Button>
+                      <Button onClick={copyImageToClipboard} className="flex-1">
+                        <Clipboard className="mr-2 h-4 w-4" />
+                        Copy Image
+                      </Button>
+                    </div>
+                    
+                    <p className="text-xs text-muted-foreground text-center mb-2">
+                      Clicking the options below will copy the image to your clipboard and open the sharing platform.
+                    </p>
                     
                     <div className="flex space-x-2">
                       <Button

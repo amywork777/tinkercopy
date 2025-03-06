@@ -1554,12 +1554,12 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             </TabsContent>
             
             {/* Library Tab */}
-            <TabsContent value="library" className="flex-1 overflow-y-auto p-0 h-full">
+            <TabsContent value="library" className="flex-1 overflow-y-auto p-0 h-full" forceMount style={{ display: activeTab === 'library' ? 'block' : 'none' }}>
               <TaiyakiLibrary />
             </TabsContent>
             
             {/* Your Assets Tab */}
-            <TabsContent value="assets" className="flex-1 overflow-y-auto p-0 h-full">
+            <TabsContent value="assets" className="flex-1 overflow-y-auto p-0 h-full" forceMount style={{ display: activeTab === 'assets' ? 'block' : 'none' }}>
               <AssetLibrary />
             </TabsContent>
             

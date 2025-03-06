@@ -21,7 +21,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import type { Model } from "@/types/model";
 import { TaiyakiLibrary } from "@/components/TaiyakiLibrary";
 import { MagicFishAI } from "@/components/MagicFishAI";
-import { BuildFishAI } from "@/components/BuildFishAI";
 import { AssetLibrary } from "@/components/AssetLibrary";
 
 // Font options with their display names and paths
@@ -101,8 +100,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   } = useScene();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("models");
-  const [showMagicFishAI, setShowMagicFishAI] = useState(false);
-  const [showBuildFishAI, setShowBuildFishAI] = useState(false);
   
   // State for copied model
   const [copiedModel, setCopiedModel] = useState<any>(null);
@@ -506,11 +503,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   // Function to handle tab change
   const handleTabChange = (value: string) => {
     setActiveTab(value);
-    if (value !== "ai") {
-      // Reset AI states when changing to other tabs
-      setShowMagicFishAI(false);
-      setShowBuildFishAI(false);
-    }
   };
   
   // Helper function for random color
@@ -1660,68 +1652,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
             {/* AI Tab */}
             <TabsContent value="ai" className="flex-1 overflow-y-auto p-3 h-full">
-              {(!showMagicFishAI && !showBuildFishAI) ? (
-                <div className="flex flex-col space-y-6">
-                  {/* MagicFish AI Card */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Sparkles className="h-5 w-5" />
-                        MagicFish AI
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-muted-foreground">
-                        Create detailed 3D models from images or text descriptions. Perfect for characters, creatures, and organic shapes.
-                      </p>
-                      <Button className="w-full" onClick={() => setShowMagicFishAI(true)}>
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        Open MagicFish AI
-                      </Button>
-                    </CardContent>
-                  </Card>
-
-                  {/* BuildFish AI Card */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Zap className="h-5 w-5" />
-                        BuildFish AI
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-muted-foreground">
-                        Generate precise 3D designs from text descriptions. Ideal for architectural models, mechanical parts, and technical designs.
-                      </p>
-                      <Button className="w-full" onClick={() => setShowBuildFishAI(true)}>
-                        <Zap className="mr-2 h-4 w-4" />
-                        Open BuildFish AI
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
-              ) : (
-                <div className="flex flex-col h-full space-y-4">
-                  {/* AI Tools Header with Back Button */}
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-medium">AI Tools</h3>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => {
-                        setShowMagicFishAI(false);
-                        setShowBuildFishAI(false);
-                      }}
-                    >
-                      Back to AI Menu
-                    </Button>
-                  </div>
-                  
-                  {/* Show the respective AI component */}
-                  {showMagicFishAI && <MagicFishAI />}
-                  {showBuildFishAI && <BuildFishAI />}
-                </div>
-              )}
+              <MagicFishAI />
             </TabsContent>
             
             {/* Sketch Tab */}

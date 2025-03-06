@@ -22,6 +22,7 @@ import type { Model } from "@/types/model";
 import { TaiyakiLibrary } from "@/components/TaiyakiLibrary";
 import { MagicFishAI } from "@/components/MagicFishAI";
 import { BuildFishAI } from "@/components/BuildFishAI";
+import { AssetLibrary } from "@/components/AssetLibrary";
 
 // Font options with their display names and paths
 const FONTS = [
@@ -1515,6 +1516,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <Shapes className="h-5 w-5" />
               <span className="text-xs mt-1">Library</span>
             </TabsTrigger>
+            <TabsTrigger value="assets" className="flex justify-center items-center flex-col py-3 px-2">
+              <Upload className="h-5 w-5" />
+              <span className="text-xs mt-1">Your Assets</span>
+            </TabsTrigger>
             <TabsTrigger value="shapes" className="flex justify-center items-center flex-col py-3 px-2">
               <Box className="h-5 w-5" />
               <span className="text-xs mt-1">Shapes</span>
@@ -1577,6 +1582,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             {/* Library Tab */}
             <TabsContent value="library" className="flex-1 overflow-y-auto p-0 h-full">
               <TaiyakiLibrary />
+            </TabsContent>
+            
+            {/* Your Assets Tab */}
+            <TabsContent value="assets" className="flex-1 overflow-y-auto p-0 h-full">
+              <AssetLibrary />
             </TabsContent>
             
             {/* Shapes Tab */}

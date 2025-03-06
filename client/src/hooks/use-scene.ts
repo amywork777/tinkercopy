@@ -182,7 +182,7 @@ type SceneState = {
   initializeScene: (container: HTMLDivElement) => () => void;
   
   // Model management
-  loadSTL: (file: File | string) => Promise<void>;
+  loadSTL: (file: File | string, name?: string) => Promise<void>;
   loadSVG: (file: File | string, extrudeDepth?: number) => Promise<void>;
   loadText: (text: string, options?: TextOptions) => Promise<void>;
   removeModel: (index: number) => void;
@@ -599,15 +599,22 @@ export const useScene = create<SceneState>((set, get) => {
     },
     
     // Load an STL file
-    loadSTL: async (file: File | string) => {
+    loadSTL: async (file: File | string, name?: string) => {
       const loader = new STLLoader();
       let geometry: THREE.BufferGeometry;
       
       if (typeof file === 'string') {
         // If file is a URL string, load it directly
         try {
-          // Use the STLLoader to load from URL
-          geometry = await loader.loadAsync(file);
+          // For Firebase Storage URLs, we need to fetch the data ourselves
+          // because STLLoader might have CORS issues with the Firebase URLs
+          const response = await fetch(file);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const arrayBuffer = await response.arrayBuffer();
+          geometry = loader.parse(arrayBuffer);
         } catch (error) {
           console.error("Error loading STL from URL:", error);
           throw new Error(`Failed to load STL from URL: ${error}`);
@@ -681,7 +688,7 @@ export const useScene = create<SceneState>((set, get) => {
         // Create model object
       const model: Model = {
           id: `model-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: typeof file === 'string' ? file.split('/').pop() || 'Model from URL' : file.name,
+          name: name || (typeof file === 'string' ? file.split('/').pop() || 'Model from URL' : file.name),
           type: 'model',
           mesh,
           originalPosition,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Undo, Redo, Combine, Plus, Minus, XCircle, Copy, Trash2, Move, RotateCw, Maximize2 } from "lucide-react";
+import { Undo, Redo, Combine, Plus, Minus, XCircle, Copy, Trash2, Move, RotateCw, Maximize2, BookmarkPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useScene } from "@/hooks/use-scene";
 import { Separator } from "@/components/ui/separator";
@@ -18,6 +18,9 @@ import * as THREE from "three";
 import { ShareDialog } from "./ShareDialog";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useAuth } from "@/context/AuthContext";
+import { uploadAsset } from '@/lib/firebase';
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
 
 export const ToolBar = () => {
   const { 
@@ -42,8 +45,10 @@ export const ToolBar = () => {
     performCSGOperation,
     isCSGOperationLoading,
     saveHistoryState,
-    removeModel
+    removeModel,
+    exportModelAsSTL
   } = useScene();
+  const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
@@ -218,6 +223,81 @@ export const ToolBar = () => {
     });
   };
 
+  // Internal utility function to export model to STL
+  const exportModelToSTL = (model: any): Uint8Array => {
+    const exporter = new STLExporter();
+    const mesh = model.mesh.clone();
+    
+    // Apply model transformations to the mesh for export
+    mesh.position.copy(model.mesh.position);
+    mesh.rotation.copy(model.mesh.rotation);
+    mesh.scale.copy(model.mesh.scale);
+    
+    const result = exporter.parse(mesh as any, { binary: true });
+    
+    // Convert to Uint8Array which is suitable for creating Blobs
+    return new Uint8Array(result.buffer);
+  };
+
+  // Internal utility function to upload STL to assets
+  const uploadSTLToAssets = async (userId: string, file: File, modelName: string) => {
+    if (!userId) {
+      throw new Error("User ID is required");
+    }
+    
+    return await uploadAsset(userId, file, modelName);
+  };
+
+  // Add this function to handle saving to assets
+  const handleAddToAssets = async () => {
+    if (!isAuthenticated) {
+      toast({
+        description: "Please sign in to save models to your assets",
+      });
+      return;
+    }
+
+    if (selectedModelIndex === null) {
+      toast({
+        description: "Please select a model to save",
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        description: "User information not available",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Get the selected model
+      const model = models[selectedModelIndex];
+      
+      // Generate STL data
+      const stlData = exportModelToSTL(model);
+      
+      // Create a Blob and File object
+      const blob = new Blob([stlData], { type: 'application/vnd.ms-pki.stl' });
+      const file = new File([blob], `${model.name || 'model'}.stl`, { type: 'application/vnd.ms-pki.stl' });
+      
+      // Upload to Firebase
+      await uploadSTLToAssets(user.id, file, model.name);
+      
+      toast({
+        description: "Model added to your assets",
+      });
+    } catch (error) {
+      console.error("Error saving to assets:", error);
+      toast({
+        description: "Failed to save model to assets",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="bg-background/90 backdrop-blur-sm rounded-lg shadow-lg p-1.5 flex items-center justify-center space-x-1.5 border border-border max-w-fit mx-auto">
       <Tooltip>
@@ -288,6 +368,23 @@ export const ToolBar = () => {
         <TooltipContent>
           <p>Delete Selected Model</p>
         </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="h-6 mx-0.5" />
+
+      {/* Add to Assets Button */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleAddToAssets}
+            disabled={selectedModelIndex === null || !isAuthenticated}
+          >
+            <BookmarkPlus className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Add to Assets</TooltipContent>
       </Tooltip>
 
       <Separator orientation="vertical" className="h-6 mx-0.5" />

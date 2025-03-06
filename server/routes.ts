@@ -96,6 +96,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Proxy endpoint for Firebase Storage URLs
+  app.get('/api/storage-proxy', async (req, res) => {
+    const url = req.query.url as string;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+    
+    try {
+      console.log(`Proxying Firebase Storage request to: ${url}`);
+      
+      // Forward the request to Firebase Storage
+      const response = await axios({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer' // Important for binary files like STL
+      });
+      
+      // Set appropriate headers
+      res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
+      res.setHeader('Content-Length', response.headers['content-length'] || '0');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      
+      // Return the response as binary data
+      return res.status(response.status).send(response.data);
+    } catch (error) {
+      console.error('Error proxying to Firebase Storage:', error);
+      
+      // Handle axios errors
+      const axiosError = error as AxiosError;
+      if (axiosError.response) {
+        return res.status(axiosError.response.status).json({ 
+          error: 'Error from Firebase Storage',
+          details: axiosError.message
+        });
+      }
+      
+      // Something else went wrong
+      return res.status(500).json({ error: 'Failed to proxy request to Firebase Storage' });
+    }
+  });
+
   // The rest of your routes can go here
 
   const httpServer = createServer(app);

@@ -7,6 +7,17 @@ import {
   onAuthStateChanged
 } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  where, 
+  deleteDoc,
+  doc
+} from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -22,6 +33,9 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
 // Initialize Analytics (if in browser environment)
 let analytics;
 if (typeof window !== 'undefined') {
@@ -62,4 +76,67 @@ export const onAuthStateChange = (callback: (user: any) => void) => {
   return onAuthStateChanged(auth, callback);
 };
 
-export { auth, analytics }; 
+// User assets functions
+export const uploadAsset = async (userId: string, file: File, modelName: string) => {
+  try {
+    // Create a storage reference
+    const storageRef = ref(storage, `user-assets/${userId}/${file.name}`);
+    
+    // Upload the file
+    const snapshot = await uploadBytes(storageRef, file);
+    
+    // Get the download URL
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    
+    // Add a document to Firestore
+    const assetDoc = await addDoc(collection(db, 'user-assets'), {
+      userId,
+      name: modelName || file.name,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      downloadURL,
+      createdAt: new Date(),
+    });
+    
+    return { id: assetDoc.id, downloadURL };
+  } catch (error) {
+    console.error("Error uploading asset", error);
+    throw error;
+  }
+};
+
+export const getUserAssets = async (userId: string) => {
+  try {
+    const q = query(collection(db, 'user-assets'), where('userId', '==', userId));
+    const querySnapshot = await getDocs(q);
+    
+    const assets = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    return assets;
+  } catch (error) {
+    console.error("Error getting user assets", error);
+    throw error;
+  }
+};
+
+export const deleteUserAsset = async (userId: string, assetId: string, fileName: string) => {
+  try {
+    // Delete from Firestore
+    await deleteDoc(doc(db, 'user-assets', assetId));
+    
+    // Delete from Storage
+    const storageRef = ref(storage, `user-assets/${userId}/${fileName}`);
+    await deleteObject(storageRef);
+    
+    return true;
+  } catch (error) {
+    console.error("Error deleting user asset", error);
+    throw error;
+  }
+};
+
+export { auth, analytics, db, storage }; 

@@ -1480,7 +1480,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 flex items-center justify-between border-b">
-        <h1 className="text-xl font-bold">Fish CAD</h1>
+        <h1 className="text-xl font-bold">FishCAD</h1>
         {onClose && (
           <Button
             variant="ghost"
@@ -1650,8 +1650,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               </div>
             </TabsContent>
 
-            {/* AI Tab */}
-            <TabsContent value="ai" className="flex-1 overflow-y-auto p-3 h-full">
+            {/* AI Tab - Set forceMount to maintain iframe state when switching tabs */}
+            <TabsContent value="ai" className="flex-1 overflow-y-auto p-3 h-full" forceMount style={{ display: activeTab === 'ai' ? 'block' : 'none' }}>
               <MagicFishAI />
             </TabsContent>
             

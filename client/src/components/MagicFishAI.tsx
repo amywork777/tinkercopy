@@ -24,8 +24,8 @@ export function MagicFishAI() {
             className="w-full h-full border-0"
             title="Taiyaki AI"
             onLoad={() => setIsLoading(false)}
-            allow="clipboard-write"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"
+            allow="microphone; clipboard-write; camera; clipboard-read; display-capture"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads allow-modals allow-presentation allow-popups-to-escape-sandbox"
           />
         </CardContent>
       </Card>

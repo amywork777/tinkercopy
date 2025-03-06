@@ -96,7 +96,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     loadText,
     models,
     renderingMode,
-    setRenderingMode
+    setRenderingMode,
+    showGrid,
+    setShowGrid,
+    showAxes,
+    setShowAxes,
+    camera,
+    performCSGOperation,
   } = useScene();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("models");
@@ -118,10 +124,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const [backgroundType, setBackgroundType] = useState("solid"); // solid, gradient, or skybox
   const [gradientTopColor, setGradientTopColor] = useState("#87ceeb"); // sky blue
   const [gradientBottomColor, setGradientBottomColor] = useState("#ffffff"); // white
-  
-  // Show/hide grid and axes
-  const [showGrid, setShowGrid] = useState(true);
-  const [showAxes, setShowAxes] = useState(true);
   
   // Check if the currently selected model is a text model that can be edited
   const selectedTextModel = selectedModelIndex !== null && models[selectedModelIndex] 
@@ -1025,33 +1027,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   // Toggle visibility of grid and axes
   const toggleGridVisibility = (checked: boolean) => {
+    // Use the setter from useScene which will handle updating the scene
     setShowGrid(checked);
-    // Find grid in scene and toggle visibility
-    const findAndToggleGrid = (obj: THREE.Object3D) => {
-      if (obj.name && obj.name.toLowerCase().includes('grid')) {
-        obj.visible = checked;
-      }
-      // Check children recursively
-      obj.children.forEach(child => findAndToggleGrid(child));
-    };
-    
-    scene.children.forEach(child => findAndToggleGrid(child));
-    scene.needsUpdate = true;
   };
   
   const toggleAxesVisibility = (checked: boolean) => {
+    // Use the setter from useScene which will handle updating the scene
     setShowAxes(checked);
-    // Find axes in scene and toggle visibility
-    const findAndToggleAxes = (obj: THREE.Object3D) => {
-      if (obj.name && (obj.name.toLowerCase().includes('axe') || obj.name.toLowerCase().includes('axis'))) {
-        obj.visible = checked;
-      }
-      // Check children recursively
-      obj.children.forEach(child => findAndToggleAxes(child));
-    };
-    
-    scene.children.forEach(child => findAndToggleAxes(child));
-    scene.needsUpdate = true;
   };
 
   // Function to sync color when selecting a model

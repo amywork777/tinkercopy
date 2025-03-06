@@ -518,6 +518,19 @@ export const useScene = create<SceneState>((set, get) => {
           orbitControls.update();
         }
         
+        // Ensure grid and axes visibility matches state
+        const state = get();
+        const gridHelper = scene.children.find(child => child.name === 'gridHelper');
+        const axesHelper = scene.children.find(child => child.name === 'axesHelper');
+        
+        if (gridHelper) {
+          gridHelper.visible = state.showGrid;
+        }
+        
+        if (axesHelper) {
+          axesHelper.visible = state.showAxes;
+        }
+        
         renderer.render(scene, camera);
       }
       
@@ -1849,11 +1862,25 @@ export const useScene = create<SceneState>((set, get) => {
     setShowGrid: (show: boolean) => {
       const state = get();
       set({ showGrid: show });
+      
+      // Update the grid helper visibility
+      const gridHelper = state.scene.children.find(child => child.name === 'gridHelper');
+      if (gridHelper) {
+        gridHelper.visible = show;
+      }
+      
       console.log(`Grid visibility set to: ${show}`);
     },
     setShowAxes: (show: boolean) => {
       const state = get();
       set({ showAxes: show });
+      
+      // Update the axes helper visibility
+      const axesHelper = state.scene.children.find(child => child.name === 'axesHelper');
+      if (axesHelper) {
+        axesHelper.visible = show;
+      }
+      
       console.log(`Axes visibility set to: ${show}`);
     },
 

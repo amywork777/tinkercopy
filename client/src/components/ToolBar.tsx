@@ -45,12 +45,10 @@ export const ToolBar = () => {
     performCSGOperation,
     isCSGOperationLoading,
     saveHistoryState,
-    removeModel,
-    exportModelAsSTL
+    removeModel
   } = useScene();
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
-  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
   const [combineOptionsOpen, setCombineOptionsOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -622,86 +620,6 @@ export const ToolBar = () => {
           </SelectContent>
         </Select>
       </div>
-
-      <Separator orientation="vertical" className="h-6 mx-0.5" />
-
-      {/* View Options */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Popover open={viewOptionsOpen} onOpenChange={setViewOptionsOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="px-2 h-7 text-xs">
-                <span className="text-foreground">Views</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[220px] p-2" align="center">
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm leading-none mb-1.5">View Options</h4>
-                
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'top' ? 'default' : 'outline'}
-                      className="w-full h-7 text-xs"
-                      onClick={() => setCameraView('top')}
-                    >
-                      Top
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'front' ? 'default' : 'outline'}
-                      className="w-full h-7 text-xs"
-                      onClick={() => setCameraView('front')}
-                    >
-                      Front
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'right' ? 'default' : 'outline'}
-                      className="w-full h-7 text-xs"
-                      onClick={() => setCameraView('right')}
-                    >
-                      Side
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={cameraView === 'isometric' ? 'default' : 'outline'}
-                      className="w-full h-7 text-xs"
-                      onClick={() => setCameraView('isometric')}
-                    >
-                      Iso
-                    </Button>
-                  </div>
-                  
-                  <div className="space-y-1 pt-1">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="toolbar-show-grid" 
-                        checked={showGrid}
-                        onCheckedChange={(checked) => setShowGrid(!!checked)}
-                      />
-                      <Label htmlFor="toolbar-show-grid" className="text-xs">Show Grid</Label>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="toolbar-show-axes" 
-                        checked={showAxes}
-                        onCheckedChange={(checked) => setShowAxes(!!checked)}
-                      />
-                      <Label htmlFor="toolbar-show-axes" className="text-xs">Show Axes</Label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>View Options</p>
-        </TooltipContent>
-      </Tooltip>
     </div>
   );
 };

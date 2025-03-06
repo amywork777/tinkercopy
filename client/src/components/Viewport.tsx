@@ -124,11 +124,8 @@ export function Viewport() {
     const axesHelper = scene.children.find(child => child.name === 'axesHelper');
     
     if (axesHelper) {
-      if (showAxes) {
-        scene.add(axesHelper);
-      } else {
-        scene.remove(axesHelper);
-      }
+      // Just update visibility instead of adding/removing from scene
+      axesHelper.visible = showAxes;
       
       // Force renderer update
       if (renderer && camera) {

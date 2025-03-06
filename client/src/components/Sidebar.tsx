@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { useScene } from "@/hooks/use-scene";
-import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X } from "lucide-react";
+import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X, FileText, Layout, Undo, Redo } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { ModelList } from "./ModelList";
@@ -1491,8 +1491,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <span className="text-xs mt-1">Library</span>
             </TabsTrigger>
             <TabsTrigger value="assets" className="flex justify-center items-center flex-col py-3 px-2">
-              <Upload className="h-5 w-5" />
-              <span className="text-xs mt-1">Your Assets</span>
+              <FileText className="h-5 w-5" />
+              <span className="text-xs mt-1">Drafts</span>
             </TabsTrigger>
             <TabsTrigger value="shapes" className="flex justify-center items-center flex-col py-3 px-2">
               <Box className="h-5 w-5" />

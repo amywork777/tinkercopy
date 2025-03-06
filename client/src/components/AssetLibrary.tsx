@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useScene } from '@/hooks/use-scene';
-import { Upload, Plus, Trash2, RefreshCw } from 'lucide-react';
+import { Upload, Plus, Trash2, RefreshCw, Save } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 
 interface Asset {
   id: string;
@@ -77,7 +79,7 @@ export function AssetLibrary() {
       await uploadAsset(user.id, selectedFile, modelName);
       
       toast({
-        description: 'Your STL file has been added to your assets',
+        description: 'Your file has been added to your drafts',
       });
       
       // Reset form
@@ -90,7 +92,7 @@ export function AssetLibrary() {
     } catch (error) {
       console.error('Error uploading asset:', error);
       toast({
-        description: 'Failed to upload your STL file',
+        description: 'Failed to upload your file',
         variant: 'destructive',
       });
     } finally {
@@ -105,7 +107,7 @@ export function AssetLibrary() {
       await deleteUserAsset(user.id, asset.id, asset.fileName);
       
       toast({
-        description: 'Asset has been removed from your library',
+        description: 'Draft has been removed from your library',
       });
       
       // Refresh assets
@@ -113,7 +115,7 @@ export function AssetLibrary() {
     } catch (error) {
       console.error('Error deleting asset:', error);
       toast({
-        description: 'Failed to delete the asset',
+        description: 'Failed to delete the draft',
         variant: 'destructive',
       });
     }
@@ -142,115 +144,129 @@ export function AssetLibrary() {
       <div className="flex flex-col items-center justify-center h-full p-6">
         <h3 className="text-lg font-medium mb-2">Sign in required</h3>
         <p className="text-sm text-muted-foreground mb-4">
-          Please sign in to access your asset library
+          Please sign in to access your drafts
         </p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full p-4 overflow-y-auto">
-      <div className="mb-6">
-        <h3 className="text-lg font-medium mb-4">Upload New Asset</h3>
+    <div className="flex flex-col h-full p-4">
+      <div className="mb-4">
+        <h3 className="text-lg font-medium">Your Drafts</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Store and reuse your models
+        </p>
         
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="file-upload">STL File</Label>
-            <Input
-              id="file-upload"
-              ref={fileInputRef}
-              type="file"
-              accept=".stl"
-              onChange={handleFileSelect}
-              className="mt-1"
-            />
-          </div>
-          
-          {selectedFile && (
+        <Card className="bg-muted/30 p-3 mb-4">
+          <div className="space-y-3">
             <div>
-              <Label htmlFor="model-name">Model Name</Label>
+              <Label htmlFor="file-upload" className="text-sm">STL File</Label>
               <Input
-                id="model-name"
-                value={modelName}
-                onChange={(e) => setModelName(e.target.value)}
-                className="mt-1"
-                placeholder="Enter a name for your model"
+                id="file-upload"
+                ref={fileInputRef}
+                type="file"
+                accept=".stl"
+                onChange={handleFileSelect}
+                className="mt-1 text-sm"
               />
             </div>
-          )}
-          
-          <Button 
-            onClick={handleFileUpload} 
-            disabled={!selectedFile || uploading}
-            className="w-full"
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <Upload className="mr-2 h-4 w-4" />
-                Upload to Assets
-              </>
+            
+            {selectedFile && (
+              <div>
+                <Label htmlFor="model-name" className="text-sm">Draft Name</Label>
+                <Input
+                  id="model-name"
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                  className="mt-1 text-sm"
+                  placeholder="Enter a name for your draft"
+                />
+              </div>
             )}
-          </Button>
-        </div>
+            
+            <Button 
+              onClick={handleFileUpload} 
+              disabled={!selectedFile || uploading}
+              className="w-full"
+              size="sm"
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save to Drafts
+                </>
+              )}
+            </Button>
+          </div>
+        </Card>
       </div>
       
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium">Your Assets</h3>
-        <Button variant="outline" size="sm" onClick={fetchUserAssets}>
-          <RefreshCw className="h-4 w-4 mr-1" />
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium">Saved Drafts</h3>
+        <Button variant="outline" size="sm" onClick={fetchUserAssets} className="h-7 px-2">
+          <RefreshCw className="h-3 w-3 mr-1" />
           Refresh
         </Button>
       </div>
       
       {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="flex justify-center items-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : assets.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <p>You don't have any assets yet</p>
-          <p className="text-sm mt-2">Upload your first STL file to get started</p>
-        </div>
+        <Card className="p-3 bg-muted/40 text-xs text-center">
+          <p>No drafts saved yet</p>
+          <p className="text-muted-foreground mt-1">Save a model to your drafts to get started</p>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
-          {assets.map((asset) => (
-            <Card key={asset.id} className="overflow-hidden">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium truncate">{asset.name}</h4>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => handleDeleteAsset(asset)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-                
-                <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
-                  <span>{(asset.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                  <span>
-                    {new Date(asset.createdAt.seconds * 1000).toLocaleDateString()}
-                  </span>
-                </div>
-                
-                <Button 
-                  variant="default" 
-                  size="sm" 
-                  className="w-full"
-                  onClick={() => handleLoadModel(asset)}
+        <div className="flex flex-col gap-2 flex-1">
+          <ScrollArea className="flex-1 rounded-md border">
+            <div className="p-2 space-y-1">
+              {assets.map((asset) => (
+                <div
+                  key={asset.id}
+                  className="flex items-center justify-between p-2 rounded-md hover:bg-accent"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add to Scene
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-sm font-medium truncate">{asset.name}</span>
+                    <div className="flex items-center text-xs text-muted-foreground">
+                      <span>{(asset.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                      <span className="mx-1">•</span>
+                      <span>{new Date(asset.createdAt.seconds * 1000).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Badge variant="outline" className="mr-2 bg-blue-600/20 text-blue-600 text-[10px] h-5">
+                      STL
+                    </Badge>
+                    <Button 
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 mr-1"
+                      onClick={() => handleLoadModel(asset)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="h-7 w-7 hover:bg-destructive/10"
+                      onClick={() => handleDeleteAsset(asset)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
         </div>
       )}
     </div>

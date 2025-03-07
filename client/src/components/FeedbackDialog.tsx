@@ -40,18 +40,171 @@ export function FeedbackDialog() {
     setIsSubmitting(true);
     
     try {
-      // Send feedback to server API
-      const response = await axios.post('/api/submit-feedback', {
-        name,
-        email,
-        feedback
-      });
+      console.log('Submitting feedback to server...');
       
-      // Handle success
-      if (response.status === 200) {
+      // Determine the appropriate server URL based on the current environment
+      let serverUrl;
+      const hostname = window.location.hostname;
+      
+      if (hostname === 'localhost') {
+        // Local development environment
+        serverUrl = 'http://localhost:3001';
+      } else if (hostname === 'fishcad.com') {
+        // Production environment
+        serverUrl = 'https://fishcad.com';
+      } else {
+        // Default fallback
+        serverUrl = window.location.origin;
+      }
+        
+      const apiUrl = `${serverUrl}/api/submit-feedback`;
+      console.log('Using API URL:', apiUrl);
+      
+      // Log additional debugging information
+      console.log('Current hostname:', hostname);
+      console.log('Current origin:', window.location.origin);
+      
+      // Add a simple fallback in case the server API call fails
+      let useMailtoFallback = false;
+      
+      try {
+        // Try to send via server API first
+        const response = await axios.post(apiUrl, {
+          name,
+          email,
+          feedback
+        }, {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          withCredentials: false,
+          timeout: 10000 // Increase timeout to 10 seconds
+        });
+        
+        console.log('Server response:', response);
+        
+        if (response.status === 200) {
+          // Show success message with details from the server response
+          const emailSent = response.data.emailSent === true;
+          
+          toast({
+            title: "Feedback Submitted",
+            description: emailSent 
+              ? "Thank you for your feedback! We've received your message via email."
+              : "Thank you for your feedback! We've received your message, but there might have been an issue sending the email confirmation.",
+          });
+          
+          // Close the dialog and reset form
+          setIsOpen(false);
+          setName('');
+          setEmail('');
+          setFeedback('');
+        } else {
+          // Show error message if status is not 200
+          throw new Error(`Server responded with status ${response.status}: ${response.data?.error || 'Unknown error'}`);
+        }
+      } catch (apiError: any) {
+        console.error('API error:', apiError);
+        
+        // If server is unavailable on port 3001, try port 3002
+        if (serverUrl === 'http://localhost:3001' && apiError.code === 'ERR_NETWORK') {
+          try {
+            console.log('Trying alternate port 3002...');
+            
+            const alternateServerUrl = 'http://localhost:3002';
+            const alternateApiUrl = `${alternateServerUrl}/api/submit-feedback`;
+            
+            const retryResponse = await axios.post(alternateApiUrl, {
+              name,
+              email,
+              feedback
+            }, {
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              withCredentials: false,
+              timeout: 10000
+            });
+            
+            if (retryResponse.status === 200) {
+              const emailSent = retryResponse.data.emailSent === true;
+              
+              toast({
+                title: "Feedback Submitted",
+                description: emailSent 
+                  ? "Thank you for your feedback! We've received your message via email."
+                  : "Thank you for your feedback! We've received your message, but there might have been an issue sending the email confirmation.",
+              });
+              
+              // Close the dialog and reset form
+              setIsOpen(false);
+              setName('');
+              setEmail('');
+              setFeedback('');
+              
+              // Exit early - no need for mailto fallback
+              return;
+            }
+          } catch (retryError) {
+            console.error('Retry on alternate port failed:', retryError);
+          }
+        }
+        
+        // Extract detailed error message if available
+        let errorMessage = 'Could not send feedback to the server. Falling back to email client.';
+        let errorDetails = '';
+        
+        if (apiError.response?.data?.error) {
+          errorMessage = `Server error: ${apiError.response.data.error}`;
+          if (apiError.response.data.details) {
+            errorDetails = apiError.response.data.details;
+          }
+        } else if (apiError.code === 'ERR_NETWORK') {
+          if (window.location.hostname === 'fishcad.com') {
+            errorMessage = 'Cannot connect to feedback server on fishcad.com.';
+            errorDetails = 'This could be because the server component is not properly deployed or configured.';
+          } else {
+            errorMessage = 'Cannot connect to feedback server.';
+            errorDetails = 'The server might be down or not running on the expected port.';
+          }
+        } else if (apiError.message?.includes('Network Error') || apiError.message?.includes('CORS')) {
+          errorMessage = 'CORS error: Cannot communicate with the server due to browser security restrictions.';
+          errorDetails = 'This is usually caused by a server configuration issue. Falling back to email client.';
+          console.error('CORS or Network Error:', apiError);
+        }
+        
+        console.error('Error details:', errorDetails);
+        
         toast({
-          title: "Feedback Submitted",
-          description: "Thank you for your feedback! We appreciate your input.",
+          title: "Server Communication Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        
+        // Fall back to mailto if server API fails
+        useMailtoFallback = true;
+      }
+      
+      // If server API failed, use mailto as fallback
+      if (useMailtoFallback) {
+        console.log('Falling back to mailto link...');
+        
+        // Create a mailto link as fallback
+        const subject = `Feedback for Taiyaki from ${window.location.hostname}`;
+        const body = `Source: ${window.location.hostname}
+Name: ${name || 'Not provided'}
+Email: ${email || 'Not provided'}
+
+Feedback:
+${feedback}`;
+        const mailtoUrl = `mailto:taiyaki.orders@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        
+        // Open the mailto link
+        window.open(mailtoUrl, '_blank');
+        
+        toast({
+          title: "Email Client Opened",
+          description: "Your email client has been opened with the feedback pre-filled.",
         });
         
         // Close the dialog and reset form
@@ -59,14 +212,12 @@ export function FeedbackDialog() {
         setName('');
         setEmail('');
         setFeedback('');
-      } else {
-        throw new Error('Failed to submit feedback');
       }
     } catch (error) {
       console.error('Error submitting feedback:', error);
       toast({
         title: "Error",
-        description: "There was a problem submitting your feedback. Please try again.",
+        description: "There was a problem submitting your feedback. Please try again later.",
         variant: "destructive",
       });
     } finally {

@@ -8,15 +8,29 @@ import cors from 'cors';
 // Load environment variables
 dotenv.config();
 
+// Create Express app
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+
+// Configure middleware
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 
+           'http://localhost:5187', 'http://localhost:3000', 'http://localhost:3001'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+// Parse JSON and URL-encoded bodies
+app.use(express.json()); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // Initialize authentication
 // initializeAuth(app);  // Removed auth initialization
 
 app.use((req, res, next) => {
   const start = Date.now();
+  console.log(`${req.method} ${req.url} - Request received`);
+  
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
@@ -56,7 +70,7 @@ let server: any;
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
     res.status(status).json({ message });
-    throw err;
+    console.error("Server error:", err);
   });
 
   // Development mode with Vite middleware
@@ -67,8 +81,8 @@ let server: any;
     serveStatic(app);
   }
 
-  // Use port from environment variable or default to 4000
-  const PORT = process.env.PORT || 4000;
+  // Use port from environment variable or default to 3001
+  const PORT = process.env.PORT || 3001;
 
   server.listen(PORT, () => {
     log(`Server running at http://localhost:${PORT} in ${process.env.NODE_ENV || "development"} mode`);

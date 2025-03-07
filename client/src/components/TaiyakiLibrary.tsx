@@ -11,6 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { FEATURES } from '@/lib/constants';
 
 export function TaiyakiLibrary() {
   const [isLoading, setIsLoading] = useState(true);
@@ -19,16 +20,46 @@ export function TaiyakiLibrary() {
   const { toast } = useToast();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
+  // Configure iframe on load
+  useEffect(() => {
+    const configureIframe = () => {
+      if (!iframeRef.current || !iframeRef.current.contentWindow) return;
+      
+      try {
+        // Send subscription status to iframe
+        iframeRef.current.contentWindow.postMessage(
+          { 
+            type: 'configure', 
+            isPro: subscription.isPro,
+            disableDownloads: !subscription.isPro
+          },
+          "https://library.taiyaki.ai"
+        );
+        
+        console.log('Sent configuration to Taiyaki Library:', { isPro: subscription.isPro });
+      } catch (error) {
+        console.error('Error configuring iframe:', error);
+      }
+    };
+    
+    // Configure iframe when it loads
+    if (!isLoading && iframeRef.current) {
+      configureIframe();
+    }
+  }, [isLoading, subscription.isPro]);
+  
   // Listen for download requests from the iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       // Only handle messages from the library iframe origin
       if (event.origin !== "https://library.taiyaki.ai") return;
       
+      console.log('Received message from Taiyaki Library:', event.data);
+      
       try {
         if (event.data && typeof event.data === 'object') {
           // If this is a download request
-          if (event.data.type === 'download_stl') {
+          if (event.data.type === 'download_stl' || event.data.type === 'download' || event.data.action === 'download') {
             // Check if user has Pro access
             if (!subscription.isPro) {
               // Block download if not a Pro user
@@ -77,6 +108,26 @@ export function TaiyakiLibrary() {
     };
   }, [subscription.isPro, toast, navigate]);
 
+  // This function will monitor download attempts directly for browser downloads
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // If a free user attempts to download, we should prevent it
+      if (!subscription.isPro && event.target !== window) {
+        // We don't actually prevent unload, but we can show a notification
+        toast({
+          title: "Pro Feature",
+          description: "Downloading STL files requires a Pro subscription",
+          variant: "default",
+        });
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [subscription.isPro, toast]);
+
   return (
     <div className="flex flex-col h-full space-y-4">
       <Card className="flex-1 relative overflow-hidden">
@@ -108,7 +159,7 @@ export function TaiyakiLibrary() {
             title="Taiyaki Library"
             onLoad={() => setIsLoading(false)}
             allow="clipboard-write"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
           />
         </CardContent>
         <CardFooter className="pt-3 pb-3">

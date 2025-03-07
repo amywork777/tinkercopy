@@ -3,14 +3,47 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Existing rules for other collections remain unchanged
+    // Allow users to read and write their own data
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // For updates, only allow specific fields to be modified by the user directly
+      // Subscription-related fields should only be modified by server functions
+      allow update: if request.auth != null && 
+                     request.auth.uid == userId && 
+                     !request.resource.data.diff(resource.data).affectedKeys()
+                      .hasAny(['isPro', 'stripeCustomerId', 'stripeSubscriptionId', 
+                               'subscriptionStatus', 'subscriptionEndDate', 
+                               'subscriptionPlan']);
+                               
+      // Allow server admins (validated by custom claims) to update any field
+      allow write: if request.auth != null && 
+                     request.auth.token.admin == true;
+    }
     
-    // Add this rule for the user-feedback collection
-    match /user-feedback/{feedbackId} {
-      // Allow read access to authenticated users
-      // Allow write access for the feedback form (even for unauthenticated users)
-      allow read: if request.auth != null;
-      allow create: if true; // Anyone can create feedback
+    // Allow users to read their own assets
+    match /user-assets/{assetId} {
+      allow read: if request.auth != null && 
+                    resource.data.userId == request.auth.uid;
+                    
+      // Allow creation of assets if the userId field matches the authenticated user
+      allow create: if request.auth != null && 
+                     request.resource.data.userId == request.auth.uid;
+                     
+      // Allow deletion of the user's own assets
+      allow delete: if request.auth != null && 
+                     resource.data.userId == request.auth.uid;
+    }
+    
+    // Allow anyone to read public assets
+    match /public-assets/{assetId} {
+      allow read: if true;
+    }
+    
+    // Allow admin functionality for managing assets
+    match /{document=**} {
+      allow read, write: if request.auth != null && 
+                          request.auth.token.admin == true;
     }
   }
 } 

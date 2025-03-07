@@ -1,10 +1,11 @@
 // API for interacting with Stripe through our backend
-import { API_URL } from './constants';
+// Get API URL from environment variables
+const API_URL = import.meta.env.VITE_API_URL || 'https://fishcad.com/api';
 
-// Stripe price IDs - these would come from your environment variables
+// Stripe price IDs from environment variables
 export const STRIPE_PRICES = {
-  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_monthly_placeholder',
-  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_annual_placeholder',
+  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
+  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 
 // Create a checkout session for a subscription

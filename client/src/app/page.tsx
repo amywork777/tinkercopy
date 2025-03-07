@@ -26,12 +26,47 @@ import { ShareDialog } from "@/components/ShareDialog";
 import FishLogo from "@/components/FishLogo";
 import ImportStatsDebug from "@/components/ImportStatsDebug";
 import STLImporter from "@/components/STLImporter";
+import PendingImportDialog from "@/components/PendingImportDialog";
+
+// Interface for pending import data stored in localStorage
+interface PendingImportData {
+  fileName: string;
+  timestamp: number;
+}
+
+// Function to check for pending imports
+function checkForPendingImport(): PendingImportData | null {
+  // Check if we arrived with the pending parameter
+  const urlParams = new URLSearchParams(window.location.search);
+  const hasPendingParam = urlParams.get('pending') === 'true';
+  
+  if (hasPendingParam) {
+    try {
+      // Look for pending import data in localStorage
+      const pendingImportStr = localStorage.getItem('fishcad_pending_import');
+      
+      if (pendingImportStr) {
+        const pendingImport = JSON.parse(pendingImportStr) as PendingImportData;
+        
+        // Check if it's recent (within the last minute)
+        if (Date.now() - pendingImport.timestamp < 60000) {
+          return pendingImport;
+        }
+      }
+    } catch (error) {
+      console.error('Error checking for pending import:', error);
+    }
+  }
+  
+  return null;
+}
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [useMobileVersion, setUseMobileVersion] = useState(false);
   const [skipMobileWarning, setSkipMobileWarning] = useState(false);
+  const [pendingImport, setPendingImport] = useState<PendingImportData | null>(null);
   const { user, isAuthenticated, login, logout } = useAuth();
   
   // Initialize the FISHCAD message listener when the component mounts
@@ -54,6 +89,34 @@ export default function Home() {
     return cleanup;
   }, []);
   
+  // Check for pending imports when the component mounts
+  useEffect(() => {
+    // Only run in the browser
+    if (typeof window === 'undefined') return;
+    
+    // Check for pending imports
+    const pendingImport = checkForPendingImport();
+    
+    if (pendingImport) {
+      console.log('Found pending import:', pendingImport);
+      
+      // Show the import dialog
+      setPendingImport(pendingImport);
+      
+      // Clear the pending import flag from localStorage
+      localStorage.removeItem('fishcad_pending_import');
+      
+      // Also clear the URL parameter to prevent showing the dialog again on refresh
+      const newUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+  
+  // Close the pending import dialog
+  const closePendingImportDialog = () => {
+    setPendingImport(null);
+  };
+  
   // Enable mobile version
   const handleUseMobileVersion = () => {
     setUseMobileVersion(true);
@@ -70,6 +133,15 @@ export default function Home() {
       <div className="flex flex-col h-screen">
         {/* Mobile Warning Overlay - Only skip if explicitly set for this session */}
         {!skipMobileWarning && <MobileWarning onUseMobileVersion={handleUseMobileVersion} />}
+        
+        {/* Pending Import Dialog */}
+        {pendingImport && (
+          <PendingImportDialog
+            isOpen={true}
+            onClose={closePendingImportDialog}
+            fileName={pendingImport.fileName}
+          />
+        )}
         
         {/* Header bar */}
         <div className="w-full h-12 bg-background border-b border-border flex items-center justify-between px-4">

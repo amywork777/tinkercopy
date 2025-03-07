@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FISHCAD STL Import Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.5;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .test-section {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      background-color: #f9f9f9;
+    }
+    h1, h2 {
+      color: #2563eb;
+    }
+    code {
+      background-color: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    button {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 8px;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    input[type="url"] {
+      padding: 8px;
+      width: 100%;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #response {
+      margin-top: 16px;
+      padding: 12px;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow: auto;
+    }
+    .note {
+      background-color: #fff7e6;
+      border-left: 4px solid #ffab00;
+      padding: 12px;
+      margin: 16px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>FISHCAD STL Import Test</h1>
+  <p>This page simulates the behavior of external websites (like magic.taiyaki.ai and library.taiyaki.ai) 
+    sending STL import messages to the application.</p>
+  
+  <div class="note">
+    <strong>Note:</strong> For this test to work properly, this page must be loaded from the 
+    same domain that's listed in the allowed origins (<code>ALLOWED_ORIGINS</code>) 
+    in <code>iframeInterceptor.ts</code>.
+  </div>
+  
+  <div class="test-section">
+    <h2>Test STL Import</h2>
+    <p>Enter the URL of an STL file and click "Import STL" to test:</p>
+    
+    <input type="url" id="stlUrl" placeholder="https://example.com/model.stl" 
+           value="https://storage.googleapis.com/ucloud-v3/ccab50f18c174830aa6117f1.stl">
+    
+    <div>
+      <button id="importStlBtn">Import STL</button>
+      <button id="simulateMagicBtn">Simulate magic.taiyaki.ai</button>
+      <button id="simulateLibraryBtn">Simulate library.taiyaki.ai</button>
+    </div>
+    
+    <div id="response"></div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const responseEl = document.getElementById('response');
+      const stlUrlInput = document.getElementById('stlUrl');
+      
+      // Function to log messages to the response element
+      function logMessage(message) {
+        const timestamp = new Date().toLocaleTimeString();
+        responseEl.innerHTML += `[${timestamp}] ${message}\n`;
+        responseEl.scrollTop = responseEl.scrollHeight;
+      }
+      
+      // Listen for response messages from the parent window
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'stl-import-response') {
+          logMessage(`Received response: ${JSON.stringify(event.data, null, 2)}`);
+        }
+      });
+      
+      // Import STL button
+      document.getElementById('importStlBtn').addEventListener('click', function() {
+        const stlUrl = stlUrlInput.value.trim();
+        if (!stlUrl) {
+          logMessage('Error: Please enter an STL URL');
+          return;
+        }
+        
+        // Send the message to the parent window
+        window.parent.postMessage({
+          type: 'stl-import',
+          stlUrl: stlUrl,
+          metadata: {
+            name: 'Test Model',
+            description: 'A test model imported from the test page',
+            author: 'Test User',
+            license: 'CC-BY-4.0'
+          }
+        }, '*');
+        
+        logMessage(`Sent stl-import message with URL: ${stlUrl}`);
+      });
+      
+      // Simulate magic.taiyaki.ai button
+      document.getElementById('simulateMagicBtn').addEventListener('click', function() {
+        const stlUrl = stlUrlInput.value.trim();
+        if (!stlUrl) {
+          logMessage('Error: Please enter an STL URL');
+          return;
+        }
+        
+        logMessage('Simulating message from magic.taiyaki.ai');
+        
+        // Create a fake origin message (this won't actually work in practice due to security restrictions)
+        const message = {
+          type: 'stl-import',
+          stlUrl: stlUrl,
+          metadata: {
+            name: 'Magic Model',
+            description: 'A model from magic.taiyaki.ai',
+            author: 'Magic User',
+            license: 'CC-BY-4.0'
+          }
+        };
+        
+        // This is for demonstration only - in reality, the message would need to come from
+        // the actual origin domain due to browser security
+        logMessage('Note: This simulation is for demonstration only. In a real environment, the message must come from the actual domain.');
+        
+        window.parent.postMessage(message, '*');
+        logMessage(`Sent simulated message: ${JSON.stringify(message, null, 2)}`);
+      });
+      
+      // Simulate library.taiyaki.ai button
+      document.getElementById('simulateLibraryBtn').addEventListener('click', function() {
+        const stlUrl = stlUrlInput.value.trim();
+        if (!stlUrl) {
+          logMessage('Error: Please enter an STL URL');
+          return;
+        }
+        
+        logMessage('Simulating message from library.taiyaki.ai');
+        
+        // Create a fake origin message (this won't actually work in practice due to security restrictions)
+        const message = {
+          type: 'import-stl', // Note the different message type used by library.taiyaki.ai
+          stlUrl: stlUrl,
+          metadata: {
+            name: 'Library Model',
+            description: 'A model from library.taiyaki.ai',
+            author: 'Library User',
+            license: 'MIT'
+          }
+        };
+        
+        // This is for demonstration only
+        logMessage('Note: This simulation is for demonstration only. In a real environment, the message must come from the actual domain.');
+        
+        window.parent.postMessage(message, '*');
+        logMessage(`Sent simulated message: ${JSON.stringify(message, null, 2)}`);
+      });
+      
+      logMessage('Test page loaded and ready');
+    });
+  </script>
+</body>
+</html> 

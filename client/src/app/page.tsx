@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Printer, PanelLeft, LogIn, LogOut, User, Share2 } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { initTaiyakiMessageListener } from "@/lib/iframeInterceptor";
+import { initFishCadMessageListener } from "@/lib/iframeInterceptor";
 import MobileWarning from "@/components/MobileWarning";
 import MobileView from "@/components/MobileView";
 import { useAuth } from "@/context/AuthContext";
@@ -24,6 +24,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ShareDialog } from "@/components/ShareDialog";
 import FishLogo from "@/components/FishLogo";
+import ImportStatsDebug from "@/components/ImportStatsDebug";
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
@@ -32,10 +33,10 @@ export default function Home() {
   const [skipMobileWarning, setSkipMobileWarning] = useState(false);
   const { user, isAuthenticated, login, logout } = useAuth();
   
-  // Initialize the Taiyaki message listener when the component mounts
+  // Initialize the FISHCAD message listener when the component mounts
   useEffect(() => {
     // Set up the message listener and get the cleanup function
-    const cleanup = initTaiyakiMessageListener();
+    const cleanup = initFishCadMessageListener();
     
     // Check for temporary desktop preference (session-only)
     const tempUseDesktop = sessionStorage.getItem("temp-use-desktop");
@@ -46,7 +47,7 @@ export default function Home() {
     }
     
     // Log that the listener is active
-    console.log("Taiyaki STL import message listener initialized");
+    console.log("FISHCAD STL import message listener initialized");
     
     // Return the cleanup function to be called when the component unmounts
     return cleanup;
@@ -184,6 +185,9 @@ export default function Home() {
             </div>
           )}
         </main>
+        
+        {/* Debug component - only shown in development */}
+        {process.env.NODE_ENV === 'development' && <ImportStatsDebug />}
       </div>
     </TooltipProvider>
   );

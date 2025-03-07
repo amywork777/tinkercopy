@@ -1603,17 +1603,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   Import STL, SVG or Image
                 </Button>
                 
-                {/* Add dedicated image import button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={handleImageImport}
-                >
-                  <ImageIcon className="mr-1 h-4 w-4" />
-                  Import Image to SVG
-                </Button>
-                
                 <Button
                   variant="outline"
                   size="sm"

@@ -2,6 +2,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Undo, Redo } from "lucide-react";
 import { useScene } from "@/hooks/use-scene";
+import FishLogo from "@/components/FishLogo";
 
 export function Header() {
   const { 
@@ -15,11 +16,10 @@ export function Header() {
     <header className="w-full py-2 px-4 border-b bg-background flex items-center justify-between">
       <div className="flex items-center">
         <a href="https://taiyaki.ai" target="_blank" rel="noopener noreferrer">
-          <img 
-            src="/fishlogo.svg" 
-            alt="Taiyaki Fish Logo" 
-            className="h-8 w-8 mr-2" 
-            style={{ filter: "brightness(0) saturate(100%) invert(83%) sepia(31%) saturate(995%) hue-rotate(135deg) brightness(92%) contrast(86%)" }}
+          <FishLogo 
+            width={32} 
+            height={32} 
+            className="mr-2 text-[hsl(186,85%,73%)]" 
           />
         </a>
         <h1 className="text-xl font-semibold">Taiyaki.ai</h1>

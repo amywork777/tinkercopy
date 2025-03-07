@@ -71,6 +71,14 @@ export default function Home() {
         {/* Header bar */}
         <div className="w-full h-12 bg-background border-b border-border flex items-center justify-between px-4">
           <div className="flex items-center">
+            <a href="https://taiyaki.ai" target="_blank" rel="noopener noreferrer">
+              <img 
+                src="/fishlogo.svg" 
+                alt="Taiyaki Fish Logo" 
+                className="h-8 w-8 mr-2" 
+                style={{ filter: "brightness(0) saturate(100%) invert(83%) sepia(31%) saturate(995%) hue-rotate(135deg) brightness(92%) contrast(86%)" }}
+              />
+            </a>
             <h1 className="text-xl font-bold text-primary">taiyaki.ai</h1>
           </div>
           <div className="flex items-center space-x-2">

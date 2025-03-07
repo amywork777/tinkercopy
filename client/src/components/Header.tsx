@@ -14,6 +14,14 @@ export function Header() {
   return (
     <header className="w-full py-2 px-4 border-b bg-background flex items-center justify-between">
       <div className="flex items-center">
+        <a href="https://taiyaki.ai" target="_blank" rel="noopener noreferrer">
+          <img 
+            src="/fishlogo.svg" 
+            alt="Taiyaki Fish Logo" 
+            className="h-8 w-8 mr-2" 
+            style={{ filter: "brightness(0) saturate(100%) invert(83%) sepia(31%) saturate(995%) hue-rotate(135deg) brightness(92%) contrast(86%)" }}
+          />
+        </a>
         <h1 className="text-xl font-semibold">Taiyaki.ai</h1>
       </div>
       

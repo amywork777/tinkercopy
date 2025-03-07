@@ -76,7 +76,7 @@ export const ToolBar = () => {
   };
 
   const handleRenderingModeChange = (value: string) => {
-    setRenderingMode(value as 'standard' | 'wireframe' | 'realistic' | 'xray');
+    setRenderingMode(value as 'standard' | 'wireframe' | 'metallic' | 'glass-like' | 'xray');
     toast({
       title: `Rendering mode: ${value}`,
       duration: 2000,
@@ -628,7 +628,8 @@ export const ToolBar = () => {
           <SelectContent>
             <SelectItem key="standard" value="standard" className="text-xs py-1">Standard</SelectItem>
             <SelectItem key="wireframe" value="wireframe" className="text-xs py-1">Wireframe</SelectItem>
-            <SelectItem key="realistic" value="realistic" className="text-xs py-1">Realistic</SelectItem>
+            <SelectItem key="metallic" value="metallic" className="text-xs py-1">Metallic</SelectItem>
+            <SelectItem key="glass-like" value="glass-like" className="text-xs py-1">Glass-like</SelectItem>
             <SelectItem key="xray" value="xray" className="text-xs py-1">X-Ray</SelectItem>
           </SelectContent>
         </Select>

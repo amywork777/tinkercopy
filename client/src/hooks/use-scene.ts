@@ -36,13 +36,99 @@ const vibrantColors = [
   '#33CFFF', // Sky blue
   '#FF9E33', // Orange
   '#B533FF', // Purple
-  '#33FF9E'  // Mint green
+  '#33FF9E',  // Mint green
+  
+  // Adding more playful and fun colors
+  '#FF00CC', // Neon pink
+  '#00FFCC', // Bright turquoise
+  '#CCFF00', // Lime yellow
+  '#FF66B2', // Pastel pink
+  '#66FFB2', // Pastel mint
+  '#B266FF', // Lavender
+  '#FF9966', // Peach
+  '#66FF99', // Light green
+  '#9966FF', // Periwinkle
+  '#FFFF00', // Electric yellow
+  '#00FFFF', // Electric cyan
+  '#FF00FF', // Electric magenta
+  '#7B68EE', // Medium slate blue
+  '#FF1493', // Deep pink
+  '#00FA9A', // Medium spring green
+  '#1E90FF', // Dodger blue
+  '#ADFF2F', // Green yellow
+  '#FF8C00', // Dark orange
+  '#9400D3', // Dark violet
+  '#FFDAB9'  // Peach puff
 ];
 
+// Get a random color from our enhanced palette
 const getRandomColor = () => {
   // Select a random color from the array
   const randomIndex = Math.floor(Math.random() * vibrantColors.length);
   return new THREE.Color(vibrantColors[randomIndex]);
+};
+
+// Function to create a fun material for a model
+const createFunMaterial = () => {
+  // 25% chance to return a fun gradient material instead of a solid color
+  if (Math.random() < 0.25) {
+    // Create a gradient texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const context = canvas.getContext('2d');
+    
+    if (context) {
+      // Different gradient types
+      const gradientTypes = ['radial', 'linear', 'rainbow'];
+      const type = gradientTypes[Math.floor(Math.random() * gradientTypes.length)];
+      
+      // Pick two random colors from our palette
+      const color1 = vibrantColors[Math.floor(Math.random() * vibrantColors.length)];
+      const color2 = vibrantColors[Math.floor(Math.random() * vibrantColors.length)];
+      
+      let gradient;
+      
+      if (type === 'radial') {
+        gradient = context.createRadialGradient(128, 128, 10, 128, 128, 128);
+        gradient.addColorStop(0, color1);
+        gradient.addColorStop(1, color2);
+      } else if (type === 'linear') {
+        gradient = context.createLinearGradient(0, 0, 256, 256);
+        gradient.addColorStop(0, color1);
+        gradient.addColorStop(1, color2);
+      } else { // rainbow
+        gradient = context.createLinearGradient(0, 0, 256, 0);
+        gradient.addColorStop(0, '#FF0000');
+        gradient.addColorStop(0.17, '#FF9900');
+        gradient.addColorStop(0.33, '#FFFF00');
+        gradient.addColorStop(0.5, '#00FF00');
+        gradient.addColorStop(0.67, '#0099FF');
+        gradient.addColorStop(0.83, '#0000FF');
+        gradient.addColorStop(1, '#9900FF');
+      }
+      
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 256, 256);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      
+      // Create a material with this texture
+      return new THREE.MeshStandardMaterial({ 
+        map: texture,
+        metalness: Math.random() * 0.5,
+        roughness: 0.5 + Math.random() * 0.5
+      });
+    }
+  }
+  
+  // Otherwise, select a random color from the array
+  return new THREE.MeshStandardMaterial({ 
+    color: getRandomColor(),
+    metalness: Math.random() * 0.3,
+    roughness: 0.5 + Math.random() * 0.5
+  });
 };
 
 // Maximum model size in inches - set to exactly 10 inches
@@ -149,8 +235,8 @@ type SceneState = {
   transformMode: "translate" | "rotate" | "scale";
   
   // Rendering mode
-  renderingMode: 'standard' | 'wireframe' | 'realistic' | 'xray';
-  setRenderingMode: (mode: 'standard' | 'wireframe' | 'realistic' | 'xray') => void;
+  renderingMode: 'standard' | 'wireframe' | 'metallic' | 'glass-like' | 'xray';
+  setRenderingMode: (mode: 'standard' | 'wireframe' | 'metallic' | 'glass-like' | 'xray') => void;
   
   // Unit system
   unit: 'mm' | 'in';
@@ -665,14 +751,10 @@ export const useScene = create<SceneState>((set, get) => {
       });
       
       // Create mesh with random color and apply scale
-        const material = new THREE.MeshStandardMaterial({ 
-          color: getRandomColor(),
-        metalness: 0.5,
-        roughness: 0.5,
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+      const material = createFunMaterial();
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
 
       // Apply the chosen scale
       mesh.scale.copy(scale);
@@ -1647,8 +1729,12 @@ export const useScene = create<SceneState>((set, get) => {
       if (targetState.selectedModelIndex !== null) {
         const selectedModel = restoredModels[targetState.selectedModelIndex];
         if (selectedModel) {
-          const material = selectedModel.mesh.material as THREE.MeshStandardMaterial;
-          material.emissive.set(0x444444);
+          const material = selectedModel.mesh.material;
+          // Check if material is a MeshStandardMaterial or MeshPhysicalMaterial before setting emissive
+          if (material instanceof THREE.MeshStandardMaterial || 
+              material instanceof THREE.MeshPhysicalMaterial) {
+            material.emissive.set(0x444444);
+          }
         }
       }
       
@@ -1727,8 +1813,12 @@ export const useScene = create<SceneState>((set, get) => {
       if (targetState.selectedModelIndex !== null) {
         const selectedModel = restoredModels[targetState.selectedModelIndex];
         if (selectedModel) {
-          const material = selectedModel.mesh.material as THREE.MeshStandardMaterial;
-          material.emissive.set(0x444444);
+          const material = selectedModel.mesh.material;
+          // Check if material is a MeshStandardMaterial or MeshPhysicalMaterial before setting emissive
+          if (material instanceof THREE.MeshStandardMaterial || 
+              material instanceof THREE.MeshPhysicalMaterial) {
+            material.emissive.set(0x444444);
+          }
         }
       }
       
@@ -1885,7 +1975,7 @@ export const useScene = create<SceneState>((set, get) => {
     },
 
     // Add function to set rendering mode
-    setRenderingMode: (mode: 'standard' | 'wireframe' | 'realistic' | 'xray') => {
+    setRenderingMode: (mode: 'standard' | 'wireframe' | 'metallic' | 'glass-like' | 'xray') => {
       const prevMode = get().renderingMode;
       set({ renderingMode: mode });
       
@@ -1955,12 +2045,11 @@ export const useScene = create<SceneState>((set, get) => {
         // Create a group to hold our shapes
         const group = new THREE.Group();
         
-        // Create a material with a random color
-          const material = new THREE.MeshStandardMaterial({ 
-            color: getRandomColor(),
-            side: THREE.DoubleSide,
-          });
-          
+        // Create a material with a fun color or gradient
+        const material = createFunMaterial();
+        // Ensure double-sided rendering
+        material.side = THREE.DoubleSide;
+        
         // Extrusion settings with bevel for better 3D appearance
           const extrudeSettings = {
             depth: extrudeDepth,
@@ -2605,7 +2694,7 @@ function isLineOverlapping(min1: number, max1: number, min2: number, max2: numbe
 }
 
 // Helper function to update model material based on rendering mode
-function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 'realistic' | 'xray') {
+function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 'metallic' | 'glass-like' | 'xray') {
   // Get the current color from the mesh's material
   let currentColor = new THREE.Color(0x3498db); // Default blue color
   
@@ -2651,16 +2740,34 @@ function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 
         mesh.material = material;
       break;
       
-    case 'realistic':
+    case 'metallic':
       if (!(mesh.material instanceof THREE.MeshPhysicalMaterial) || 
+          (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.wireframe)) {
+        const material = new THREE.MeshStandardMaterial({
+          color: currentColor,
+          roughness: 0.3,
+          metalness: 0.9,
+          emissive: emissiveColor // Preserve highlight state
+        });
+        mesh.material = material;
+      } else if (isHighlighted) {
+        // Just update the emissive to preserve highlight
+        mesh.material.emissive = emissiveColor;
+      }
+      break;
+      
+    case 'glass-like':
+      if (!(mesh.material instanceof THREE.MeshPhysicalMaterial && mesh.material.transparent) || 
           (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.wireframe)) {
         const material = new THREE.MeshPhysicalMaterial({
           color: currentColor,
-          roughness: 0.3,
-          metalness: 0.8,
-          clearcoat: 0.5,
-          clearcoatRoughness: 0.2,
-          reflectivity: 1,
+          roughness: 0.0,
+          metalness: 0.1,
+          transmission: 0.9, // Makes the material transmissive (glass-like)
+          transparent: true,
+          opacity: 0.5,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.1,
           emissive: emissiveColor // Preserve highlight state
         });
         mesh.material = material;

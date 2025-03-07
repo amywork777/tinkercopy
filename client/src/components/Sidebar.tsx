@@ -589,65 +589,12 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   
   // Function to create a fun material for a shape
   const createFunMaterial = () => {
-    // Randomly select from different material types for more variety
-    const materialType = Math.random();
-    
-    // 15% chance for a shiny metallic material
-    if (materialType < 0.15) {
-      return new THREE.MeshStandardMaterial({
-        color: getRandomColor(),
-        metalness: 0.9,
-        roughness: 0.1,
-        envMapIntensity: 1.0
-      });
-    }
-    
-    // 15% chance for a glass-like material
-    else if (materialType < 0.3) {
-      return new THREE.MeshStandardMaterial({
-        color: getRandomColor(),
-        metalness: 0.0,
-        roughness: 0.0,
-        transparent: true,
-        opacity: 0.7
-      });
-    }
-    
-    // 15% chance for a matte material
-    else if (materialType < 0.45) {
-      return new THREE.MeshStandardMaterial({
-        color: getRandomColor(),
-        metalness: 0.0,
-        roughness: 1.0
-      });
-    }
-    
-    // 15% chance for a material with high metalness but also high roughness
-    else if (materialType < 0.6) {
-      return new THREE.MeshStandardMaterial({
-        color: getRandomColor(),
-        metalness: 0.8,
-        roughness: 0.8
-      });
-    }
-    
-    // 15% chance for a semi-metallic material
-    else if (materialType < 0.75) {
-      return new THREE.MeshStandardMaterial({
-        color: getRandomColor(),
-        metalness: 0.5,
-        roughness: 0.3
-      });
-    }
-    
-    // 25% chance for a standard vibrant material with moderate properties
-    else {
-      return new THREE.MeshStandardMaterial({
-        color: getRandomColor(),
-        metalness: Math.random() * 0.4,
-        roughness: 0.4 + Math.random() * 0.4
-      });
-    }
+    // Always return a standard vibrant material
+    return new THREE.MeshStandardMaterial({
+      color: getRandomColor(),
+      metalness: 0.2,
+      roughness: 0.5
+    });
   };
 
   // Function to create a new model with the correct type

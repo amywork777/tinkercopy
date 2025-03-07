@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { useScene } from "@/hooks/use-scene";
-import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X, FileText, Layout, Undo, Redo } from "lucide-react";
+import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X, FileText, Layout, Undo, Redo, Image as ImageIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { ModelList } from "./ModelList";
@@ -22,6 +22,7 @@ import type { Model } from "@/types/model";
 import { TaiyakiLibrary } from "@/components/TaiyakiLibrary";
 import { MagicFishAI } from "@/components/MagicFishAI";
 import { AssetLibrary } from "@/components/AssetLibrary";
+import { imageToSvg } from "@/lib/imageToSvg";
 
 // Font options with their display names and paths
 const FONTS = [
@@ -882,7 +883,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const handleImportClick = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.stl,.svg';
+    input.accept = '.stl,.svg,.jpg,.jpeg,.png,.gif,.webp';
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
@@ -902,10 +903,34 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             title: "Import Successful",
             description: `Converted SVG to 3D: ${file.name}`
           });
+        } else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt || '')) {
+          // Show loading toast
+          toast({
+            title: "Converting Image",
+            description: "Converting image to SVG... This may take a moment.",
+          });
+          
+          // Convert image to SVG
+          const svgData = await imageToSvg(file);
+          
+          // Create a blob from the SVG data
+          const svgBlob = new Blob([svgData], { type: 'image/svg+xml' });
+          
+          // Create a File object from the blob
+          const fileName = file.name.replace(/\.[^/.]+$/, '') + '.svg';
+          const svgFile = new File([svgBlob], fileName, { type: 'image/svg+xml' });
+          
+          // Load the SVG file
+          await loadSVG(svgFile);
+          
+          toast({
+            title: "Conversion Successful",
+            description: `Converted image to SVG and imported as 3D model`
+          });
         } else {
           toast({
             title: "Import Failed",
-            description: "Unsupported file format. Please use STL or SVG files.",
+            description: "Unsupported file format. Please use STL, SVG, or common image formats.",
             variant: "destructive",
           });
         }
@@ -914,6 +939,54 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         toast({
           title: "Import Failed",
           description: "There was an error importing your file",
+          variant: "destructive",
+        });
+      }
+    };
+    input.click();
+  };
+  
+  // Dedicated function for image imports
+  const handleImageImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.jpg,.jpeg,.png,.gif,.webp';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      
+      try {
+        // Show loading toast
+        toast({
+          title: "Converting Image",
+          description: "Converting image to SVG... This may take a moment.",
+        });
+        
+        // Convert image to SVG
+        const svgData = await imageToSvg(file);
+        
+        // Create a blob from the SVG data
+        const svgBlob = new Blob([svgData], { type: 'image/svg+xml' });
+        
+        // Create a File object from the blob
+        const fileName = file.name.replace(/\.[^/.]+$/, '') + '.svg';
+        const svgFile = new File([svgBlob], fileName, { type: 'image/svg+xml' });
+        
+        // The default extrude depth for converted images (in mm)
+        const extrudeDepth = 2;
+        
+        // Load the SVG file with an extrusion depth
+        await loadSVG(svgFile, extrudeDepth);
+        
+        toast({
+          title: "Conversion Successful",
+          description: `Converted image to SVG and imported as 3D model`
+        });
+      } catch (error) {
+        console.error("Error converting image:", error);
+        toast({
+          title: "Conversion Failed",
+          description: "There was an error converting your image to SVG",
           variant: "destructive",
         });
       }
@@ -1527,8 +1600,20 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   onClick={handleImportClick}
                 >
                   <Upload className="mr-1 h-4 w-4" />
-                  Import STL or SVG
+                  Import STL, SVG or Image
                 </Button>
+                
+                {/* Add dedicated image import button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={handleImageImport}
+                >
+                  <ImageIcon className="mr-1 h-4 w-4" />
+                  Import Image to SVG
+                </Button>
+                
                 <Button
                   variant="outline"
                   size="sm"

@@ -1,16 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Crown, Info } from "lucide-react";
+import { Loader2, Download, Crown, Info, Lock } from "lucide-react";
 import { useSubscription } from '@/context/SubscriptionContext';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { FEATURES } from '@/lib/constants';
 
 export function TaiyakiLibrary() {
@@ -145,6 +139,7 @@ export function TaiyakiLibrary() {
             )}
           </div>
         </CardHeader>
+        
         <CardContent className="p-0 h-[calc(100%-7rem)]">
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
@@ -161,47 +156,31 @@ export function TaiyakiLibrary() {
             allow="clipboard-write"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
           />
-        </CardContent>
-        <CardFooter className="pt-3 pb-3 flex-col space-y-2">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex items-center text-xs text-muted-foreground">
-                  <Info className="h-3 w-3 mr-1" />
-                  {subscription.isPro 
-                    ? "Pro users can download STL files directly" 
-                    : "STL downloads require Pro subscription"}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="text-xs max-w-xs">
-                  {subscription.isPro 
-                    ? "As a Pro user, you can download any model as STL directly from the library" 
-                    : "You can use models in the editor, but STL downloads require a Pro subscription"}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
           
-          {!subscription.isPro && (
-            <div className="w-full flex flex-col gap-2">
-              <div className="flex items-center gap-1 bg-primary/10 text-primary text-xs p-2 rounded">
-                <Crown className="h-3 w-3 shrink-0" />
-                <p className="text-xs">
-                  <span className="font-semibold">Free Account:</span> You can browse and use models in the editor, but downloading STL files requires a Pro subscription.
-                </p>
+          {/* Free user restriction banner */}
+          {!subscription.isPro && !isLoading && (
+            <div className="absolute bottom-0 left-0 right-0 bg-orange-50 border-t border-orange-200 p-2 flex items-center justify-between">
+              <div className="flex items-center">
+                <Lock className="h-4 w-4 text-orange-500 mr-2" />
+                <span className="text-xs text-orange-700">
+                  STL downloads from Taiyaki Library require a Pro subscription
+                </span>
               </div>
               <Button 
-                variant="outline"
-                size="sm"
-                className="ml-auto text-xs w-full"
+                variant="ghost" 
+                size="sm" 
+                className="text-xs text-orange-600 hover:text-orange-800 hover:bg-orange-100"
                 onClick={() => navigate('/pricing')}
               >
                 <Crown className="h-3 w-3 mr-1" />
-                Upgrade to Pro for STL Downloads
+                Upgrade
               </Button>
             </div>
           )}
+        </CardContent>
+        
+        <CardFooter className="pt-3 pb-3 justify-end">
+          {/* Remove the duplicate upgrade button */}
         </CardFooter>
       </Card>
     </div>

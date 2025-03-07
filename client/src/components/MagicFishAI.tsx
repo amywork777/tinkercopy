@@ -158,7 +158,7 @@ export function MagicFishAI() {
           </div>
         </CardHeader>
         
-        <CardContent className="p-0 h-[calc(100%-9rem)]">
+        <CardContent className="p-0 h-[calc(100%-12rem)]">
           {/* Show the AI interface for everyone, but track usage limits */}
           {isLoading && !hasError && (
             <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
@@ -212,8 +212,9 @@ export function MagicFishAI() {
           )}
         </CardContent>
         
-        <CardFooter className="pt-3 pb-3 flex flex-col">
-          <div className="w-full mb-1">
+        <CardFooter className="p-3 flex-col" style={{minHeight: "80px"}}>
+          {/* Usage progress bar */}
+          <div className="w-full mb-2">
             <div className="flex justify-between items-center text-xs mb-1">
               <span>Model Generations</span>
               <span className="font-medium">{modelsRemaining}/{modelLimit} remaining</span>
@@ -221,37 +222,27 @@ export function MagicFishAI() {
             <Progress value={usagePercent} className="h-2" />
           </div>
           
-          <div className="flex items-center w-full mt-2 justify-between">
-            <div className="flex items-center text-xs text-muted-foreground">
-              <Info className="h-3 w-3 mr-1" />
-              {subscription.isPro 
-                ? "Pro: 20 generations per month" 
-                : "Free: 3 generations per month"}
-            </div>
-            
-            {!subscription.isPro && (
-              <>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => navigate('/pricing')}
-                >
-                  <Crown className="h-3 w-3 mr-1" />
-                  Upgrade to Pro
-                </Button>
-              </>
-            )}
-          </div>
-
+          {/* Upgrade notice for free users */}
           {!subscription.isPro && (
-            <div className="w-full mt-2">
-              <div className="flex items-center gap-1 bg-primary/10 text-primary text-xs p-2 rounded">
-                <Crown className="h-3 w-3 shrink-0" />
-                <p className="text-xs">
-                  <span className="font-semibold">Free Account:</span> You have access to the AI model generation tool, but are limited to 3 generations per month. Upgrade to Pro for 20 generations monthly.
-                </p>
-              </div>
+            <div className="w-full mt-2 flex justify-between items-center border border-orange-200 rounded bg-orange-50 p-2">
+              <span className="text-xs text-orange-700">For more downloads, upgrade to Pro</span>
+              <Button 
+                variant="ghost"
+                size="sm"
+                className="ml-2 text-xs text-orange-600 hover:bg-orange-100 hover:text-orange-800"
+                onClick={() => navigate('/pricing')}
+              >
+                <Crown className="h-3 w-3 mr-1" />
+                Upgrade
+              </Button>
+            </div>
+          )}
+          
+          {/* Info for Pro users */}
+          {subscription.isPro && (
+            <div className="w-full mt-2 flex items-center">
+              <Info className="h-3 w-3 text-muted-foreground mr-1" />
+              <span className="text-xs text-muted-foreground">Pro: 20 generations per month</span>
             </div>
           )}
         </CardFooter>

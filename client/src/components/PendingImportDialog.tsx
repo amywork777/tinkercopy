@@ -16,9 +16,10 @@ interface PendingImportDialogProps {
   isOpen: boolean;
   onClose: () => void;
   fileName: string;
+  onSuccess?: () => void;
 }
 
-export function PendingImportDialog({ isOpen, onClose, fileName }: PendingImportDialogProps) {
+export function PendingImportDialog({ isOpen, onClose, fileName, onSuccess }: PendingImportDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { loadSTL, selectModel, models } = useScene();
   
@@ -52,6 +53,11 @@ export function PendingImportDialog({ isOpen, onClose, fileName }: PendingImport
       
       // Show success message
       toast.success(`Successfully imported ${file.name}`);
+      
+      // Call onSuccess callback if provided
+      if (onSuccess) {
+        onSuccess();
+      }
       
       // Close the dialog
       onClose();

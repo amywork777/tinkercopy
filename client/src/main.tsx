@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import Home from "./app/page";
+import App from "./App";
 import "./index.css";
 import { ThemeProvider } from "./components/ui/theme-provider";
 import { AuthProvider } from "./context/AuthContext";
@@ -10,7 +10,7 @@ createRoot(document.getElementById("root")!).render(
   <ThemeProvider defaultTheme="light" storageKey="taiyaki-theme">
     <AuthProvider>
       <AuthWrapper>
-        <Home />
+        <App />
         <Toaster position="top-right" />
       </AuthWrapper>
     </AuthProvider>

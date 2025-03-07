@@ -1919,8 +1919,21 @@ export const useScene = create<SceneState>((set, get) => {
         
         // Re-apply rendering mode to ensure consistency
         models.forEach(model => {
-          // Call updateModelMaterial with force=true to ensure the rendering mode is correctly applied
+          // Call updateModelMaterial to ensure the rendering mode is correctly applied
           updateModelMaterial(model.mesh, renderingMode);
+          
+          // Ensure material updates are applied immediately
+          if (model.mesh.material) {
+            if (Array.isArray(model.mesh.material)) {
+              // Handle material array
+              model.mesh.material.forEach(mat => {
+                mat.needsUpdate = true;
+              });
+            } else {
+              // Handle single material
+              model.mesh.material.needsUpdate = true;
+            }
+          }
         });
         
         // Re-apply selection highlights if needed
@@ -1929,6 +1942,7 @@ export const useScene = create<SceneState>((set, get) => {
           if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial || 
               selectedModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
             selectedModel.mesh.material.emissive.set(0x222222);
+            selectedModel.mesh.material.needsUpdate = true;
           }
         }
         
@@ -1937,15 +1951,16 @@ export const useScene = create<SceneState>((set, get) => {
           if (secondaryModel.mesh.material instanceof THREE.MeshStandardMaterial || 
               secondaryModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
             secondaryModel.mesh.material.emissive.set(0x004444);
+            secondaryModel.mesh.material.needsUpdate = true;
           }
         }
         
         // Force a render to apply changes
-        if (renderer && camera) {
+        if (renderer && camera && scene) {
           renderer.render(scene, camera);
           console.log(`Reapplied rendering mode '${renderingMode}' after camera view change to: ${view}`);
         }
-      }, 50); // Small delay to ensure camera position is updated first
+      }, 10); // Reduced delay to make updates feel more immediate
       
       console.log(`Camera view set to: ${view}`);
     },
@@ -1987,6 +2002,19 @@ export const useScene = create<SceneState>((set, get) => {
       // Apply new rendering mode to all models
       models.forEach(model => {
         updateModelMaterial(model.mesh, mode);
+        
+        // Ensure material updates are applied immediately
+        if (model.mesh.material) {
+          if (Array.isArray(model.mesh.material)) {
+            // Handle material array
+            model.mesh.material.forEach(mat => {
+              mat.needsUpdate = true;
+            });
+          } else {
+            // Handle single material
+            model.mesh.material.needsUpdate = true;
+          }
+        }
       });
       
       // Re-apply selection highlights if needed
@@ -1996,24 +2024,25 @@ export const useScene = create<SceneState>((set, get) => {
           if (selectedModel.mesh.material instanceof THREE.MeshStandardMaterial || 
               selectedModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
             selectedModel.mesh.material.emissive.set(0x222222);
+            selectedModel.mesh.material.needsUpdate = true;
           }
         }
       }
       
-      // Re-apply secondary selection highlights if needed
+      // Same for secondary selection if CSG operation is in progress
       if (secondaryModelIndex !== null && models[secondaryModelIndex]) {
         const secondaryModel = models[secondaryModelIndex];
         if (mode !== 'wireframe' && mode !== 'xray') {
           if (secondaryModel.mesh.material instanceof THREE.MeshStandardMaterial || 
               secondaryModel.mesh.material instanceof THREE.MeshPhysicalMaterial) {
-            secondaryModel.mesh.material.emissive.set(0x004444);
+            secondaryModel.mesh.material.emissive.set(0x222222);
+            secondaryModel.mesh.material.needsUpdate = true;
           }
         }
       }
       
-      // Force re-render
-      if (renderer && camera) {
-        console.log(`Rendering mode changed to: ${mode}, forcing re-render`);
+      // Force a render to show the changes immediately
+      if (renderer && camera && scene) {
         renderer.render(scene, camera);
       }
     },
@@ -2703,6 +2732,14 @@ function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 
       mesh.material instanceof THREE.MeshStandardMaterial ||
       mesh.material instanceof THREE.MeshPhysicalMaterial) {
     currentColor = mesh.material.color;
+  } else if (Array.isArray(mesh.material) && mesh.material.length > 0) {
+    // Handle material arrays
+    const firstMaterial = mesh.material[0];
+    if (firstMaterial instanceof THREE.MeshBasicMaterial || 
+        firstMaterial instanceof THREE.MeshStandardMaterial || 
+        firstMaterial instanceof THREE.MeshPhysicalMaterial) {
+      currentColor = firstMaterial.color;
+    }
   }
   
   // Check if the current material is highlighted (emissive)
@@ -2714,81 +2751,63 @@ function updateModelMaterial(mesh: THREE.Mesh, mode: 'standard' | 'wireframe' | 
   // Store the highlight state to restore after changing material
   const emissiveColor = isHighlighted ? new THREE.Color(0x222222) : new THREE.Color(0x000000);
   
+  // Create the new material based on rendering mode
+  let newMaterial: THREE.Material | null = null;
+  
   switch (mode) {
     case 'standard':
-      if (!(mesh.material instanceof THREE.MeshStandardMaterial) || 
-          mesh.material.wireframe) { // Check if it's currently wireframe
-        const material = new THREE.MeshStandardMaterial({
-          color: currentColor,
-          roughness: 0.7,
-          metalness: 0.2,
-          emissive: emissiveColor // Preserve highlight state
-        });
-        mesh.material = material;
-      } else if (isHighlighted) {
-        // Just update the emissive to preserve highlight
-        mesh.material.emissive = emissiveColor;
-      }
+      newMaterial = new THREE.MeshStandardMaterial({
+        color: currentColor,
+        roughness: 0.7,
+        metalness: 0.2,
+        emissive: emissiveColor
+      });
       break;
       
     case 'wireframe':
-      // Always recreate the wireframe material to ensure it stays wireframe
-        const material = new THREE.MeshBasicMaterial({
-          color: currentColor,
-          wireframe: true
-        });
-        mesh.material = material;
+      newMaterial = new THREE.MeshBasicMaterial({
+        color: currentColor,
+        wireframe: true
+      });
       break;
       
     case 'metallic':
-      if (!(mesh.material instanceof THREE.MeshPhysicalMaterial) || 
-          (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.wireframe)) {
-        const material = new THREE.MeshStandardMaterial({
-          color: currentColor,
-          roughness: 0.3,
-          metalness: 0.9,
-          emissive: emissiveColor // Preserve highlight state
-        });
-        mesh.material = material;
-      } else if (isHighlighted) {
-        // Just update the emissive to preserve highlight
-        mesh.material.emissive = emissiveColor;
-      }
+      newMaterial = new THREE.MeshStandardMaterial({
+        color: currentColor,
+        roughness: 0.3,
+        metalness: 0.9,
+        emissive: emissiveColor
+      });
       break;
       
     case 'glass-like':
-      if (!(mesh.material instanceof THREE.MeshPhysicalMaterial && mesh.material.transparent) || 
-          (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.wireframe)) {
-        const material = new THREE.MeshPhysicalMaterial({
-          color: currentColor,
-          roughness: 0.0,
-          metalness: 0.1,
-          transmission: 0.9, // Makes the material transmissive (glass-like)
-          transparent: true,
-          opacity: 0.5,
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.1,
-          emissive: emissiveColor // Preserve highlight state
-        });
-        mesh.material = material;
-      } else if (isHighlighted) {
-        // Just update the emissive to preserve highlight
-        mesh.material.emissive = emissiveColor;
-      }
+      newMaterial = new THREE.MeshPhysicalMaterial({
+        color: currentColor,
+        roughness: 0.0,
+        metalness: 0.1,
+        transmission: 0.9,
+        transparent: true,
+        opacity: 0.5,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.1,
+        emissive: emissiveColor
+      });
       break;
       
     case 'xray':
-      if (!(mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.transparent) || 
-          (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.wireframe)) {
-        const material = new THREE.MeshBasicMaterial({
-          color: currentColor,
-          transparent: true,
-          opacity: 0.5,
-          side: THREE.DoubleSide
-        });
-        mesh.material = material;
-      }
+      newMaterial = new THREE.MeshBasicMaterial({
+        color: currentColor,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+      });
       break;
+  }
+  
+  // Only replace material if we have a new one and it's different from the current one
+  if (newMaterial) {
+    mesh.material = newMaterial;
+    newMaterial.needsUpdate = true;
   }
 }
 

@@ -41,7 +41,8 @@ const allowedOrigins = [
   'http://localhost:3001',
   'https://magic.taiyaki.ai',
   'https://library.taiyaki.ai',
-  'https://fishcad.com'
+  'https://fishcad.com',
+  'http://localhost:3000'
 ];
 
 // Configure middleware

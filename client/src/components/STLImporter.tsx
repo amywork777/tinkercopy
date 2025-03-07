@@ -8,8 +8,8 @@ import { useScene } from '@/hooks/use-scene';
 import { AlertCircle, CheckCircle, XCircle, ArrowUpCircle, RotateCw } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
-// Define the allowed origins
-const ALLOWED_ORIGINS = ["https://magic.taiyaki.ai", "https://library.taiyaki.ai"];
+// Define the allowed origins - ensure this matches what's in the server
+const ALLOWED_ORIGINS = ["https://magic.taiyaki.ai", "https://library.taiyaki.ai", "http://localhost:3000"];
 
 // Define the API endpoint
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
@@ -62,6 +62,7 @@ export function STLImporter() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [activeImports, setActiveImports] = useState<Record<string, ActiveImport>>({});
   const [expanded, setExpanded] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   
   // Get the scene functions
   const { loadSTL, selectModel, models } = useScene();
@@ -69,37 +70,105 @@ export function STLImporter() {
   // Initialize socket connection
   useEffect(() => {
     // Connect to the server socket
-    const newSocket = io(API_BASE_URL.replace('/api', ''));
-    
-    // Set the socket to state
-    setSocket(newSocket);
-    
-    // Connection event handlers
-    newSocket.on('connect', () => {
-      console.log('Socket.IO connected');
-    });
-    
-    newSocket.on('disconnect', () => {
-      console.log('Socket.IO disconnected');
-    });
-    
-    newSocket.on('connect_error', (error: Error) => {
-      console.error('Socket.IO connection error:', error);
-    });
-    
-    // Cleanup on unmount
-    return () => {
-      newSocket.disconnect();
-    };
+    try {
+      const socketUrl = API_BASE_URL.replace('/api', '');
+      console.log(`Connecting to Socket.IO at: ${socketUrl}`);
+      
+      const newSocket = io(socketUrl, {
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        timeout: 20000
+      });
+      
+      // Set the socket to state
+      setSocket(newSocket);
+      
+      // Connection event handlers
+      newSocket.on('connect', () => {
+        console.log('Socket.IO connected with ID:', newSocket.id);
+        setIsReady(true);
+      });
+      
+      newSocket.on('disconnect', () => {
+        console.log('Socket.IO disconnected');
+        setIsReady(false);
+      });
+      
+      newSocket.on('connect_error', (error: Error) => {
+        console.error('Socket.IO connection error:', error);
+        setIsReady(false);
+      });
+      
+      // Cleanup on unmount
+      return () => {
+        console.log('Disconnecting Socket.IO');
+        newSocket.disconnect();
+      };
+    } catch (error) {
+      console.error('Error initializing Socket.IO:', error);
+      return () => {/* no cleanup needed */};
+    }
   }, []);
+  
+  // Announce readiness to parent frames
+  useEffect(() => {
+    if (!isReady) return;
+    
+    // Function to announce readiness
+    const announceReady = () => {
+      try {
+        // Announce to potential parent windows
+        if (window.parent && window.parent !== window) {
+          console.log('Announcing FISHCAD ready to parent window');
+          window.parent.postMessage({
+            type: 'fishcad-ready',
+            ready: true,
+            version: '1.0'
+          }, '*');
+        }
+        
+        // Also send to any potential openers (when opened in new window)
+        if (window.opener) {
+          console.log('Announcing FISHCAD ready to opener window');
+          window.opener.postMessage({
+            type: 'fishcad-ready',
+            ready: true,
+            version: '1.0'
+          }, '*');
+        }
+      } catch (error) {
+        console.error('Error announcing readiness:', error);
+      }
+    };
+    
+    // Announce immediately
+    announceReady();
+    
+    // And also set a timeout to do it again after a second
+    // (some parent frames might not be ready to receive messages immediately)
+    const timeoutId = setTimeout(announceReady, 1000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [isReady]);
   
   // Set up event listeners for window messages
   useEffect(() => {
     // Message handler function
     const handleMessage = async (event: MessageEvent) => {
+      // Uncomment for debugging all messages
+      // console.log("Received message:", event.origin, event.data);
+      
+      // Validate origin (more permissive for development)
+      const validOrigin = process.env.NODE_ENV === 'development' ? 
+        true : // In development, accept messages from any origin for easier testing
+        ALLOWED_ORIGINS.includes(event.origin); // In production, strictly check origins
+      
       // Security check for allowed origins
-      if (!ALLOWED_ORIGINS.includes(event.origin)) {
-        console.log(`Ignored message from non-allowed origin: ${event.origin}`);
+      if (!validOrigin) {
+        if (event.data && typeof event.data === 'object' && 'type' in event.data) {
+          // Log the rejected message type for debugging
+          console.log(`Ignored message with type '${event.data.type}' from non-allowed origin: ${event.origin}`);
+        }
         return;
       }
       
@@ -112,34 +181,70 @@ export function STLImporter() {
       // Parse the message data
       const message = event.data as STLImportMessage;
       
-      // Log the message type
-      console.log(`Received message from ${event.origin} with type: ${message.type}`);
+      // Log the message type for debugging
+      console.log(`Processing message from ${event.origin} with type: ${message.type}`);
       
-      // Handle STL URL import
-      if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlUrl) {
-        console.log(`Received STL URL import request from ${event.origin}`, message);
-        await handleSTLUrlImport(message, event.origin);
-      }
-      // Handle direct base64 import
-      else if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlBase64) {
-        console.log(`Received STL base64 import request from ${event.origin}`);
-        await handleSTLBase64Import(message, event.origin);
-      }
-      // Handle direct file upload
-      else if (message.type === 'stl-upload') {
-        console.log(`Received STL file upload request from ${event.origin}`);
-        await handleSTLDirectUpload(message, event.origin);
+      try {
+        // Handle STL URL import
+        if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlUrl) {
+          console.log(`Received STL URL import request from ${event.origin}`, message);
+          await handleSTLUrlImport(message, event.origin);
+        }
+        // Handle direct base64 import
+        else if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlBase64) {
+          console.log(`Received STL base64 import request from ${event.origin} (${(message.stlBase64 as string).length} chars)`);
+          await handleSTLBase64Import(message, event.origin);
+        }
+        // Handle direct file upload
+        else if (message.type === 'stl-upload') {
+          console.log(`Received STL file upload request from ${event.origin}`);
+          await handleSTLDirectUpload(message, event.origin);
+        }
+        // Handle ready check
+        else if (message.type === 'fishcad-ready-check') {
+          console.log(`Received ready check from ${event.origin}`);
+          sendResponseToOrigin(event.origin, {
+            type: 'fishcad-ready-response',
+            ready: isReady,
+            version: '1.0'
+          });
+        }
+        // Handle ping (for connection testing)
+        else if (message.type === 'ping') {
+          console.log(`Received ping from ${event.origin}`);
+          sendResponseToOrigin(event.origin, {
+            type: 'pong',
+            timestamp: Date.now(),
+            originalMessage: message
+          });
+        }
+      } catch (error) {
+        console.error(`Error handling message of type ${message.type}:`, error);
+        
+        // Send generic error response
+        try {
+          sendResponseToOrigin(event.origin, {
+            type: `${message.type}-response`,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        } catch (responseError) {
+          console.error('Error sending error response:', responseError);
+        }
       }
     };
     
     // Add message event listener
     window.addEventListener('message', handleMessage);
     
+    // Log that we're listening for messages
+    console.log('STLImporter: Listening for postMessage events');
+    
     // Cleanup
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [socket, activeImports]);
+  }, [socket, activeImports, isReady]);
   
   // Handle STL URL import
   const handleSTLUrlImport = async (message: STLImportMessage, origin: string) => {
@@ -153,16 +258,24 @@ export function STLImporter() {
       const response = await fetch(`${API_BASE_URL}/import-stl`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify({
           stlUrl: message.stlUrl,
           fileName: message.fileName || 'model.stl',
           source: origin,
           metadata: message.metadata || {}
-        })
+        }),
+        credentials: 'include'
       });
       
+      // Check for network errors
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
+      // Parse response
       const data = await response.json();
       
       if (data.success && data.importId) {
@@ -206,7 +319,7 @@ export function STLImporter() {
       console.error('Error starting import:', error);
       
       // Show error notification
-      toast.error(`Failed to import model: ${(error as Error).message}`, {
+      toast.error(`Failed to import model: ${error instanceof Error ? error.message : 'Unknown error'}`, {
         id: "import-toast"
       });
       
@@ -214,7 +327,7 @@ export function STLImporter() {
       sendResponseToOrigin(origin, {
         type: 'stl-import-response',
         success: false,
-        error: (error as Error).message
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
@@ -306,8 +419,15 @@ export function STLImporter() {
         method: 'POST',
         body: formData,
         // Do not set Content-Type header, browser will set it with boundary
+        credentials: 'include'
       });
       
+      // Check for network errors
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
+      // Parse response
       const data = await response.json();
       
       if (data.success && data.importId) {
@@ -351,7 +471,7 @@ export function STLImporter() {
       console.error('Error processing base64 model:', error);
       
       // Show error notification
-      toast.error(`Failed to import model: ${(error as Error).message}`, {
+      toast.error(`Failed to import model: ${error instanceof Error ? error.message : 'Unknown error'}`, {
         id: "import-toast-base64"
       });
       
@@ -359,7 +479,7 @@ export function STLImporter() {
       sendResponseToOrigin(origin, {
         type: 'stl-import-response',
         success: false,
-        error: (error as Error).message
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
@@ -397,7 +517,7 @@ export function STLImporter() {
       console.error('Error handling upload request:', error);
       
       // Show error notification
-      toast.error(`Failed to process upload: ${(error as Error).message}`, {
+      toast.error(`Failed to process upload: ${error instanceof Error ? error.message : 'Unknown error'}`, {
         id: "import-toast-upload"
       });
       
@@ -405,7 +525,7 @@ export function STLImporter() {
       sendResponseToOrigin(origin, {
         type: 'stl-upload-response',
         success: false,
-        error: (error as Error).message
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
@@ -450,8 +570,6 @@ export function STLImporter() {
       
       try {
         // Load the model into the scene
-        // In a real implementation, you would fetch the STL file from the server
-        // and load it into the scene
         const modelUrl = `${API_BASE_URL}/models/${importId}`;
         await loadSTL(modelUrl, job.fileName);
         
@@ -469,7 +587,7 @@ export function STLImporter() {
         console.error('Error loading model into scene:', error);
         
         // Show error notification
-        toast.error(`Failed to load model into scene: ${(error as Error).message}`, {
+        toast.error(`Failed to load model into scene: ${error instanceof Error ? error.message : 'Unknown error'}`, {
           id: `import-toast-${importId}`
         });
       }
@@ -512,38 +630,62 @@ export function STLImporter() {
   
   // Helper function to send a response to the origin
   const sendResponseToOrigin = (origin: string, data: any) => {
-    // Find all iframes in the document
-    const iframes = document.querySelectorAll('iframe');
-    let found = false;
+    // Don't send to invalid origins
+    if (!origin || origin === 'null') {
+      console.warn(`Cannot send response to invalid origin: ${origin}`);
+      return;
+    }
     
-    // Check each iframe
-    iframes.forEach(iframe => {
-      try {
-        // Try to get the iframe's origin
-        const iframeOrigin = new URL(iframe.src).origin;
-        
-        // If the origins match, send the message
-        if (iframeOrigin === origin) {
-          iframe.contentWindow?.postMessage(data, origin);
-          found = true;
-        }
-      } catch (error) {
-        // Ignore errors when trying to access iframe origins
-        console.warn("Could not access iframe origin", error);
-      }
-    });
-    
-    // If no matching iframe was found, try a direct window.parent approach
-    // This can work for redirects or cases where the iframe has been removed
-    if (!found) {
-      try {
-        // Log the attempt
-        console.log(`No iframe found with origin ${origin}, trying parent window`);
-        
-        // Send to parent window with target origin
+    // First try window.parent approach (for all origins)
+    let sentToParent = false;
+    try {
+      if (window.parent && window.parent !== window) {
+        // Try to send to the parent window first
         window.parent.postMessage(data, origin);
-      } catch (error) {
-        console.warn(`Could not send response to origin ${origin}:`, error);
+        sentToParent = true;
+        console.log(`Sent response to parent window (${origin}):`, data);
+      }
+    } catch (parentError) {
+      console.warn(`Error sending to parent window (${origin}):`, parentError);
+    }
+    
+    // If we couldn't send to parent or still want to try iframes
+    if (!sentToParent) {
+      // Find all iframes in the document
+      const iframes = document.querySelectorAll('iframe');
+      let found = false;
+      
+      // Check each iframe
+      iframes.forEach(iframe => {
+        try {
+          // Try to get the iframe's origin
+          const iframeOrigin = new URL(iframe.src).origin;
+          
+          // If the origins match, send the message
+          if (iframeOrigin === origin) {
+            iframe.contentWindow?.postMessage(data, origin);
+            found = true;
+            console.log(`Sent response to iframe (${origin}):`, data);
+          }
+        } catch (error) {
+          // Ignore errors when trying to access iframe origins
+          console.warn("Could not access iframe origin", error);
+        }
+      });
+      
+      // If no matching iframe was found, try a direct window.opener approach
+      if (!found) {
+        try {
+          if (window.opener) {
+            // Send to the opener window
+            window.opener.postMessage(data, origin);
+            console.log(`Sent response to opener window (${origin}):`, data);
+          } else {
+            console.warn(`No suitable target found for origin ${origin}`);
+          }
+        } catch (openerError) {
+          console.warn(`Could not send response to opener (${origin}):`, openerError);
+        }
       }
     }
   };

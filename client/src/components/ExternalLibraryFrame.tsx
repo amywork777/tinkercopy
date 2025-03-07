@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
@@ -8,6 +8,7 @@ interface ExternalLibraryFrameProps {
   height?: string | number;
   width?: string | number;
   className?: string;
+  allowFullIntegration?: boolean;
 }
 
 /**
@@ -22,9 +23,11 @@ export function ExternalLibraryFrame({
   height = 600,
   width = '100%',
   className = '',
+  allowFullIntegration = true, // Default to allowing full integration
 }: ExternalLibraryFrameProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [iframeElement, setIframeElement] = useState<HTMLIFrameElement | null>(null);
 
   // Check if the source URL is from an allowed domain
   const isAllowedDomain = () => {
@@ -39,13 +42,69 @@ export function ExternalLibraryFrame({
   // Handle iframe load event
   const handleLoad = () => {
     setLoading(false);
+    // Indicate to the iframe that FISHCAD is ready
+    if (iframeElement && iframeElement.contentWindow) {
+      try {
+        const targetOrigin = new URL(src).origin;
+        iframeElement.contentWindow.postMessage({
+          type: 'fishcad-ready',
+          ready: true,
+          version: '1.0'
+        }, targetOrigin);
+        
+        // Log that we sent the ready message
+        console.log(`Sent fishcad-ready message to ${targetOrigin}`);
+      } catch (err) {
+        console.error('Error sending ready message to iframe:', err);
+      }
+    }
   };
 
   // Handle iframe error event
   const handleError = () => {
     setLoading(false);
     setError('Failed to load external content');
+    console.error(`Failed to load iframe content from: ${src}`);
   };
+
+  // Set up message listener for direct communication with iframe
+  useEffect(() => {
+    // Only add listeners if we have an iframe element
+    if (!iframeElement) return;
+    
+    // Listen for message events
+    const handleMessage = (event: MessageEvent) => {
+      // Validate the origin
+      try {
+        const srcOrigin = new URL(src).origin;
+        if (event.origin !== srcOrigin) {
+          return; // Ignore messages from other origins
+        }
+        
+        // Handle specific message types
+        if (event.data?.type === 'iframe-height') {
+          // Handle iframe height request (responsive iframe)
+          const requestedHeight = event.data.height;
+          if (requestedHeight && typeof requestedHeight === 'number') {
+            iframeElement.style.height = `${requestedHeight}px`;
+          }
+        }
+        
+        // Log received messages for debugging
+        console.log(`Received message from iframe (${event.origin}):`, event.data);
+      } catch (err) {
+        console.error('Error processing iframe message:', err);
+      }
+    };
+    
+    // Add event listener
+    window.addEventListener('message', handleMessage);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [iframeElement, src]);
 
   // If the domain is not allowed, show an error
   if (!isAllowedDomain()) {
@@ -60,6 +119,13 @@ export function ExternalLibraryFrame({
       </Card>
     );
   }
+
+  // Set ref callback to store the iframe element
+  const iframeRef = (element: HTMLIFrameElement) => {
+    if (element !== null) {
+      setIframeElement(element);
+    }
+  };
 
   return (
     <div className={`relative ${className}`} style={{ height, width }}>
@@ -81,6 +147,7 @@ export function ExternalLibraryFrame({
       )}
       
       <iframe
+        ref={iframeRef}
         src={src}
         title={title}
         width="100%"
@@ -88,8 +155,13 @@ export function ExternalLibraryFrame({
         frameBorder="0"
         onLoad={handleLoad}
         onError={handleError}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        sandbox={allowFullIntegration ? 
+          "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation allow-downloads" : 
+          "allow-scripts allow-same-origin allow-forms allow-popups"
+        }
         referrerPolicy="no-referrer-when-downgrade"
+        allow="clipboard-read; clipboard-write"
+        loading="lazy"
         className={`${loading || error ? 'invisible' : 'visible'}`}
       />
     </div>

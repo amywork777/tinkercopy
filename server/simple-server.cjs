@@ -305,7 +305,7 @@ app.post('/api/submit-feedback', async (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const isProduction = NODE_ENV === 'production';
 const DEBUG = process.env.DEBUG || false;

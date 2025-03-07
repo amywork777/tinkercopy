@@ -5,13 +5,14 @@ import { TransformControls } from "@/components/TransformControls";
 import ToolBar from "@/components/ToolBar";
 import { RightSidebar } from "@/components/RightSidebar";
 import { Button } from "@/components/ui/button";
-import { Printer, PanelLeft, LogIn, LogOut, User, Share2 } from "lucide-react";
+import { Printer, PanelLeft, LogIn, LogOut, User, Share2, CrownIcon } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { initFishCadMessageListener } from "@/lib/iframeInterceptor";
 import MobileWarning from "@/components/MobileWarning";
 import MobileView from "@/components/MobileView";
 import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { FeedbackDialog } from "@/components/FeedbackDialog";
 import {
   DropdownMenu,
@@ -24,9 +25,10 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ShareDialog } from "@/components/ShareDialog";
 import FishLogo from "@/components/FishLogo";
-import ImportStatsDebug from "@/components/ImportStatsDebug";
 import STLImporter from "@/components/STLImporter";
 import PendingImportDialog from "@/components/PendingImportDialog";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Interface for pending import data stored in localStorage
 interface PendingImportData {
@@ -68,6 +70,10 @@ export default function Home() {
   const [skipMobileWarning, setSkipMobileWarning] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImportData | null>(null);
   const { user, isAuthenticated, login, logout } = useAuth();
+  const { subscription } = useSubscription();
+  
+  // Check if user is a Pro user
+  const isProUser = subscription?.isPro;
   
   // Initialize the FISHCAD message listener when the component mounts
   useEffect(() => {
@@ -122,6 +128,11 @@ export default function Home() {
     setUseMobileVersion(true);
   };
 
+  // Navigate to pricing page
+  const navigateToPricing = () => {
+    window.location.href = "/pricing";
+  };
+
   // If mobile version is active, render the simplified mobile view
   if (useMobileVersion) {
     return <MobileView />;
@@ -154,10 +165,41 @@ export default function Home() {
               />
             </a>
             <h1 className="text-xl font-bold text-primary">taiyaki.ai</h1>
+            <div className="ml-3">
+              <ThemeToggle />
+            </div>
           </div>
           <div className="flex items-center space-x-2">
             <FeedbackDialog />
-            <ThemeToggle />
+            
+            {/* Pro Badge or Upgrade Button */}
+            {isAuthenticated && (
+              <>
+                {isProUser ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge className="bg-primary text-white flex items-center h-7 px-2 mr-1">
+                        <CrownIcon className="h-3 w-3 mr-1" />
+                        <span>Pro</span>
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>You have a Pro subscription</p>
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={navigateToPricing}
+                    className="gap-1"
+                  >
+                    <CrownIcon className="h-4 w-4" />
+                    <span>Upgrade to Pro</span>
+                  </Button>
+                )}
+              </>
+            )}
             
             {/* User Avatar or Login Button */}
             {isAuthenticated ? (
@@ -176,7 +218,21 @@ export default function Home() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>{user?.displayName}</DropdownMenuLabel>
                   <DropdownMenuLabel className="text-xs text-muted-foreground">{user?.email}</DropdownMenuLabel>
+                  {isProUser && (
+                    <DropdownMenuLabel className="flex items-center">
+                      <Badge className="bg-primary/10 text-primary flex items-center">
+                        <CrownIcon className="h-3 w-3 mr-1" />
+                        <span>Pro Subscription</span>
+                      </Badge>
+                    </DropdownMenuLabel>
+                  )}
                   <DropdownMenuSeparator />
+                  {!isProUser && (
+                    <DropdownMenuItem onClick={navigateToPricing}>
+                      <CrownIcon className="h-4 w-4 mr-2" />
+                      <span>Upgrade to Pro</span>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={logout}>
                     <LogOut className="h-4 w-4 mr-2" />
                     <span>Log out</span>
@@ -259,10 +315,7 @@ export default function Home() {
           )}
         </main>
         
-        {/* Debug component - only shown in development */}
-        {process.env.NODE_ENV === 'development' && <ImportStatsDebug />}
-        
-        {/* STL Importer Component - always present but may be hidden */}
+        {/* Scene Save and Share */}
         <STLImporter />
       </div>
     </TooltipProvider>

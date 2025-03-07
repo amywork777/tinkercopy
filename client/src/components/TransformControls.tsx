@@ -363,81 +363,107 @@ export function TransformControls({ className }: { className?: string }) {
   };
 
   return (
-    <div className={cn("p-2", className)}>
-      <Card className="bg-background/90 backdrop-blur-sm border shadow-sm mb-2">
-        <CardContent className="p-2">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-semibold">Transform Controls</h3>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => resetTransform()}
-              className="h-6 text-xs"
-            >
-              <RefreshCw className="h-3 w-3 mr-1" /> Reset
-            </Button>
-          </div>
-          
+    <div className={cn("", className)}>
+      <Card className="bg-background/90 backdrop-blur-sm shadow-lg border border-border max-w-full">
+        <CardContent className="p-1 sm:p-2">
           <div className="space-y-2">
-            <div className="flex space-x-1">
-              <Button
-                variant={transformMode === "scale" ? "default" : "outline"}
-                className="flex-1 h-7 text-xs"
-                onClick={() => setTransformMode("scale")}
-              >
-                Scale
-              </Button>
-              <Button
-                variant={transformMode === "rotate" ? "default" : "outline"}
-                className="flex-1 h-7 text-xs"
-                onClick={() => setTransformMode("rotate")}
-              >
-                Rotate
-              </Button>
-              <Button
-                variant={transformMode === "translate" ? "default" : "outline"}
-                className="flex-1 h-7 text-xs"
-                onClick={() => setTransformMode("translate")}
-              >
-                Move
-              </Button>
-            </div>
-
-            {/* Model Info */}
-            <div className="flex flex-wrap items-center text-xs gap-1 border-t border-border pt-1 mt-1">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={toggleUnit}
-                className="h-5 text-xs font-normal px-1"
-              >
-                {unit.toUpperCase()}
-              </Button>
-              <div className="flex justify-between text-[10px]">
-                <div>
-                  <span className="text-red-500">W:</span>{formatDimension(dimensions.width)}
-                </div>
-                <div>
-                  <span className="text-blue-500">D:</span>{formatDimension(dimensions.height)}
-                </div>
-                <div>
-                  <span className="text-green-500">H:</span>{formatDimension(dimensions.depth)}
-                </div>
-                <div className="cursor-pointer" onClick={toggleUnit}>
-                  {getDimensionUnit()}
-                </div>
-              </div>
-            </div>
-
             {selectedModelIndex === null ? (
-              <div className="text-center p-2 text-xs text-muted-foreground">
-                Select a model to transform it
+              <div className="flex items-center justify-center h-8 text-xs text-muted-foreground">
+                Select a model
               </div>
             ) : (
               <>
+                {/* Mode Selection */}
+                <div className="flex items-center space-x-1 justify-center">
+                  <div className="bg-muted rounded-md p-0.5 flex">
+                    {TRANSFORM_MODES.map((mode) => {
+                      const IconComponent = mode.icon;
+                      const isActive = transformMode === mode.id;
+                      return (
+                        <Button
+                          key={mode.id}
+                          variant="ghost"
+                          size="sm"
+                          className={`rounded-sm h-7 px-2 ${isActive ? 'bg-background shadow-sm' : ''}`}
+                          onClick={() => setTransformMode(mode.id as any)}
+                        >
+                          <IconComponent className="h-3.5 w-3.5 mr-1" />
+                          <span className="text-xs hidden sm:inline">{mode.label}</span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7"
+                        onClick={resetTransform}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Reset Transform</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center space-x-1">
+                        <Switch
+                          checked={snapSettings.enabled}
+                          onCheckedChange={toggleSnap}
+                          className="data-[state=checked]:bg-green-500"
+                        />
+                        <span className="text-xs whitespace-nowrap hidden sm:inline">Snap</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Enable Snap to Grid</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={toggleUnit}
+                      >
+                        {unit.toUpperCase()}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Toggle Units (MM/Inches)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+
+                {/* Model Info */}
+                <div className="flex flex-wrap items-center justify-between text-xs gap-1">
+                  <div className="flex text-[10px] space-x-2">
+                    <div>
+                      <span className="text-red-500">W:</span>{formatDimension(dimensions.width)}
+                    </div>
+                    <div>
+                      <span className="text-blue-500">D:</span>{formatDimension(dimensions.height)}
+                    </div>
+                    <div>
+                      <span className="text-green-500">H:</span>{formatDimension(dimensions.depth)}
+                    </div>
+                    <div>
+                      {getDimensionUnit()}
+                    </div>
+                  </div>
+                </div>
+
                 {transformMode === "translate" && (
-                  <div className="space-y-2">
-                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                  <div className="space-y-1.5">
+                    <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <Label htmlFor="x-position" className="text-red-500 text-xs">X Position</Label>
@@ -446,75 +472,69 @@ export function TransformControls({ className }: { className?: string }) {
                               type="number"
                               value={formatPosition(xPosition)}
                               onChange={(e) => handlePositionInputChange('x', e.target.value)}
-                              className="w-16 h-6 text-xs"
+                              className="w-14 h-5 text-xs"
                             />
-                            <span className="text-xs text-muted-foreground">
-                              {getDimensionUnit()}
-                            </span>
+                            <span className="text-xs text-muted-foreground">{POSITION_UNIT}</span>
                           </div>
                         </div>
                         <Slider 
                           id="x-position"
-                          min={-200} 
-                          max={200} 
-                          step={1} 
+                          min={-150} 
+                          max={150}
+                          step={1}
                           value={[xPosition]} 
                           onValueChange={(values) => handlePositionSliderChange('x', values[0])}
                           className="slider-red"
                         />
                       </div>
                     </Card>
-
-                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                    
+                    <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <Label htmlFor="y-position" className="text-blue-500 text-xs">Y Position</Label>
                           <div className="flex items-center gap-1">
                             <Input
                               type="number"
-                              value={formatPosition(zPosition)}
+                              value={formatPosition(yPosition)}
                               onChange={(e) => handlePositionInputChange('y', e.target.value)}
-                              className="w-16 h-6 text-xs"
+                              className="w-14 h-5 text-xs"
                             />
-                            <span className="text-xs text-muted-foreground">
-                              {getDimensionUnit()}
-                            </span>
+                            <span className="text-xs text-muted-foreground">{POSITION_UNIT}</span>
                           </div>
                         </div>
                         <Slider 
                           id="y-position"
-                          min={-200} 
-                          max={200} 
-                          step={1} 
-                          value={[zPosition]} 
+                          min={-150} 
+                          max={150}
+                          step={1}
+                          value={[yPosition]} 
                           onValueChange={(values) => handlePositionSliderChange('y', values[0])}
                           className="slider-blue"
                         />
                       </div>
                     </Card>
-
-                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                    
+                    <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <Label htmlFor="z-position" className="text-green-500 text-xs">Z Position</Label>
                           <div className="flex items-center gap-1">
                             <Input
                               type="number"
-                              value={formatPosition(yPosition)}
+                              value={formatPosition(zPosition)}
                               onChange={(e) => handlePositionInputChange('z', e.target.value)}
-                              className="w-16 h-6 text-xs"
+                              className="w-14 h-5 text-xs"
                             />
-                            <span className="text-xs text-muted-foreground">
-                              {getDimensionUnit()}
-                            </span>
+                            <span className="text-xs text-muted-foreground">{POSITION_UNIT}</span>
                           </div>
                         </div>
                         <Slider 
                           id="z-position"
-                          min={-200} 
-                          max={200} 
-                          step={1} 
-                          value={[yPosition]} 
+                          min={-150} 
+                          max={150}
+                          step={1}
+                          value={[zPosition]} 
                           onValueChange={(values) => handlePositionSliderChange('z', values[0])}
                           className="slider-green"
                         />
@@ -524,79 +544,79 @@ export function TransformControls({ className }: { className?: string }) {
                 )}
                 
                 {transformMode === "rotate" && (
-                  <div className="space-y-2">
-                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                  <div className="space-y-1.5">
+                    <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <Label htmlFor="x-rotation" className="text-red-500 text-xs">X Rotation</Label>
                           <div className="flex items-center gap-1">
                             <Input
                               type="number"
-                              value={(xRotation * 180 / Math.PI).toFixed(0)}
+                              value={xRotation.toFixed(0)}
                               onChange={(e) => handleRotationInputChange('x', e.target.value)}
-                              className="w-16 h-6 text-xs"
+                              className="w-14 h-5 text-xs"
                             />
                             <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
                           </div>
                         </div>
                         <Slider 
                           id="x-rotation"
-                          min={-Math.PI} 
-                          max={Math.PI} 
-                          step={Math.PI / 180} 
+                          min={-180} 
+                          max={180}
+                          step={1}
                           value={[xRotation]} 
                           onValueChange={(values) => handleRotationSliderChange('x', values[0])}
                           className="slider-red"
                         />
                       </div>
                     </Card>
-
-                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                    
+                    <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <Label htmlFor="y-rotation" className="text-blue-500 text-xs">Y Rotation</Label>
                           <div className="flex items-center gap-1">
                             <Input
                               type="number"
-                              value={(zRotation * 180 / Math.PI).toFixed(0)}
+                              value={yRotation.toFixed(0)}
                               onChange={(e) => handleRotationInputChange('y', e.target.value)}
-                              className="w-16 h-6 text-xs"
+                              className="w-14 h-5 text-xs"
                             />
                             <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
                           </div>
                         </div>
                         <Slider 
                           id="y-rotation"
-                          min={-Math.PI} 
-                          max={Math.PI} 
-                          step={Math.PI / 180} 
-                          value={[zRotation]} 
+                          min={-180} 
+                          max={180}
+                          step={1}
+                          value={[yRotation]} 
                           onValueChange={(values) => handleRotationSliderChange('y', values[0])}
                           className="slider-blue"
                         />
                       </div>
                     </Card>
-
-                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                    
+                    <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <Label htmlFor="z-rotation" className="text-green-500 text-xs">Z Rotation</Label>
                           <div className="flex items-center gap-1">
                             <Input
                               type="number"
-                              value={(yRotation * 180 / Math.PI).toFixed(0)}
+                              value={zRotation.toFixed(0)}
                               onChange={(e) => handleRotationInputChange('z', e.target.value)}
-                              className="w-16 h-6 text-xs"
+                              className="w-14 h-5 text-xs"
                             />
                             <span className="text-xs text-muted-foreground">{ROTATION_UNIT}</span>
                           </div>
                         </div>
                         <Slider 
                           id="z-rotation"
-                          min={-Math.PI} 
-                          max={Math.PI} 
-                          step={Math.PI / 180} 
-                          value={[yRotation]} 
+                          min={-180} 
+                          max={180}
+                          step={1}
+                          value={[zRotation]} 
                           onValueChange={(values) => handleRotationSliderChange('z', values[0])}
                           className="slider-green"
                         />
@@ -606,35 +626,43 @@ export function TransformControls({ className }: { className?: string }) {
                 )}
                 
                 {transformMode === "scale" && (
-                  <div className="space-y-2">
-                    <Card className="bg-background/80 backdrop-blur-sm p-2 border">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="flex items-center space-x-1">
-                          <Checkbox 
-                            id="uniform-scale" 
-                            checked={useUniformScale}
-                            onCheckedChange={(checked) => setUseUniformScale(!!checked)}
-                            className="h-3 w-3"
-                          />
-                          <Label htmlFor="uniform-scale" className="text-xs">Uniform</Label>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <Checkbox 
-                            id="fine-scale" 
-                            checked={scaleMode === 'fine'}
-                            onCheckedChange={(checked) => setScaleMode(checked ? 'fine' : 'normal')}
-                            className="h-3 w-3"
-                          />
-                          <Label htmlFor="fine-scale" className="text-xs">Fine (0.01-2x)</Label>
-                        </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center space-x-2 justify-between">
+                      <div className="flex items-center">
+                        <Checkbox 
+                          id="uniform-scale" 
+                          checked={useUniformScale} 
+                          onCheckedChange={(checked) => setUseUniformScale(checked === true)}
+                          className="h-3.5 w-3.5 rounded-sm mr-1.5"
+                        />
+                        <Label htmlFor="uniform-scale" className="text-xs cursor-pointer">Uniform Scale</Label>
                       </div>
-                    </Card>
-
+                      
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant={scaleMode === 'normal' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setScaleMode('normal')}
+                          className="h-6 text-xs px-2"
+                        >
+                          Normal
+                        </Button>
+                        <Button
+                          variant={scaleMode === 'fine' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setScaleMode('fine')}
+                          className="h-6 text-xs px-2"
+                        >
+                          Fine
+                        </Button>
+                      </div>
+                    </div>
+                    
                     {useUniformScale ? (
-                      <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                      <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
-                            <Label htmlFor="uniform-scale" className="text-purple-500 text-xs">Uniform Scale</Label>
+                            <Label htmlFor="uniform-scale-slider" className="text-xs">Uniform Scale</Label>
                             <div className="flex items-center gap-1">
                               <Input
                                 type="number"
@@ -643,16 +671,16 @@ export function TransformControls({ className }: { className?: string }) {
                                 min={0.01}
                                 max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
                                 step={scaleMode === 'fine' ? 0.005 : 0.01}
-                                className="w-16 h-6 text-xs"
+                                className="w-14 h-5 text-xs"
                               />
                               <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
                             </div>
                           </div>
                           <Slider 
-                            id="uniform-scale"
+                            id="uniform-scale-slider"
                             min={scaleMode === 'fine' ? 0.01 : 0.1} 
-                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE} 
-                            step={scaleMode === 'fine' ? 0.005 : 0.01} 
+                            max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
+                            step={scaleMode === 'fine' ? 0.005 : 0.01}
                             value={[uniformScale]} 
                             onValueChange={(values) => handleUniformScaleSliderChange(values[0])}
                             className="slider-purple"
@@ -661,7 +689,7 @@ export function TransformControls({ className }: { className?: string }) {
                       </Card>
                     ) : (
                       <>
-                        <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                        <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                           <div className="space-y-1">
                             <div className="flex items-center justify-between">
                               <Label htmlFor="x-scale" className="text-red-500 text-xs">X Scale</Label>
@@ -673,7 +701,7 @@ export function TransformControls({ className }: { className?: string }) {
                                   min={0.01}
                                   max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
                                   step={scaleMode === 'fine' ? 0.005 : 0.01}
-                                  className="w-16 h-6 text-xs"
+                                  className="w-14 h-5 text-xs"
                                 />
                                 <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
                               </div>
@@ -690,7 +718,7 @@ export function TransformControls({ className }: { className?: string }) {
                           </div>
                         </Card>
                         
-                        <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                        <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                           <div className="space-y-1">
                             <div className="flex items-center justify-between">
                               <Label htmlFor="y-scale" className="text-blue-500 text-xs">Y Scale</Label>
@@ -702,7 +730,7 @@ export function TransformControls({ className }: { className?: string }) {
                                   min={0.01}
                                   max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
                                   step={scaleMode === 'fine' ? 0.005 : 0.01}
-                                  className="w-16 h-6 text-xs"
+                                  className="w-14 h-5 text-xs"
                                 />
                                 <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
                               </div>
@@ -719,7 +747,7 @@ export function TransformControls({ className }: { className?: string }) {
                           </div>
                         </Card>
                         
-                        <Card className="bg-background/80 backdrop-blur-sm p-2 border">
+                        <Card className="bg-background/80 backdrop-blur-sm p-1.5 border">
                           <div className="space-y-1">
                             <div className="flex items-center justify-between">
                               <Label htmlFor="z-scale" className="text-green-500 text-xs">Z Scale</Label>
@@ -731,7 +759,7 @@ export function TransformControls({ className }: { className?: string }) {
                                   min={0.01}
                                   max={scaleMode === 'fine' ? MAX_SCALE_FINE : MAX_SCALE}
                                   step={scaleMode === 'fine' ? 0.005 : 0.01}
-                                  className="w-16 h-6 text-xs"
+                                  className="w-14 h-5 text-xs"
                                 />
                                 <span className="text-xs text-muted-foreground">{SCALE_UNIT}</span>
                               </div>

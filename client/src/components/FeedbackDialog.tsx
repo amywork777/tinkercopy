@@ -27,6 +27,25 @@ export function FeedbackDialog() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate all required fields
+    if (!name.trim()) {
+      toast({
+        title: "Name Required",
+        description: "Please enter your name before submitting",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!email.trim()) {
+      toast({
+        title: "Email Required",
+        description: "Please enter your email before submitting",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (!feedback.trim()) {
       toast({
         title: "Feedback Required",
@@ -76,6 +95,7 @@ export function FeedbackDialog() {
         }, {
           headers: {
             'Content-Type': 'application/json'
+            // Don't set Origin header manually, browsers will set this automatically
           },
           withCredentials: false,
           timeout: 10000 // Increase timeout to 10 seconds
@@ -85,13 +105,21 @@ export function FeedbackDialog() {
         
         if (response.status === 200) {
           // Show success message with details from the server response
+          const savedToFirebase = response.data.savedToFirebase === true;
           const emailSent = response.data.emailSent === true;
+          
+          let successMessage = "Thank you for your feedback!";
+          if (savedToFirebase) {
+            successMessage += " It has been saved to our feedback database.";
+          } else if (emailSent) {
+            successMessage += " We've received your message via email.";
+          } else {
+            successMessage += " We've received your message.";
+          }
           
           toast({
             title: "Feedback Submitted",
-            description: emailSent 
-              ? "Thank you for your feedback! We've received your message via email."
-              : "Thank you for your feedback! We've received your message, but there might have been an issue sending the email confirmation.",
+            description: successMessage,
           });
           
           // Close the dialog and reset form
@@ -121,19 +149,28 @@ export function FeedbackDialog() {
             }, {
               headers: {
                 'Content-Type': 'application/json'
+                // Don't set Origin header manually, browsers will set this automatically
               },
               withCredentials: false,
               timeout: 10000
             });
             
             if (retryResponse.status === 200) {
+              const savedToFirebase = retryResponse.data.savedToFirebase === true;
               const emailSent = retryResponse.data.emailSent === true;
+              
+              let successMessage = "Thank you for your feedback!";
+              if (savedToFirebase) {
+                successMessage += " It has been saved to our feedback database.";
+              } else if (emailSent) {
+                successMessage += " We've received your message via email.";
+              } else {
+                successMessage += " We've received your message.";
+              }
               
               toast({
                 title: "Feedback Submitted",
-                description: emailSent 
-                  ? "Thank you for your feedback! We've received your message via email."
-                  : "Thank you for your feedback! We've received your message, but there might have been an issue sending the email confirmation.",
+                description: successMessage,
               });
               
               // Close the dialog and reset form
@@ -192,11 +229,12 @@ export function FeedbackDialog() {
         // Create a mailto link as fallback
         const subject = `Feedback for Taiyaki from ${window.location.hostname}`;
         const body = `Source: ${window.location.hostname}
-Name: ${name || 'Not provided'}
-Email: ${email || 'Not provided'}
+Name: ${name}
+Email: ${email}
 
 Feedback:
 ${feedback}`;
+        
         const mailtoUrl = `mailto:taiyaki.orders@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         
         // Open the mailto link
@@ -249,32 +287,34 @@ ${feedback}`;
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="name" className="text-right">
-                Name
+                Name <span className="text-xs text-muted-foreground">(required)</span>
               </Label>
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Your name (optional)"
+                placeholder="Your name"
                 className="col-span-3"
+                required
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="email" className="text-right">
-                Email
+                Email <span className="text-xs text-muted-foreground">(required)</span>
               </Label>
               <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your email (optional)"
+                placeholder="Your email"
                 className="col-span-3"
+                required
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="feedback" className="text-right">
-                Feedback
+                Feedback <span className="text-xs text-muted-foreground">(required)</span>
               </Label>
               <Textarea
                 id="feedback"

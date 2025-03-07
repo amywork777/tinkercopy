@@ -346,7 +346,7 @@ export function ShareDialog() {
           <Share2 className="h-5 w-5 md:h-4 md:w-4" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[425px] p-4" align="end">
+      <PopoverContent className="w-[90vw] max-w-[425px] p-4" align="end" sideOffset={5}>
         <div className="space-y-4">
           <h4 className="font-medium leading-none mb-2">Share & Export</h4>
           <Tabs defaultValue="screenshot" className="w-full">
@@ -403,30 +403,30 @@ export function ShareDialog() {
                       Clicking the options below will copy the image to your clipboard and open the sharing platform.
                     </p>
                     
-                    <div className="flex space-x-2">
+                    <div className="grid grid-cols-3 gap-2 sm:flex sm:space-x-2">
                       <Button
                         variant="outline"
-                        className="flex-1"
+                        className="flex-1 px-2"
                         onClick={() => handleShare('email')}
                       >
-                        <Mail className="mr-2 h-4 w-4" />
-                        Email
+                        <Mail className="mr-1 h-4 w-4" />
+                        <span className="text-xs">Email</span>
                       </Button>
                       <Button
                         variant="outline"
-                        className="flex-1"
+                        className="flex-1 px-2"
                         onClick={() => handleShare('twitter')}
                       >
-                        <Twitter className="mr-2 h-4 w-4" />
-                        X/Twitter
+                        <Twitter className="mr-1 h-4 w-4" />
+                        <span className="text-xs">X/Twitter</span>
                       </Button>
                       <Button
                         variant="outline"
-                        className="flex-1"
+                        className="flex-1 px-2"
                         onClick={() => handleShare('linkedin')}
                       >
-                        <Linkedin className="mr-2 h-4 w-4" />
-                        LinkedIn
+                        <Linkedin className="mr-1 h-4 w-4" />
+                        <span className="text-xs">LinkedIn</span>
                       </Button>
                     </div>
                   </>

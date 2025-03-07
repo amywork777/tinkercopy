@@ -1,0 +1,16 @@
+// Copy these rules to your Firebase Console > Firestore Database > Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Existing rules for other collections remain unchanged
+    
+    // Add this rule for the user-feedback collection
+    match /user-feedback/{feedbackId} {
+      // Allow read access to authenticated users
+      // Allow write access for the feedback form (even for unauthenticated users)
+      allow read: if request.auth != null;
+      allow create: if true; // Anyone can create feedback
+    }
+  }
+} 

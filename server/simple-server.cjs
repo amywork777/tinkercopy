@@ -4,6 +4,8 @@ const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
 
 // Manually load environment variables if .env file exists
 try {
@@ -35,6 +37,57 @@ try {
   }
 } catch (error) {
   console.error('Error loading .env file:', error);
+}
+
+// Set email credentials directly if not already in environment
+if (!process.env.EMAIL_USER) {
+  process.env.EMAIL_USER = 'taiyaki.orders@gmail.com';
+  console.log('Set EMAIL_USER directly in code');
+}
+
+if (!process.env.EMAIL_PASSWORD) {
+  process.env.EMAIL_PASSWORD = 'lfrq katt exfz jzoh';
+  console.log('Set EMAIL_PASSWORD directly in code');
+}
+
+// Firebase configuration
+let firebaseApp;
+let db;
+
+try {
+  // If using service account credentials directly
+  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
+    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) 
+    : null;
+  
+  // Check if we have the required service account info
+  if (serviceAccount) {
+    firebaseApp = initializeApp({
+      credential: cert(serviceAccount),
+      projectId: 'taiyaki-test1' // Your project ID
+    });
+    console.log('Firebase initialized with service account credentials');
+  } else {
+    // Try to read from service account file if it exists
+    const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
+    if (fs.existsSync(serviceAccountPath)) {
+      firebaseApp = initializeApp({
+        credential: cert(require(serviceAccountPath)),
+        projectId: 'taiyaki-test1' // Your project ID
+      });
+      console.log('Firebase initialized with service account file');
+    } else {
+      console.warn('No Firebase service account found. Feedback storage will not work.');
+    }
+  }
+  
+  // Initialize Firestore if Firebase initialized successfully
+  if (firebaseApp) {
+    db = getFirestore();
+    console.log('Firestore initialized successfully');
+  }
+} catch (error) {
+  console.error('Error initializing Firebase:', error);
 }
 
 // Create express app
@@ -69,32 +122,81 @@ app.get('/api/test', (req, res) => {
   return res.status(200).json({ success: true, message: 'Simple server is running' });
 });
 
-// Test email config endpoint
-app.get('/api/test-email-config', (req, res) => {
-  console.log('Email config test endpoint hit');
+// Test Firebase config endpoint
+app.get('/api/test-firebase-config', (req, res) => {
+  console.log('Firebase config test endpoint hit');
   
-  // Always use taiyaki.orders@gmail.com
-  const emailUser = 'taiyaki.orders@gmail.com';
-  const emailPass = process.env.EMAIL_PASSWORD;
-  
-  console.log('Email configuration:');
-  console.log('- EMAIL_USER:', emailUser);
-  console.log('- EMAIL_PASSWORD:', emailPass ? 'is set' : 'not set');
-  
-  // Don't expose the actual password in the response
   return res.status(200).json({ 
     success: true, 
-    emailConfig: {
-      user: emailUser,
-      passwordConfigured: !!emailPass
+    firebaseConfig: {
+      initialized: !!firebaseApp,
+      firestoreAvailable: !!db
     },
     envVarsLoaded: {
       NODE_ENV: process.env.NODE_ENV || 'not set',
-      PORT: process.env.PORT || 'not set',
-      EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? 'is set' : 'not set'
+      PORT: process.env.PORT || 'not set'
     }
   });
 });
+
+// Function to save feedback to Firebase Firestore
+async function saveToFirestore(data) {
+  if (!db) {
+    throw new Error('Firestore not initialized');
+  }
+  
+  // Create a reference to the feedback collection
+  const feedbackRef = db.collection('user-feedback'); // Changed to use a dedicated collection for feedback
+  
+  // Add a timestamp if not provided
+  const feedbackData = {
+    ...data,
+    timestamp: data.timestamp || new Date().toISOString()
+  };
+  
+  // Add the document to Firestore
+  const docRef = await feedbackRef.add(feedbackData);
+  console.log('Feedback saved to Firestore with ID:', docRef.id);
+  
+  return {
+    id: docRef.id,
+    ...feedbackData
+  };
+}
+
+// Function to send email as fallback
+async function sendEmailFallback(data) {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: 'taiyaki.orders@gmail.com',
+      pass: process.env.EMAIL_PASSWORD || 'lfrq katt exfz jzoh'
+    }
+  });
+  
+  const mailOptions = {
+    from: 'taiyaki.orders@gmail.com',
+    to: 'taiyaki.orders@gmail.com',
+    subject: `Feedback from ${data.sourceDomain}`,
+    text: `
+Source: ${data.sourceDomain}
+Name: ${data.name}
+Email: ${data.email}
+
+Feedback:
+${data.feedback}
+    `,
+    html: `
+<p><strong>Source:</strong> ${data.sourceDomain}</p>
+<p><strong>Name:</strong> ${data.name}</p>
+<p><strong>Email:</strong> ${data.email}</p>
+<p><strong>Feedback:</strong></p>
+<p>${data.feedback.replace(/\n/g, '<br>')}</p>
+    `
+  };
+  
+  return transporter.sendMail(mailOptions);
+}
 
 // Feedback submission endpoint
 app.post('/api/submit-feedback', async (req, res) => {
@@ -108,6 +210,15 @@ app.post('/api/submit-feedback', async (req, res) => {
     console.log('Request body:', req.body);
     
     const { name, email, feedback } = req.body;
+    
+    // Validate all required fields
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
     
     if (!feedback) {
       return res.status(400).json({ error: 'Feedback is required' });
@@ -132,79 +243,62 @@ app.post('/api/submit-feedback', async (req, res) => {
       }
     }
     
-    // Always use taiyaki.orders@gmail.com for sending and receiving emails
-    const emailUser = 'taiyaki.orders@gmail.com';
-    const emailPass = process.env.EMAIL_PASSWORD;
-    
-    console.log('Creating nodemailer transporter with credentials...');
-    console.log(`Using email configuration: user=${emailUser}, password=${emailPass ? 'is set' : 'is NOT set'}`);
-    
-    if (!emailPass) {
-      console.error('EMAIL_PASSWORD environment variable is not set! Email will not be sent.');
-      return res.status(500).json({ 
-        error: 'Email configuration is incomplete',
-        details: 'Server email password is not configured'
-      });
-    }
-    
-    // Create a transporter with Gmail credentials
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: emailUser,
-        pass: emailPass
-      }
-    });
-    
-    console.log('Email transporter created, sending email...');
-    
-    // Email content
-    const mailOptions = {
-      from: emailUser,
-      to: emailUser,
-      subject: `User Feedback Submission from ${sourceDomain}`,
-      text: `
-Source: ${sourceDomain}
-Name: ${name || 'Not provided'}
-Email: ${email || 'Not provided'}
-
-Feedback:
-${feedback}
-      `,
-      html: `
-<p><strong>Source:</strong> ${sourceDomain}</p>
-<p><strong>Name:</strong> ${name || 'Not provided'}</p>
-<p><strong>Email:</strong> ${email || 'Not provided'}</p>
-<p><strong>Feedback:</strong></p>
-<p>${feedback.replace(/\n/g, '<br>')}</p>
-      `
+    const feedbackData = {
+      sourceDomain,
+      name,
+      email,
+      feedback,
+      timestamp: new Date().toISOString(),
+      createdAt: new Date()
     };
     
-    // Send the email and await result
+    // Try to save to Firebase
     try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log('Email sent successfully:', info.response);
+      if (!db) {
+        throw new Error('Firebase Firestore not initialized');
+      }
+      
+      const savedData = await saveToFirestore(feedbackData);
+      console.log('Feedback saved to Firebase successfully');
       
       // Send success response
       return res.status(200).json({ 
         success: true, 
         message: 'Feedback submitted successfully',
-        emailSent: true
+        savedToFirebase: true,
+        feedbackId: savedData.id
       });
-    } catch (emailError) {
-      console.error('Error sending email:', emailError);
-      // Return detailed error for debugging
-      return res.status(500).json({ 
-        error: 'Failed to send email',
-        details: String(emailError),
-        emailSent: false
-      });
+    } catch (firebaseError) {
+      console.error('Error saving to Firebase:', firebaseError);
+      
+      // Try email as fallback
+      try {
+        console.log('Trying email fallback...');
+        const info = await sendEmailFallback(feedbackData);
+        console.log('Email sent successfully as fallback:', info.response);
+        
+        return res.status(200).json({ 
+          success: true, 
+          message: 'Feedback submitted successfully via email fallback',
+          savedToFirebase: false,
+          emailSent: true
+        });
+      } catch (emailError) {
+        console.error('Email fallback also failed:', emailError);
+        return res.status(500).json({ 
+          error: 'Failed to save feedback',
+          details: 'Both Firebase and email fallback failed',
+          savedToFirebase: false,
+          emailSent: false
+        });
+      }
     }
   } catch (error) {
     console.error('Error submitting feedback:', error);
     return res.status(500).json({ 
       error: 'Failed to submit feedback', 
       details: String(error),
+      savedToFirebase: false,
       emailSent: false
     });
   }
@@ -241,14 +335,16 @@ if (DEBUG) {
 
 const server = app.listen(PORT, () => {
   console.log(`Simple server running at http://localhost:${PORT}`);
-  console.log(`Email config: taiyaki.orders@gmail.com / ${process.env.EMAIL_PASSWORD ? 'password is set' : 'password is NOT set'}`);
+  console.log(`Firebase initialized: ${!!firebaseApp}`);
+  console.log(`Firestore available: ${!!db}`);
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.log(`Port ${PORT} is already in use, trying ${PORT + 1}...`);
     const newPort = PORT + 1;
     app.listen(newPort, () => {
       console.log(`Simple server running at http://localhost:${newPort}`);
-      console.log(`Email config: taiyaki.orders@gmail.com / ${process.env.EMAIL_PASSWORD ? 'password is set' : 'password is NOT set'}`);
+      console.log(`Firebase initialized: ${!!firebaseApp}`);
+      console.log(`Firestore available: ${!!db}`);
     });
   } else {
     console.error('Server error:', err);

@@ -162,7 +162,7 @@ export function TaiyakiLibrary() {
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
           />
         </CardContent>
-        <CardFooter className="pt-3 pb-3">
+        <CardFooter className="pt-3 pb-3 flex-col space-y-2">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -184,15 +184,23 @@ export function TaiyakiLibrary() {
           </TooltipProvider>
           
           {!subscription.isPro && (
-            <Button 
-              variant="outline"
-              size="sm"
-              className="ml-auto text-xs"
-              onClick={() => navigate('/pricing')}
-            >
-              <Crown className="h-3 w-3 mr-1" />
-              Upgrade to Pro
-            </Button>
+            <div className="w-full flex flex-col gap-2">
+              <div className="flex items-center gap-1 bg-primary/10 text-primary text-xs p-2 rounded">
+                <Crown className="h-3 w-3 shrink-0" />
+                <p className="text-xs">
+                  <span className="font-semibold">Free Account:</span> You can browse and use models in the editor, but downloading STL files requires a Pro subscription.
+                </p>
+              </div>
+              <Button 
+                variant="outline"
+                size="sm"
+                className="ml-auto text-xs w-full"
+                onClick={() => navigate('/pricing')}
+              >
+                <Crown className="h-3 w-3 mr-1" />
+                Upgrade to Pro for STL Downloads
+              </Button>
+            </div>
           )}
         </CardFooter>
       </Card>

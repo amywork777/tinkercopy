@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { useScene } from "@/hooks/use-scene";
-import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X, FileText, Layout, Undo, Redo, Image as ImageIcon } from "lucide-react";
+import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X, FileText, Layout, Undo, Redo, Image as ImageIcon, Crown } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { ModelList } from "./ModelList";
@@ -23,6 +23,7 @@ import { TaiyakiLibrary } from "@/components/TaiyakiLibrary";
 import { MagicFishAI } from "@/components/MagicFishAI";
 import { AssetLibrary } from "@/components/AssetLibrary";
 import { imageToSvg } from "@/lib/imageToSvg";
+import { useSubscription } from '@/context/SubscriptionContext';
 
 // Font options with their display names and paths
 const FONTS = [
@@ -84,6 +85,28 @@ const findNonCollidingPosition = (models: Array<Model>, newBoundingBox: THREE.Bo
   return position;
 };
 
+// Define styles for the premium crown icons
+const premiumIconBaseStyle = {
+  position: "absolute" as const,
+  width: "12px",
+  height: "12px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const libraryPremiumIconStyle = {
+  ...premiumIconBaseStyle,
+  top: "10px",     // Moved down a bit
+  right: "10px",   // Moved more inward (left)
+};
+
+const aiPremiumIconStyle = {
+  ...premiumIconBaseStyle,
+  top: "2px",
+  right: "2px",
+};
+
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { 
     loadSTL, 
@@ -103,9 +126,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     showAxes,
     setShowAxes,
     camera,
-    performCSGOperation,
+    performCSGOperation
   } = useScene();
   const { toast } = useToast();
+  const { subscription } = useSubscription();
   const [activeTab, setActiveTab] = useState("models");
   
   // State for copied model
@@ -1633,9 +1657,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <Box className="h-5 w-5" />
               <span className="text-xs mt-1">Models</span>
             </TabsTrigger>
-            <TabsTrigger value="library" className="flex justify-center items-center flex-col py-3 px-2">
+            <TabsTrigger value="library" className="flex justify-center items-center flex-col py-3 px-2 relative">
               <Shapes className="h-5 w-5" />
               <span className="text-xs mt-1">Library</span>
+              {!subscription.isPro && (
+                <div style={libraryPremiumIconStyle}>
+                  <Crown className="h-3 w-3 text-orange-500" />
+                </div>
+              )}
             </TabsTrigger>
             <TabsTrigger value="assets" className="flex justify-center items-center flex-col py-3 px-2">
               <FileText className="h-5 w-5" />
@@ -1645,9 +1674,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <Box className="h-5 w-5" />
               <span className="text-xs mt-1">Shapes</span>
             </TabsTrigger>
-            <TabsTrigger value="ai" className="flex justify-center items-center flex-col py-3 px-2">
+            <TabsTrigger value="ai" className="flex justify-center items-center flex-col py-3 px-2 relative">
               <Bot className="h-5 w-5" />
               <span className="text-xs mt-1">AI</span>
+              {!subscription.isPro && (
+                <div style={aiPremiumIconStyle}>
+                  <Crown className="h-3 w-3 text-orange-500" />
+                </div>
+              )}
             </TabsTrigger>
             <TabsTrigger value="sketch" className="flex justify-center items-center flex-col py-3 px-2">
               <Pencil className="h-5 w-5" />

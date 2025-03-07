@@ -230,17 +230,30 @@ export function MagicFishAI() {
             </div>
             
             {!subscription.isPro && (
-              <Button 
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => navigate('/pricing')}
-              >
-                <Crown className="h-3 w-3 mr-1" />
-                Upgrade to Pro
-              </Button>
+              <>
+                <Button 
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => navigate('/pricing')}
+                >
+                  <Crown className="h-3 w-3 mr-1" />
+                  Upgrade to Pro
+                </Button>
+              </>
             )}
           </div>
+
+          {!subscription.isPro && (
+            <div className="w-full mt-2">
+              <div className="flex items-center gap-1 bg-primary/10 text-primary text-xs p-2 rounded">
+                <Crown className="h-3 w-3 shrink-0" />
+                <p className="text-xs">
+                  <span className="font-semibold">Free Account:</span> You have access to the AI model generation tool, but are limited to 3 generations per month. Upgrade to Pro for 20 generations monthly.
+                </p>
+              </div>
+            </div>
+          )}
         </CardFooter>
       </Card>
 

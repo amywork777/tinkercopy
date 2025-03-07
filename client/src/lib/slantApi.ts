@@ -8,93 +8,88 @@ const slantApi = axios.create({
   }
 });
 
-// Helper function to calculate price from Slant 3D
-export const calculateModelPrice = async (modelData: any, quantity: number, material: string) => {
+// Define the volume-based price estimation function
+// Volume is in cubic millimeters
+const estimatePriceFromVolume = (volume: number): number => {
+  // If volume is not provided or invalid, use a default minimal price
+  if (!volume || isNaN(volume) || volume <= 0) {
+    return 15; // Minimum price
+  }
+  
+  // Convert to cubic cm for easier calculation
+  const volumeCubicCm = volume / 1000;
+  
+  // Basic calculation: $0.10 per cubic cm with a minimum of $15
+  const calculatedPrice = Math.max(volumeCubicCm * 0.10, 15);
+  
+  // Cap the price at a reasonable maximum to prevent excessive costs
+  const maxPrice = 300;
+  
+  return Math.min(calculatedPrice, maxPrice);
+};
+
+// Calculate price of 3D printing based on various factors
+export const calculateModelPrice = async (modelData: any) => {
   try {
-    console.log('Preparing to call price calculation API with:', {
-      quantity,
-      material,
-      modelDataType: typeof modelData
-    });
-    
-    // Create request payload
+    // Prepare the payload for the API
     const payload = {
-      model: modelData,
-      quantity,
-      material
+      ...modelData,
     };
     
-    console.log('Sending price calculation request');
+    // Call the Slant 3D API to calculate price
     const response = await slantApi.post('/calculate-price', payload);
-    console.log('Price calculation API response:', response.data);
     
-    // Create a consistent response format with proper numerical values
-    const data = response.data || {};
-    
-    // Ensure all values are valid numbers, using fallbacks if needed
-    const basePrice = typeof data.basePrice === 'number' ? data.basePrice : 
-                     typeof data.base_price === 'number' ? data.base_price :
-                     parseFloat(data.basePrice || data.base_price || '15');
-    
-    const shippingCost = typeof data.shippingCost === 'number' ? data.shippingCost : 
-                        typeof data.shipping_cost === 'number' ? data.shipping_cost :
-                        parseFloat(data.shippingCost || data.shipping_cost || '4.99');
-    
-    // Calculate the service fee (50% of base + shipping)
-    const serviceFee = (basePrice + shippingCost) * 0.5;
-    
-    // Calculate total or use provided total
-    const providedTotal = typeof data.totalPrice === 'number' ? data.totalPrice :
-                         typeof data.total_price === 'number' ? data.total_price :
-                         parseFloat(data.totalPrice || data.total_price || '0');
-    
-    // Calculate the full total
-    const calculatedTotal = basePrice + shippingCost + serviceFee;
-    
-    console.log('Price calculation results:', { 
-      basePrice, 
-      shippingCost, 
-      serviceFee, 
-      providedTotal, 
-      calculatedTotal 
-    });
-    
-    // Force fallback prices for more reliable testing
-    const finalBasePrice = isNaN(basePrice) ? 15 : basePrice;
-    const finalShippingCost = isNaN(shippingCost) ? 4.99 : shippingCost;
-    const finalServiceFee = (finalBasePrice + finalShippingCost) * 0.5;
-    const finalTotalPrice = finalBasePrice + finalShippingCost + finalServiceFee;
-    
-    console.log('Final price values returned:', {
-      basePrice: finalBasePrice,
-      shippingCost: finalShippingCost,
-      totalPrice: finalTotalPrice
-    });
-    
+    // Extract the price from the response
     return {
-      basePrice: finalBasePrice,
-      shippingCost: finalShippingCost,
-      totalPrice: finalTotalPrice
+      price: response.data?.price || 0,
+      volume: response.data?.volume || 0,
+      weight: response.data?.weight || 0,
+      materialCost: response.data?.materialCost || 0,
+      printTimeCost: response.data?.printTimeCost || 0,
     };
   } catch (error) {
     console.error('Error calculating price:', error);
-    // Return fallback values on error
-    const basePrice = 15 + (quantity * 5); // Make the price vary with quantity
-    const shippingCost = 4.99;
-    const serviceFee = (basePrice + shippingCost) * 0.5;
-    const totalPrice = basePrice + shippingCost + serviceFee;
     
-    console.log('Using fallback prices due to error:', {
-      basePrice, 
-      shippingCost, 
-      totalPrice
-    });
+    // Fallback price calculation
+    const estimatedPrice = estimatePriceFromVolume(modelData.volume);
     
     return {
-      basePrice,
-      shippingCost,
-      totalPrice
+      price: estimatedPrice,
+      volume: modelData.volume || 0,
+      weight: modelData.weight || 0,
+      materialCost: estimatedPrice * 0.4, // Estimate 40% material cost
+      printTimeCost: estimatedPrice * 0.6, // Estimate 60% print time cost
     };
+  }
+};
+
+// Calculate price from volume with proper margins based on user subscription
+export const calculatePriceWithMargin = async (basePrice: number, userId?: string) => {
+  try {
+    // If a userId is provided and we have the subscription context, check subscription status
+    if (userId) {
+      try {
+        // Import here to avoid circular dependencies
+        const { getUserSubscription } = await import('./stripeApi');
+        const subscription = await getUserSubscription(userId);
+        
+        // Apply discount for Pro users - 40% margin instead of 50%
+        if (subscription.isPro) {
+          // 40% margin means multiply by 1.67 (1/0.6) instead of 2.0 (1/0.5)
+          return parseFloat((basePrice * 1.67).toFixed(2));
+        }
+      } catch (error) {
+        console.error('Error checking subscription for pricing:', error);
+        // Fall back to standard pricing if there's an error
+      }
+    }
+    
+    // Standard pricing for non-Pro users (50% margin)
+    return parseFloat((basePrice * 2.0).toFixed(2));
+  } catch (error) {
+    console.error('Error calculating price with margin:', error);
+    // If any error occurs, fall back to standard pricing
+    return parseFloat((basePrice * 2.0).toFixed(2));
   }
 };
 

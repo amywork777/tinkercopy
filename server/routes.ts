@@ -4,13 +4,26 @@ import express from 'express';
 import axios from 'axios';
 import { AxiosError } from 'axios';
 import nodemailer from 'nodemailer';
+import stlImportRouter, { initializeSTLImportRoutes } from './routes/stlImport.js';
+import { Server as SocketIOServer } from 'socket.io';
 
 const API_BASE_URL = 'https://www.slant3dapi.com/api';
 const API_KEY = 'sl-9e3378f7080cdc2b0246ccfe65cda93e7e744b6856e854ceacba523113a40358';
 
-export default express.Router();
-
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express, httpServer?: Server, socketIo?: SocketIOServer): Promise<Server> {
+  // If httpServer is not provided, create one
+  const server = httpServer || createServer(app);
+  
+  // If socketIo is provided, initialize STL import routes with it
+  if (socketIo) {
+    // Initialize STL import routes
+    const stlRouter = initializeSTLImportRoutes(socketIo);
+    
+    // Mount the STL import routes
+    app.use('/api', stlRouter);
+    console.log('STL import routes initialized with Socket.IO');
+  }
+  
   // Proxy endpoint for Slant 3D API
   app.all('/api/slant3d/*', async (req, res) => {
     try {
@@ -100,9 +113,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.status(200).json({ success: true, message: 'API server is running' });
   });
 
+  // Add a test endpoint to verify email configuration
+  app.get('/api/test-email-config', (req, res) => {
+    console.log('Email config test endpoint hit');
+    
+    // Get email credentials from environment variables
+    const emailUser = process.env.EMAIL_USER || 'taiyaki.orders@gmail.com';
+    const emailPass = process.env.EMAIL_PASSWORD;
+    
+    // Don't expose the actual password in the response
+    return res.status(200).json({ 
+      success: true, 
+      emailConfig: {
+        user: emailUser,
+        passwordConfigured: !!emailPass
+      },
+      envVarsLoaded: {
+        NODE_ENV: process.env.NODE_ENV || 'not set',
+        PORT: process.env.PORT || 'not set',
+        EMAIL_USER: process.env.EMAIL_USER || 'not set',
+        EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? 'is set' : 'not set'
+      }
+    });
+  });
+
+  // Add OPTIONS handler for the feedback submission preflight requests
+  app.options('/api/submit-feedback', (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(200).send();
+  });
+
   // Add feedback submission endpoint
   app.post('/api/submit-feedback', async (req, res) => {
     try {
+      // Set CORS headers first to ensure they're applied in all cases
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      
       console.log('Received feedback submission request');
       
       // Log the request headers - this helps debug CORS issues
@@ -117,14 +167,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Feedback is required' });
       }
       
+      // Get credentials from environment variables
+      const emailUser = process.env.EMAIL_USER || 'taiyaki.orders@gmail.com';
+      const emailPass = process.env.EMAIL_PASSWORD;
+      
       console.log('Creating nodemailer transporter with credentials...');
+      console.log(`Using email configuration: user=${emailUser}, password=${emailPass ? 'is set' : 'is NOT set'}`);
+      
+      if (!emailPass) {
+        console.error('EMAIL_PASSWORD environment variable is not set! Email will not be sent.');
+        return res.status(500).json({ 
+          error: 'Email configuration is incomplete',
+          details: 'Server email password is not configured'
+        });
+      }
       
       // Create a transporter with Gmail credentials
       const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
-          user: process.env.EMAIL_USER || 'taiyaki.orders@gmail.com', 
-          pass: process.env.EMAIL_PASSWORD
+          user: emailUser,
+          pass: emailPass
         }
       });
       
@@ -132,8 +195,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Email content
       const mailOptions = {
-        from: 'taiyaki.orders@gmail.com',
-        to: 'taiyaki.orders@gmail.com',
+        from: emailUser,
+        to: emailUser,
         subject: 'User Feedback Submission',
         text: `
 Name: ${name || 'Not provided'}
@@ -151,22 +214,34 @@ ${feedback}
       };
       
       // Send the email and await result
-      const info = await transporter.sendMail(mailOptions);
-      console.log('Email sent successfully:', info.response);
-      
-      // Set explicit CORS headers for this response
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      
-      // Send success response
-      return res.status(200).json({ success: true, message: 'Feedback submitted successfully' });
+      try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Email sent successfully:', info.response);
+        
+        // Send success response
+        return res.status(200).json({ 
+          success: true, 
+          message: 'Feedback submitted successfully',
+          emailSent: true
+        });
+      } catch (emailError) {
+        console.error('Error sending email:', emailError);
+        // Return detailed error for debugging
+        return res.status(500).json({ 
+          error: 'Failed to send email',
+          details: String(emailError),
+          emailSent: false
+        });
+      }
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      return res.status(500).json({ error: 'Failed to submit feedback', details: String(error) });
+      return res.status(500).json({ 
+        error: 'Failed to submit feedback', 
+        details: String(error),
+        emailSent: false
+      });
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  return server;
 }

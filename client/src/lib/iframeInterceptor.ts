@@ -1,5 +1,7 @@
 import { useScene } from "@/hooks/use-scene";
 import { toast } from "sonner";
+import * as THREE from 'three';
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 // The allowed origins for messages
 const ALLOWED_ORIGINS = ["https://magic.taiyaki.ai", "https://library.taiyaki.ai"];
@@ -19,6 +21,7 @@ const ALLOWED_ORIGINS = ["https://magic.taiyaki.ai", "https://library.taiyaki.ai
 interface STLImportMessage {
   type: string;
   stlUrl?: string;
+  stlBase64?: string; // New field for base64 encoded STL data
   fileName?: string;
   metadata?: {
     name?: string;
@@ -47,6 +50,111 @@ const importStats: ImportStats = {
   importErrors: 0,
   successfulImports: 0
 };
+
+/**
+ * Loads an STL model directly from base64 encoded data
+ * @param base64Data The base64 encoded STL data
+ * @param fileName Optional file name for the model
+ * @param metadata Additional metadata about the model
+ * @param origin The origin of the request
+ * @returns A Promise that resolves when the model is loaded
+ */
+async function loadSTLFromBase64(base64Data: string, fileName?: string, metadata?: STLImportMessage['metadata'], origin?: string): Promise<void> {
+  // Show loading notification
+  toast.loading(`Importing model from ${origin || "external source"}...`, {
+    id: "import-toast"
+  });
+  
+  try {
+    console.log("Loading STL from base64 data");
+    
+    // Use the scene store's functions
+    const { models, saveHistoryState, updateGridPosition } = useScene.getState();
+    
+    // Parse the base64 data
+    let binary: ArrayBuffer;
+    
+    // Check if the base64 string includes a data URL prefix
+    if (base64Data.startsWith('data:')) {
+      // Handle data URL format (e.g., data:model/stl;base64,...)
+      const base64Content = base64Data.split(',')[1];
+      if (!base64Content) {
+        throw new Error('Invalid base64 data URL format');
+      }
+      binary = _base64ToArrayBuffer(base64Content);
+    } else {
+      // Handle raw base64 string
+      binary = _base64ToArrayBuffer(base64Data);
+    }
+    
+    // Parse the STL data
+    const loader = new STLLoader();
+    const geometry = loader.parse(binary);
+    
+    // Access the direct scene store state
+    const sceneState = useScene.getState();
+    
+    // Directly call loadSTL with a Blob to use the existing infrastructure
+    const blob = new Blob([binary], { type: 'model/stl' });
+    const file = new File([blob], fileName || 'model.stl', { type: 'model/stl' });
+    
+    // Load the STL file using the existing method
+    await sceneState.loadSTL(file, metadata?.name || fileName);
+    
+    // Update import statistics
+    updateImportStats(origin || "unknown", true);
+    
+    // Show success notification
+    toast.success(`Imported model from ${origin || "external source"}`, {
+      id: "import-toast"
+    });
+    
+    // Send success response back to origin
+    if (origin) {
+      sendResponseToOrigin(origin, {
+        type: "stl-import-response",
+        success: true,
+        message: "Model imported successfully"
+      });
+    }
+  } catch (error) {
+    // Update error statistics
+    updateImportStats(origin || "unknown", false);
+    
+    // Show error notification
+    toast.error(`Failed to import model: ${(error as Error).message}`, {
+      id: "import-toast"
+    });
+    
+    // Send error response back to origin
+    if (origin) {
+      sendResponseToOrigin(origin, {
+        type: "stl-import-response",
+        success: false,
+        error: (error as Error).message
+      });
+    }
+    
+    console.error("Error loading STL from base64:", error);
+  }
+}
+
+/**
+ * Helper function to convert base64 to ArrayBuffer
+ * @param base64 The base64 string to convert
+ * @returns The resulting ArrayBuffer
+ */
+function _base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary_string = window.atob(base64);
+  const len = binary_string.length;
+  const bytes = new Uint8Array(len);
+  
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary_string.charCodeAt(i);
+  }
+  
+  return bytes.buffer;
+}
 
 /**
  * Loads an STL model from a URL
@@ -202,20 +310,36 @@ async function handleIncomingMessage(event: MessageEvent): Promise<void> {
   
   // Parse the message data
   const message = event.data as STLImportMessage;
+  console.log("Received message:", message);
   
-  // Check if this is an STL import message
+  // Check if this is an STL import message with URL
   if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlUrl) {
-    console.log(`Received STL import request from ${event.origin}`, message);
+    console.log(`Received STL import request from ${event.origin} with URL`, message);
     
     // Log import request
-    console.log("Import request:", {
+    console.log("Import request (URL):", {
       origin: event.origin,
       url: message.stlUrl,
       metadata: message.metadata
     });
     
-    // Load the STL file
+    // Load the STL file from URL
     await loadSTLFromUrl(message.stlUrl, message.metadata, event.origin);
+  }
+  // Check if this is an STL import message with base64 data
+  else if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlBase64) {
+    console.log(`Received STL import request from ${event.origin} with base64 data`);
+    
+    // Log import request (without the full base64 data for brevity)
+    console.log("Import request (base64):", {
+      origin: event.origin,
+      fileName: message.fileName || 'model.stl',
+      metadata: message.metadata,
+      base64DataLength: message.stlBase64.length
+    });
+    
+    // Load the STL file from base64 data
+    await loadSTLFromBase64(message.stlBase64, message.fileName, message.metadata, event.origin);
   }
 }
 

@@ -37,16 +37,24 @@
       cursor: pointer;
       font-size: 14px;
       margin-right: 8px;
+      margin-bottom: 8px;
     }
     button:hover {
       background-color: #1d4ed8;
     }
-    input[type="url"] {
+    button:disabled {
+      background-color: #93c5fd;
+      cursor: not-allowed;
+    }
+    input[type="url"], input[type="text"] {
       padding: 8px;
       width: 100%;
       margin-bottom: 10px;
       border: 1px solid #ccc;
       border-radius: 4px;
+    }
+    input[type="file"] {
+      margin-bottom: 10px;
     }
     #response {
       margin-top: 16px;
@@ -64,6 +72,32 @@
       padding: 12px;
       margin: 16px 0;
     }
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #ccc;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      background-color: #f1f5f9;
+      border: 1px solid #ccc;
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
+      margin-right: 4px;
+    }
+    .tab.active {
+      background-color: #fff;
+      border-bottom: 1px solid #fff;
+      margin-bottom: -1px;
+      font-weight: bold;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -77,26 +111,82 @@
     in <code>iframeInterceptor.ts</code>.
   </div>
   
-  <div class="test-section">
-    <h2>Test STL Import</h2>
+  <div class="tabs">
+    <div class="tab active" data-tab="url-tab">URL Import</div>
+    <div class="tab" data-tab="base64-tab">Base64 Import</div>
+  </div>
+  
+  <div class="test-section tab-content active" id="url-tab">
+    <h2>Test STL Import (URL)</h2>
     <p>Enter the URL of an STL file and click "Import STL" to test:</p>
     
     <input type="url" id="stlUrl" placeholder="https://example.com/model.stl" 
            value="https://storage.googleapis.com/ucloud-v3/ccab50f18c174830aa6117f1.stl">
     
     <div>
-      <button id="importStlBtn">Import STL</button>
+      <button id="importStlBtn">Import STL from URL</button>
       <button id="simulateMagicBtn">Simulate magic.taiyaki.ai</button>
       <button id="simulateLibraryBtn">Simulate library.taiyaki.ai</button>
     </div>
-    
-    <div id="response"></div>
   </div>
+  
+  <div class="test-section tab-content" id="base64-tab">
+    <h2>Test STL Import (Base64)</h2>
+    <p>Upload an STL file to convert to base64, or paste base64 data directly:</p>
+    
+    <div>
+      <label for="stlFile">Select STL file:</label><br>
+      <input type="file" id="stlFile" accept=".stl">
+    </div>
+    
+    <div>
+      <label for="fileName">File name (optional):</label><br>
+      <input type="text" id="fileName" placeholder="model.stl" value="imported_model.stl">
+    </div>
+    
+    <div>
+      <input type="text" id="base64Preview" placeholder="Base64 data will appear here (or paste your own)" disabled>
+      <div>
+        <small>Base64 length: <span id="base64Length">0</span> characters</small>
+      </div>
+    </div>
+    
+    <div>
+      <button id="importBase64Btn" disabled>Import STL from Base64</button>
+      <button id="clearBase64Btn" disabled>Clear Base64 Data</button>
+    </div>
+  </div>
+  
+  <div id="response"></div>
   
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       const responseEl = document.getElementById('response');
       const stlUrlInput = document.getElementById('stlUrl');
+      const stlFileInput = document.getElementById('stlFile');
+      const fileNameInput = document.getElementById('fileName');
+      const base64PreviewInput = document.getElementById('base64Preview');
+      const base64LengthEl = document.getElementById('base64Length');
+      const importBase64Btn = document.getElementById('importBase64Btn');
+      const clearBase64Btn = document.getElementById('clearBase64Btn');
+      
+      let base64Data = '';
+      
+      // Tab switching
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          // Remove active class from all tabs and tab contents
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          
+          // Add active class to clicked tab
+          tab.classList.add('active');
+          
+          // Show corresponding tab content
+          const tabId = tab.getAttribute('data-tab');
+          document.getElementById(tabId).classList.add('active');
+        });
+      });
       
       // Function to log messages to the response element
       function logMessage(message) {
@@ -112,7 +202,7 @@
         }
       });
       
-      // Import STL button
+      // Import STL from URL button
       document.getElementById('importStlBtn').addEventListener('click', function() {
         const stlUrl = stlUrlInput.value.trim();
         if (!stlUrl) {
@@ -125,8 +215,8 @@
           type: 'stl-import',
           stlUrl: stlUrl,
           metadata: {
-            name: 'Test Model',
-            description: 'A test model imported from the test page',
+            name: 'Test Model from URL',
+            description: 'A test model imported via URL from the test page',
             author: 'Test User',
             license: 'CC-BY-4.0'
           }
@@ -192,6 +282,76 @@
         
         window.parent.postMessage(message, '*');
         logMessage(`Sent simulated message: ${JSON.stringify(message, null, 2)}`);
+      });
+      
+      // Handle file selection for base64 conversion
+      stlFileInput.addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        if (!file.name.toLowerCase().endsWith('.stl')) {
+          logMessage('Error: Please select an STL file');
+          return;
+        }
+        
+        // Update the filename input if it's empty or default
+        if (!fileNameInput.value || fileNameInput.value === 'imported_model.stl') {
+          fileNameInput.value = file.name;
+        }
+        
+        logMessage(`Selected file: ${file.name} (${Math.round(file.size / 1024)} KB)`);
+        
+        // Read the file as base64
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          base64Data = e.target.result;
+          base64PreviewInput.value = base64Data.slice(0, 50) + '...';
+          base64LengthEl.textContent = base64Data.length;
+          importBase64Btn.disabled = false;
+          clearBase64Btn.disabled = false;
+          logMessage(`File converted to base64 (${base64Data.length} characters)`);
+        };
+        reader.onerror = function() {
+          logMessage('Error: Failed to read file');
+        };
+        reader.readAsDataURL(file);
+      });
+      
+      // Clear base64 data
+      clearBase64Btn.addEventListener('click', function() {
+        base64Data = '';
+        base64PreviewInput.value = '';
+        base64LengthEl.textContent = '0';
+        importBase64Btn.disabled = true;
+        clearBase64Btn.disabled = true;
+        stlFileInput.value = '';
+        logMessage('Base64 data cleared');
+      });
+      
+      // Import STL from base64 button
+      importBase64Btn.addEventListener('click', function() {
+        if (!base64Data) {
+          logMessage('Error: No base64 data available');
+          return;
+        }
+        
+        const fileName = fileNameInput.value.trim() || 'imported_model.stl';
+        
+        // Send the message to the parent window
+        window.parent.postMessage({
+          type: 'stl-import',
+          stlBase64: base64Data,
+          fileName: fileName,
+          metadata: {
+            name: 'Base64 Imported Model',
+            description: 'A test model imported via base64 from the test page',
+            author: 'Test User',
+            license: 'CC-BY-4.0'
+          }
+        }, '*');
+        
+        logMessage(`Sent stl-import message with base64 data (${base64Data.length} characters)`);
+        logMessage(`Using filename: ${fileName}`);
       });
       
       logMessage('Test page loaded and ready');

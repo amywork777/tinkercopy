@@ -25,6 +25,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ShareDialog } from "@/components/ShareDialog";
 import FishLogo from "@/components/FishLogo";
 import ImportStatsDebug from "@/components/ImportStatsDebug";
+import STLImporter from "@/components/STLImporter";
 
 export default function Home() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
@@ -188,6 +189,9 @@ export default function Home() {
         
         {/* Debug component - only shown in development */}
         {process.env.NODE_ENV === 'development' && <ImportStatsDebug />}
+        
+        {/* STL Importer Component - always present but may be hidden */}
+        <STLImporter />
       </div>
     </TooltipProvider>
   );

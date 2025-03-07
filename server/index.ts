@@ -40,7 +40,8 @@ const allowedOrigins = [
   'http://localhost:3000', 
   'http://localhost:3001',
   'https://magic.taiyaki.ai',
-  'https://library.taiyaki.ai'
+  'https://library.taiyaki.ai',
+  'https://fishcad.com'
 ];
 
 // Configure middleware
@@ -56,10 +57,39 @@ app.use(cors({
       callback(null, false);
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Disposition', 'Content-Type'],
+  credentials: true,
+  maxAge: 86400 // 24 hours
 }));
+
+// Specific CORS response for preflight OPTIONS requests
+app.options('*', (req, res) => {
+  // Handle preflight request
+  const origin = req.headers.origin;
+  
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+    res.setHeader('Content-Length', '0');
+    res.status(204).end();
+  } else {
+    res.status(403).end();
+  }
+});
+
+// Add middleware to explicitly set CORS headers for all responses
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  next();
+});
 
 // Parse JSON and URL-encoded bodies
 app.use(express.json({ limit: '50mb' })); // Parse JSON bodies with larger size limit

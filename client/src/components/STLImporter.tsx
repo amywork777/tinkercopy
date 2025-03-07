@@ -23,6 +23,7 @@ type ImportJobStatus = 'pending' | 'downloading' | 'processing' | 'completed' | 
 interface STLImportMessage {
   type: string;
   stlUrl?: string;
+  stlBase64?: string;
   fileName?: string;
   metadata?: {
     name?: string;
@@ -111,84 +112,23 @@ export function STLImporter() {
       // Parse the message data
       const message = event.data as STLImportMessage;
       
-      // Check if this is an STL import message with a URL
+      // Log the message type
+      console.log(`Received message from ${event.origin} with type: ${message.type}`);
+      
+      // Handle STL URL import
       if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlUrl) {
-        console.log(`Received STL import request from ${event.origin}`, message);
-        
-        // Show loading notification
-        toast.loading(`Importing model from ${event.origin}...`, {
-          id: "import-toast"
-        });
-        
-        try {
-          // Send the request to the server
-          const response = await fetch(`${API_BASE_URL}/import-stl`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              stlUrl: message.stlUrl,
-              fileName: message.fileName || 'model.stl',
-              source: event.origin,
-              metadata: message.metadata || {}
-            })
-          });
-          
-          const data = await response.json();
-          
-          if (data.success && data.importId) {
-            // Join the socket room for this import
-            if (socket) {
-              socket.emit('join-import-room', data.importId);
-            }
-            
-            // Add the import to active imports
-            setActiveImports(prev => ({
-              ...prev,
-              [data.importId]: {
-                id: data.importId,
-                job: data.job,
-                source: event.origin,
-                progress: 0
-              }
-            }));
-            
-            // Expand the panel if it's the first import
-            if (Object.keys(activeImports).length === 0) {
-              setExpanded(true);
-            }
-            
-            // Send success response back to origin
-            sendResponseToOrigin(event.origin, {
-              type: 'stl-import-response',
-              success: true,
-              importId: data.importId,
-              message: 'Import started successfully'
-            });
-            
-            // Update the toast
-            toast.success(`Import started: ${message.fileName || 'model.stl'}`, {
-              id: "import-toast"
-            });
-          } else {
-            throw new Error(data.error || 'Failed to start import');
-          }
-        } catch (error) {
-          console.error('Error starting import:', error);
-          
-          // Show error notification
-          toast.error(`Failed to import model: ${(error as Error).message}`, {
-            id: "import-toast"
-          });
-          
-          // Send error response back to origin
-          sendResponseToOrigin(event.origin, {
-            type: 'stl-import-response',
-            success: false,
-            error: (error as Error).message
-          });
-        }
+        console.log(`Received STL URL import request from ${event.origin}`, message);
+        await handleSTLUrlImport(message, event.origin);
+      }
+      // Handle direct base64 import
+      else if ((message.type === 'import-stl' || message.type === 'stl-import') && message.stlBase64) {
+        console.log(`Received STL base64 import request from ${event.origin}`);
+        await handleSTLBase64Import(message, event.origin);
+      }
+      // Handle direct file upload
+      else if (message.type === 'stl-upload') {
+        console.log(`Received STL file upload request from ${event.origin}`);
+        await handleSTLDirectUpload(message, event.origin);
       }
     };
     
@@ -201,12 +141,281 @@ export function STLImporter() {
     };
   }, [socket, activeImports]);
   
+  // Handle STL URL import
+  const handleSTLUrlImport = async (message: STLImportMessage, origin: string) => {
+    try {
+      // Show loading notification
+      toast.loading(`Importing model from ${origin}...`, {
+        id: "import-toast"
+      });
+      
+      // Send the request to the server
+      const response = await fetch(`${API_BASE_URL}/import-stl`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          stlUrl: message.stlUrl,
+          fileName: message.fileName || 'model.stl',
+          source: origin,
+          metadata: message.metadata || {}
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success && data.importId) {
+        // Join the socket room for this import
+        if (socket) {
+          socket.emit('join-import-room', data.importId);
+        }
+        
+        // Add the import to active imports
+        setActiveImports(prev => ({
+          ...prev,
+          [data.importId]: {
+            id: data.importId,
+            job: data.job,
+            source: origin,
+            progress: 0
+          }
+        }));
+        
+        // Expand the panel if it's the first import
+        if (Object.keys(activeImports).length === 0) {
+          setExpanded(true);
+        }
+        
+        // Send success response back to origin
+        sendResponseToOrigin(origin, {
+          type: 'stl-import-response',
+          success: true,
+          importId: data.importId,
+          message: 'Import started successfully'
+        });
+        
+        // Update the toast
+        toast.success(`Import started: ${message.fileName || 'model.stl'}`, {
+          id: "import-toast"
+        });
+      } else {
+        throw new Error(data.error || 'Failed to start import');
+      }
+    } catch (error) {
+      console.error('Error starting import:', error);
+      
+      // Show error notification
+      toast.error(`Failed to import model: ${(error as Error).message}`, {
+        id: "import-toast"
+      });
+      
+      // Send error response back to origin
+      sendResponseToOrigin(origin, {
+        type: 'stl-import-response',
+        success: false,
+        error: (error as Error).message
+      });
+    }
+  };
+  
+  // Handle STL base64 import
+  const handleSTLBase64Import = async (message: STLImportMessage, origin: string) => {
+    try {
+      // Show loading notification
+      toast.loading(`Processing base64 model from ${origin}...`, {
+        id: "import-toast-base64"
+      });
+
+      // Check if we should use direct embed or server approach
+      const stlBase64 = message.stlBase64 as string;
+      
+      // Determine size - rough estimation of base64 size
+      const estimatedSize = stlBase64.length * 0.75; // base64 is ~4/3 the size of binary
+      console.log(`Estimated STL size: ${Math.round(estimatedSize / 1024)} KB`);
+      
+      // If smaller than 5MB, try direct embed
+      if (estimatedSize < 5 * 1024 * 1024) {
+        try {
+          // Try to load directly into the scene
+          await loadSTL(stlBase64, message.fileName);
+          
+          // Select the newly added model
+          selectModel(models.length - 1);
+          
+          // Show success notification
+          toast.success(`Imported model from ${origin}`, {
+            id: "import-toast-base64"
+          });
+          
+          // Send success response back to origin
+          sendResponseToOrigin(origin, {
+            type: 'stl-import-response',
+            success: true,
+            message: 'Model imported successfully'
+          });
+          
+          return;
+        } catch (directError) {
+          // If direct import fails, fall back to server approach
+          console.warn('Direct base64 import failed, falling back to server:', directError);
+        }
+      }
+      
+      // Create a file blob from the base64 data
+      let binary: Blob;
+      
+      // Check if it's a data URL or raw base64
+      if (stlBase64.startsWith('data:')) {
+        // It's a data URL, extract the base64 part
+        const base64Content = stlBase64.split(',')[1];
+        if (!base64Content) {
+          throw new Error('Invalid base64 data URL format');
+        }
+        const binaryString = atob(base64Content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        binary = new Blob([bytes.buffer], { type: 'model/stl' });
+      } else {
+        // It's raw base64
+        const binaryString = atob(stlBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        binary = new Blob([bytes.buffer], { type: 'model/stl' });
+      }
+      
+      // Create form data for upload
+      const formData = new FormData();
+      formData.append('file', binary, message.fileName || 'model.stl');
+      formData.append('source', origin);
+      
+      if (message.metadata) {
+        formData.append('metadata', JSON.stringify(message.metadata));
+      }
+      
+      if (message.fileName) {
+        formData.append('fileName', message.fileName);
+      }
+      
+      // Send to the server
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+        // Do not set Content-Type header, browser will set it with boundary
+      });
+      
+      const data = await response.json();
+      
+      if (data.success && data.importId) {
+        // Join the socket room for this import
+        if (socket) {
+          socket.emit('join-import-room', data.importId);
+        }
+        
+        // Add the import to active imports
+        setActiveImports(prev => ({
+          ...prev,
+          [data.importId]: {
+            id: data.importId,
+            job: data.job,
+            source: origin,
+            progress: getProgressForStatus(data.job.status)
+          }
+        }));
+        
+        // Expand the panel if it's the first import
+        if (Object.keys(activeImports).length === 0) {
+          setExpanded(true);
+        }
+        
+        // Send success response back to origin
+        sendResponseToOrigin(origin, {
+          type: 'stl-import-response',
+          success: true,
+          importId: data.importId,
+          message: 'Import started successfully'
+        });
+        
+        // Update the toast
+        toast.success(`Import successful: ${message.fileName || 'model.stl'}`, {
+          id: "import-toast-base64"
+        });
+      } else {
+        throw new Error(data.error || 'Failed to upload model');
+      }
+    } catch (error) {
+      console.error('Error processing base64 model:', error);
+      
+      // Show error notification
+      toast.error(`Failed to import model: ${(error as Error).message}`, {
+        id: "import-toast-base64"
+      });
+      
+      // Send error response back to origin
+      sendResponseToOrigin(origin, {
+        type: 'stl-import-response',
+        success: false,
+        error: (error as Error).message
+      });
+    }
+  };
+  
+  // Handle direct file upload from external site
+  const handleSTLDirectUpload = async (message: STLImportMessage, origin: string) => {
+    try {
+      // Show loading notification
+      toast.loading(`Processing upload request from ${origin}...`, {
+        id: "import-toast-upload"
+      });
+      
+      // Extract the file from the message
+      const { fileData } = message;
+      
+      if (!fileData) {
+        throw new Error('No file data provided');
+      }
+      
+      // Notify the external site we're preparing to receive the file
+      sendResponseToOrigin(origin, {
+        type: 'stl-upload-ready',
+        success: true
+      });
+      
+      // Update the toast
+      toast.loading(`Ready to receive file from ${origin}...`, {
+        id: "import-toast-upload"
+      });
+      
+      // The external site should now send the actual file data in another message
+      // We'll handle that in the main message handler event
+      
+    } catch (error) {
+      console.error('Error handling upload request:', error);
+      
+      // Show error notification
+      toast.error(`Failed to process upload: ${(error as Error).message}`, {
+        id: "import-toast-upload"
+      });
+      
+      // Send error response back to origin
+      sendResponseToOrigin(origin, {
+        type: 'stl-upload-response',
+        success: false,
+        error: (error as Error).message
+      });
+    }
+  };
+  
   // Set up socket event listeners for import updates
   useEffect(() => {
     if (!socket) return;
     
     // Import status update handler
-    const handleStatusUpdate = (data: any) => {
+    const handleStatusUpdate = (data: { importId: string; status: ImportJobStatus; job: ImportJob }) => {
       const { importId, status, job } = data;
       
       // Update the import in state
@@ -227,7 +436,7 @@ export function STLImporter() {
     };
     
     // Import completed handler
-    const handleImportCompleted = async (data: any) => {
+    const handleImportCompleted = async (data: { importId: string; job: ImportJob }) => {
       const { importId, job } = data;
       
       // Get the import from state
@@ -267,7 +476,7 @@ export function STLImporter() {
     };
     
     // Import failed handler
-    const handleImportFailed = (data: any) => {
+    const handleImportFailed = (data: { importId: string; error: string; job: ImportJob }) => {
       const { importId, error, job } = data;
       
       // Show error notification
@@ -324,9 +533,18 @@ export function STLImporter() {
       }
     });
     
-    // If no matching iframe was found, log a warning
+    // If no matching iframe was found, try a direct window.parent approach
+    // This can work for redirects or cases where the iframe has been removed
     if (!found) {
-      console.warn(`No iframe found with origin ${origin} to send response to`);
+      try {
+        // Log the attempt
+        console.log(`No iframe found with origin ${origin}, trying parent window`);
+        
+        // Send to parent window with target origin
+        window.parent.postMessage(data, origin);
+      } catch (error) {
+        console.warn(`Could not send response to origin ${origin}:`, error);
+      }
     }
   };
   

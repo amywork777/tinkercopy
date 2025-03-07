@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
 import { AxiosError } from 'axios';
+import nodemailer from 'nodemailer';
 
 const router = express.Router();
 
@@ -49,6 +50,56 @@ router.all('/api/slant3d/*', async (req, res) => {
     
     // Something else went wrong
     return res.status(500).json({ error: 'Failed to proxy request to Slant 3D API' });
+  }
+});
+
+// Add feedback submission endpoint
+router.post('/submit-feedback', async (req, res) => {
+  try {
+    const { name, email, feedback } = req.body;
+    
+    if (!feedback) {
+      return res.status(400).json({ error: 'Feedback is required' });
+    }
+    
+    // Create a transporter with Gmail credentials
+    // NOTE: These should be in environment variables in production
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER || 'taiyaki.orders@gmail.com',
+        pass: process.env.EMAIL_PASSWORD // This should be set in server environment
+      }
+    });
+    
+    // Email content
+    const mailOptions = {
+      from: 'taiyaki.orders@gmail.com',
+      to: 'taiyaki.orders@gmail.com',
+      subject: 'User Feedback Submission',
+      text: `
+Name: ${name || 'Not provided'}
+Email: ${email || 'Not provided'}
+
+Feedback:
+${feedback}
+      `,
+      html: `
+<p><strong>Name:</strong> ${name || 'Not provided'}</p>
+<p><strong>Email:</strong> ${email || 'Not provided'}</p>
+<p><strong>Feedback:</strong></p>
+<p>${feedback.replace(/\n/g, '<br>')}</p>
+      `
+    };
+    
+    // Send the email
+    await transporter.sendMail(mailOptions);
+    
+    // Send success response
+    res.status(200).json({ success: true, message: 'Feedback submitted successfully' });
+  } catch (error) {
+    console.error('Error submitting feedback:', error);
+    res.status(500).json({ error: 'Failed to submit feedback' });
   }
 });
 

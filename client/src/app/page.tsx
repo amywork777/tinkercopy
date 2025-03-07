@@ -12,6 +12,7 @@ import { initTaiyakiMessageListener } from "@/lib/iframeInterceptor";
 import MobileWarning from "@/components/MobileWarning";
 import MobileView from "@/components/MobileView";
 import { useAuth } from "@/context/AuthContext";
+import { FeedbackDialog } from "@/components/FeedbackDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +74,7 @@ export default function Home() {
             <h1 className="text-xl font-bold text-primary">taiyaki.ai</h1>
           </div>
           <div className="flex items-center space-x-2">
+            <FeedbackDialog />
             <ThemeToggle />
             
             {/* User Avatar or Login Button */}
@@ -142,8 +144,8 @@ export default function Home() {
               <ToolBar />
             </div>
             
-            {/* Transform Controls */}
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 w-[90%] md:w-auto">
+            {/* Transform Controls - adjusted for better mobile positioning */}
+            <div className="absolute bottom-8 sm:bottom-5 left-1/2 transform -translate-x-1/2 z-10 w-full max-w-[95%] sm:max-w-[90%] md:max-w-[80%] lg:max-w-[60%]">
               <TransformControls />
             </div>
             
@@ -158,9 +160,11 @@ export default function Home() {
               <Button 
                 variant="primary"
                 onClick={() => setRightSidebarOpen(true)}
+                className="text-xs sm:text-sm"
               >
                 <Printer className="h-4 w-4" />
-                3D print with taiyaki
+                <span className="hidden sm:inline ml-2">3D print with taiyaki</span>
+                <span className="sm:hidden ml-2">Print</span>
               </Button>
             </div>
           </div>

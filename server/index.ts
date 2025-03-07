@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 // import { initializeAuth } from "./auth";  // Removed auth reference
 import dotenv from "dotenv";
+import cors from 'cors';
 
 // Load environment variables
 dotenv.config();

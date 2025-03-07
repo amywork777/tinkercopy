@@ -508,8 +508,147 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     setActiveTab(value);
   };
   
-  // Helper function for random color
-  const getRandomColor = () => new THREE.Color(Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5);
+  // Function to get a random fun color for shapes
+  const getRandomColor = () => {
+    // Define an array of fun, vibrant colors
+    const vibrantColors = [
+      // Original vibrant colors
+      '#FF5733', // Bright orange/coral
+      '#33FF57', // Bright green
+      '#3357FF', // Bright blue
+      '#FF33A8', // Hot pink
+      '#33FFF6', // Cyan
+      '#F6FF33', // Bright yellow
+      '#FF33F6', // Magenta
+      '#FF5757', // Bright red
+      '#57FF57', // Lime green
+      '#5757FF', // Indigo
+      '#FFC733', // Gold
+      '#33CFFF', // Sky blue
+      '#FF9E33', // Orange
+      '#B533FF', // Purple
+      '#33FF9E', // Mint green
+      '#FF00CC', // Neon pink
+      '#00FFCC', // Bright turquoise
+      '#CCFF00', // Lime yellow
+      '#FF66B2', // Pastel pink
+      '#66FFB2', // Pastel mint
+      '#B266FF', // Lavender
+      '#FF9966', // Peach
+      '#1E90FF', // Dodger blue
+      '#ADFF2F', // Green yellow
+      '#FF8C00', // Dark orange
+      
+      // New super fun, fresh colors
+      '#FF1493', // Deep pink
+      '#00FF00', // Lime
+      '#FF4500', // OrangeRed
+      '#8A2BE2', // BlueViolet
+      '#FF00FF', // Fuchsia
+      '#00FFFF', // Aqua
+      '#FFD700', // Gold
+      '#FF6347', // Tomato
+      '#DA70D6', // Orchid
+      '#FF69B4', // HotPink
+      '#32CD32', // LimeGreen
+      '#BA55D3', // MediumOrchid
+      '#00FA9A', // MediumSpringGreen
+      '#9370DB', // MediumPurple
+      '#7B68EE', // MediumSlateBlue
+      '#20B2AA', // LightSeaGreen
+      '#9932CC', // DarkOrchid
+      '#FF6EB4', // HotPink
+      '#FF00AA', // Vivid pink
+      '#AAFF00', // Bright lime
+      '#00AAFF', // Vivid sky blue
+      '#AA00FF', // Vivid purple
+      '#FFAA00', // Bright amber
+      '#FFFF00', // Electric yellow
+      '#FF0000', // Pure red
+      '#00FF00', // Pure green
+      '#0000FF', // Pure blue
+      '#FF7700', // Bright orange
+      '#FF00BB', // Hot magenta
+      '#BBFF00', // Chartreuse
+      '#00BBFF', // Bright azure
+      '#BB00FF', // Electric violet
+      '#FFBB00', // Sunflower
+      '#00FFBB', // Spring green
+      '#7700FF', // Electric indigo
+      '#FF0077', // Raspberry
+      '#77FF00', // Yellow-green
+      '#00FF77', // Mint
+      '#7700FF', // Violet
+      '#FF7700'  // Pumpkin
+    ];
+    
+    // Select a random color from the vibrant palette
+    const randomIndex = Math.floor(Math.random() * vibrantColors.length);
+    return new THREE.Color(vibrantColors[randomIndex]);
+  };
+  
+  // Function to create a fun material for a shape
+  const createFunMaterial = () => {
+    // Randomly select from different material types for more variety
+    const materialType = Math.random();
+    
+    // 15% chance for a shiny metallic material
+    if (materialType < 0.15) {
+      return new THREE.MeshStandardMaterial({
+        color: getRandomColor(),
+        metalness: 0.9,
+        roughness: 0.1,
+        envMapIntensity: 1.0
+      });
+    }
+    
+    // 15% chance for a glass-like material
+    else if (materialType < 0.3) {
+      return new THREE.MeshStandardMaterial({
+        color: getRandomColor(),
+        metalness: 0.0,
+        roughness: 0.0,
+        transparent: true,
+        opacity: 0.7
+      });
+    }
+    
+    // 15% chance for a matte material
+    else if (materialType < 0.45) {
+      return new THREE.MeshStandardMaterial({
+        color: getRandomColor(),
+        metalness: 0.0,
+        roughness: 1.0
+      });
+    }
+    
+    // 15% chance for a material with high metalness but also high roughness
+    else if (materialType < 0.6) {
+      return new THREE.MeshStandardMaterial({
+        color: getRandomColor(),
+        metalness: 0.8,
+        roughness: 0.8
+      });
+    }
+    
+    // 15% chance for a semi-metallic material
+    else if (materialType < 0.75) {
+      return new THREE.MeshStandardMaterial({
+        color: getRandomColor(),
+        metalness: 0.5,
+        roughness: 0.3
+      });
+    }
+    
+    // 25% chance for a standard vibrant material with moderate properties
+    else {
+      return new THREE.MeshStandardMaterial({
+        color: getRandomColor(),
+        metalness: Math.random() * 0.4,
+        roughness: 0.4 + Math.random() * 0.4
+      });
+    }
+  };
 
   // Function to create a new model with the correct type
   const createModel = (mesh: THREE.Mesh, type: Model['type'], name: string) => {
@@ -530,7 +669,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const handleAddCube = () => {
     const geometry = new THREE.BoxGeometry(50.8, 50.8, 50.8);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     
     // Calculate bounding box and find position
@@ -556,7 +695,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const handleAddSphere = () => {
     const geometry = new THREE.SphereGeometry(25.4, 32, 32);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     
     // Calculate bounding box and find position
@@ -582,7 +721,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
   const handleAddCylinder = () => {
     const geometry = new THREE.CylinderGeometry(25.4, 25.4, 50.8, 32, 2, false); // Increased segments, closed ends
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
@@ -602,14 +741,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddCone = () => {
-    const geometry = new THREE.ConeGeometry(25.4, 50.8, 32, 2, false); // Increased height segments, closed base
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const geometry = new THREE.ConeGeometry(25.4, 50.8, 32, 2, false);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-
+    
     const newModel = createModel(mesh, 'cone', 'Cone');
     const updatedModels = [...models, newModel];
     useScene.setState({ models: updatedModels });
@@ -623,20 +762,20 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddTorus = () => {
-    const geometry = new THREE.TorusGeometry(25.4, 8, 16, 100);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const geometry = new THREE.TorusGeometry(25.4, 7.62, 16, 32);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-
+    
     const newModel = createModel(mesh, 'torus', 'Torus');
     const updatedModels = [...models, newModel];
     useScene.setState({ models: updatedModels });
     selectModel(updatedModels.length - 1);
     saveHistoryState();
-
+    
     toast({
       title: "Success",
       description: "Torus added to scene",
@@ -644,8 +783,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddTorusKnot = () => {
-    const geometry = new THREE.TorusKnotGeometry(25.4, 8, 100, 16);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const geometry = new THREE.TorusKnotGeometry(20, 5, 100, 16);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
@@ -665,8 +804,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddOctahedron = () => {
-    const geometry = new THREE.OctahedronGeometry(25.4);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const geometry = new THREE.OctahedronGeometry(25.4, 0);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
@@ -686,8 +825,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddIcosahedron = () => {
-    const geometry = new THREE.IcosahedronGeometry(25.4);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const geometry = new THREE.IcosahedronGeometry(25.4, 0);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
@@ -707,8 +846,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddDodecahedron = () => {
-    const geometry = new THREE.DodecahedronGeometry(25.4);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const geometry = new THREE.DodecahedronGeometry(25.4, 0);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
@@ -728,8 +867,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddCapsule = () => {
-    const geometry = new THREE.CapsuleGeometry(25.4, 50.8, 4, 8);
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    const geometry = new THREE.CapsuleGeometry(15, 30, 16, 16);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(0, 0, 0);
     mesh.castShadow = true;
@@ -784,14 +923,17 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   };
 
   const handleAddTube = () => {
-    // Create a curved path for the tube
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-25.4, -25.4, 0),    // -1 inch, -1 inch, 0
-      new THREE.Vector3(0, 25.4, 0),         // 0, 1 inch, 0
-      new THREE.Vector3(25.4, -25.4, 0)      // 1 inch, -1 inch, 0
-    ], true); // Make the curve closed
-    const geometry = new THREE.TubeGeometry(curve, 64, 8, 16, true); // Increased segments, closed=true
-    const material = new THREE.MeshStandardMaterial({ color: getRandomColor() });
+    // Complex geometry with a custom path
+    const path = new THREE.CatmullRomCurve3([
+      new THREE.Vector3( -40, 0, 0 ),
+      new THREE.Vector3( -10, 40, 20 ),
+      new THREE.Vector3( 0, 0, 0 ),
+      new THREE.Vector3( 10, -40, -20 ),
+      new THREE.Vector3( 40, 0, 0 )
+    ]);
+    
+    const geometry = new THREE.TubeGeometry(path, 64, 8, 16, false);
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -813,56 +955,41 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     // Create a triangular prism using custom geometry
     const geometry = new THREE.BufferGeometry();
     
-    // Define height and size parameters for consistency
-    const width = 50.8;      // 2 inches
-    const height = 50.8;     // 2 inches
-    const depth = 50.8;      // 2 inches
-    const halfWidth = width / 2;
-    const halfHeight = height / 2;
-    const halfDepth = depth / 2;
-    
     // Define vertices for a triangular prism
     const vertices = new Float32Array([
-      // Front face (triangular face at z = halfDepth)
-      0, halfHeight, halfDepth,           // 0: Top front
-      -halfWidth, -halfHeight, halfDepth, // 1: Bottom left front
-      halfWidth, -halfHeight, halfDepth,  // 2: Bottom right front
+      // Triangle base 1
+      -20, 0, -20,
+      20, 0, -20,
+      0, 0, 20,
       
-      // Back face (triangular face at z = -halfDepth)
-      0, halfHeight, -halfDepth,           // 3: Top back
-      -halfWidth, -halfHeight, -halfDepth, // 4: Bottom left back
-      halfWidth, -halfHeight, -halfDepth   // 5: Bottom right back
+      // Triangle base 2
+      -20, 40, -20,
+      20, 40, -20,
+      0, 40, 20
     ]);
     
-    // Define indices for all triangles with consistent winding order (counter-clockwise when viewed from outside)
-    const indices = new Uint16Array([
-      // Front triangular face
-      0, 1, 2,
+    // Define faces indices
+    const indices = [
+      // Base triangles
+      0, 1, 2, // Bottom
+      5, 4, 3, // Top (reversed orientation)
       
-      // Back triangular face (note reversed order for correct normals)
-      3, 5, 4,
-      
-      // Bottom rectangular face (divided into 2 triangles)
-      1, 5, 2, // First triangle
-      1, 4, 5, // Second triangle
-      
-      // Left rectangular side (divided into 2 triangles)
-      0, 3, 1,
-      1, 3, 4,
-      
-      // Right rectangular side (divided into 2 triangles)
-      0, 2, 3,
-      2, 5, 3
-    ]);
+      // Side faces (rectangles split into triangles)
+      0, 3, 1, // Side 1a
+      1, 3, 4, // Side 1b
+      1, 4, 2, // Side 2a
+      2, 4, 5, // Side 2b
+      0, 2, 3, // Side 3a
+      2, 5, 3  // Side 3b
+    ];
     
+    // Set geometry attributes
+    geometry.setIndex(indices);
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     geometry.computeVertexNormals();
-
-    const material = new THREE.MeshStandardMaterial({ 
-      color: getRandomColor()
-    });
     
+    // Create a mesh
+    const material = createFunMaterial();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

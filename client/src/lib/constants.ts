@@ -3,7 +3,7 @@ export const API_URL = import.meta.env.VITE_API_URL || 'https://fishcad.com/api'
 
 // Constants for model generation limits
 export const MODEL_LIMITS = {
-  FREE: 3,
+  FREE: 2,
   PRO: 20,
 };
 

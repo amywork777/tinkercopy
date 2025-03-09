@@ -100,15 +100,45 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return false;
     }
     
-    // In a real implementation, you would call your API to update the count in the database
-    // For now, we'll just update the local state
-    setSubscription(prev => ({
-      ...prev,
-      modelsRemainingThisMonth: prev.modelsRemainingThisMonth - 1,
-      modelsGeneratedThisMonth: prev.modelsGeneratedThisMonth + 1,
-    }));
-    
-    return true;
+    try {
+      // Call the API to update the count in the database
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/decrement-model-count`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+        }),
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to update model count:', await response.text());
+        return false;
+      }
+      
+      const data = await response.json();
+      
+      // Update the local state with the values from the server
+      setSubscription(prev => ({
+        ...prev,
+        modelsRemainingThisMonth: data.modelsRemainingThisMonth,
+        modelsGeneratedThisMonth: data.modelsGeneratedThisMonth,
+      }));
+      
+      return true;
+    } catch (error) {
+      console.error('Error updating model count:', error);
+      
+      // Fallback to updating local state only if API call fails
+      setSubscription(prev => ({
+        ...prev,
+        modelsRemainingThisMonth: prev.modelsRemainingThisMonth - 1,
+        modelsGeneratedThisMonth: prev.modelsGeneratedThisMonth + 1,
+      }));
+      
+      return true;
+    }
   };
 
   // Initial load and refresh when user changes

@@ -27,7 +27,7 @@ export function MagicFishAI() {
   const navigate = useNavigate();
   
   // Calculate model limits and percentages
-  const modelLimit = subscription.isPro ? 20 : 3;
+  const modelLimit = subscription.isPro ? 20 : 2;
   const modelsRemaining = subscription.modelsRemainingThisMonth;
   const modelsUsed = modelLimit - modelsRemaining;
   const usagePercent = Math.min(100, Math.round((modelsUsed / modelLimit) * 100));
@@ -52,12 +52,13 @@ export function MagicFishAI() {
           return;
         }
         
-        // Track model generation when a model is created
+        // Track model generation when a model is created - look for specific fishcad event types
         if (event.data && typeof event.data === 'object' && 
-            (event.data.type === 'generation_complete' || 
+            (event.data.type === 'fishcad_generation_complete' || 
+             event.data.type === 'generation_complete' || 
              event.data.type === 'modelGenerated' || 
              event.data.action === 'modelGenerated')) {
-          console.log('Model generation completed');
+          console.log('Model generation completed - decrementing count');
           
           // Decrement the available count
           const success = await decrementModelCount();
@@ -66,7 +67,7 @@ export function MagicFishAI() {
             // If decrement failed and user is not pro, show limit reached message
             toast({
               title: "Generation Limit Reached",
-              description: "You've reached your monthly limit of 3 generations as a free user.",
+              description: "You've reached your monthly limit of 2 generations as a free user.",
               variant: "destructive",
             });
             
@@ -79,6 +80,19 @@ export function MagicFishAI() {
               description: `You have ${modelsRemaining - 1} generations remaining this month.`,
               variant: "default",
             });
+            
+            // Update the iframe with new limits
+            const iframe = document.querySelector('iframe[src="https://magic.taiyaki.ai"]') as HTMLIFrameElement;
+            if (iframe && iframe.contentWindow) {
+              iframe.contentWindow.postMessage(
+                { 
+                  type: 'fishcad_limits_updated', 
+                  modelsRemaining: modelsRemaining - 1,
+                  modelLimit: modelLimit
+                },
+                "https://magic.taiyaki.ai"
+              );
+            }
           }
         }
       } catch (error) {
@@ -102,21 +116,24 @@ export function MagicFishAI() {
       if (!iframe || !iframe.contentWindow) return;
       
       try {
-        // Send subscription status to iframe
+        // Send subscription status to iframe with a more specific type
         iframe.contentWindow.postMessage(
           { 
-            type: 'configure', 
+            type: 'fishcad_configure', 
             isPro: subscription.isPro,
             modelsRemaining: modelsRemaining,
-            modelLimit: modelLimit
+            modelLimit: modelLimit,
+            userId: user?.id || 'anonymous'
           },
           "https://magic.taiyaki.ai"
         );
         
         console.log('Sent configuration to Taiyaki AI:', { 
+          type: 'fishcad_configure',
           isPro: subscription.isPro,
           modelsRemaining,
-          modelLimit
+          modelLimit,
+          userId: user?.id || 'anonymous'
         });
       } catch (error) {
         console.error('Error configuring iframe:', error);
@@ -126,8 +143,15 @@ export function MagicFishAI() {
     // Configure iframe when it loads
     if (!isLoading && !hasError) {
       configureIframe();
+      
+      // Set a recurring timer to refresh the configuration
+      const configInterval = setInterval(configureIframe, 30000); // Every 30 seconds
+      
+      return () => {
+        clearInterval(configInterval);
+      };
     }
-  }, [isLoading, hasError, subscription.isPro, modelsRemaining, modelLimit]);
+  }, [isLoading, hasError, subscription.isPro, modelsRemaining, modelLimit, user]);
 
   // Handle iframe load errors
   const handleIframeError = () => {

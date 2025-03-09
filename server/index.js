@@ -90,7 +90,7 @@ const resetMonthlyLimits = async () => {
       }
       
       // Set appropriate limits based on subscription
-      const modelLimit = userData.isPro ? 20 : 3;
+      const modelLimit = userData.isPro ? 20 : 2;
       
       batch.update(doc.ref, {
         modelsGeneratedThisMonth: 0,
@@ -120,6 +120,58 @@ setInterval(async () => {
     await resetMonthlyLimits();
   }
 }, 60 * 60 * 1000); // Check every hour
+
+// Add endpoint to decrement model count
+app.post('/api/decrement-model-count', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    // Get user from database
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    
+    // Pro users don't need to decrement
+    if (userData.isPro) {
+      return res.json({
+        modelsRemainingThisMonth: userData.modelsRemainingThisMonth || 0,
+        modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+      });
+    }
+    
+    // Check if user has remaining models
+    if (userData.modelsRemainingThisMonth <= 0) {
+      return res.status(403).json({ 
+        error: 'No remaining models',
+        modelsRemainingThisMonth: 0,
+        modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+      });
+    }
+    
+    // Update the counts in the database
+    const updatedData = {
+      modelsRemainingThisMonth: Math.max(0, (userData.modelsRemainingThisMonth || 0) - 1),
+      modelsGeneratedThisMonth: (userData.modelsGeneratedThisMonth || 0) + 1,
+    };
+    
+    await userRef.update(updatedData);
+    
+    // Return the updated counts
+    res.json(updatedData);
+  } catch (error) {
+    console.error('Error decrementing model count:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Static files
 app.use(express.static(path.join(__dirname, '../client/dist')));

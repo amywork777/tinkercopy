@@ -16,7 +16,7 @@ export function TaiyakiLibrary() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
   // Calculate model limits and percentages (reuse the same counters as AI)
-  const modelLimit = subscription.isPro ? 20 : 3;
+  const modelLimit = subscription.isPro ? 20 : 2;
   const modelsRemaining = subscription.modelsRemainingThisMonth;
   const modelsUsed = modelLimit - modelsRemaining;
   const usagePercent = Math.min(100, Math.round((modelsUsed / modelLimit) * 100));

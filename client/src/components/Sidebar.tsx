@@ -1046,7 +1046,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     input.click();
   };
   
-  // Dedicated function for draft imports
+  // Dedicated function for image imports
   const handleImageImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1058,8 +1058,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       try {
         // Show loading toast
         toast({
-          title: "Converting Draft",
-          description: "Converting draft to SVG... This may take a moment.",
+          title: "Converting Image",
+          description: "Converting image to SVG... This may take a moment.",
         });
         
         // Convert image to SVG
@@ -1072,7 +1072,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         const fileName = file.name.replace(/\.[^/.]+$/, '') + '.svg';
         const svgFile = new File([svgBlob], fileName, { type: 'image/svg+xml' });
         
-        // The default extrude depth for converted drafts (in mm)
+        // The default extrude depth for converted images (in mm)
         const extrudeDepth = 2;
         
         // Load the SVG file with an extrusion depth
@@ -1080,13 +1080,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         
         toast({
           title: "Conversion Successful",
-          description: `Converted draft to SVG and imported as 3D model`
+          description: `Converted image to SVG and imported as 3D model`
         });
       } catch (error) {
-        console.error("Error converting draft:", error);
+        console.error("Error converting image:", error);
         toast({
           title: "Conversion Failed",
-          description: "There was an error converting your draft to SVG",
+          description: "There was an error converting your image to SVG",
           variant: "destructive",
         });
       }
@@ -1714,7 +1714,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   onClick={handleImportClick}
                 >
                   <Upload className="mr-1 h-4 w-4" />
-                  Import STL, SVG or Draft
+                  Import STL, SVG or Image
                 </Button>
                 
                 <Button
@@ -1746,11 +1746,9 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <TaiyakiLibrary />
             </TabsContent>
             
-            {/* Drafts Tab */}
+            {/* Your Assets Tab */}
             <TabsContent value="assets" className="flex-1 overflow-y-auto p-0 h-full" forceMount style={{ display: activeTab === 'assets' ? 'block' : 'none' }}>
-              <div style={{ maxHeight: "80vh", margin: "0 auto" }}>
-                <AssetLibrary />
-              </div>
+              <AssetLibrary />
             </TabsContent>
             
             {/* Shapes Tab */}

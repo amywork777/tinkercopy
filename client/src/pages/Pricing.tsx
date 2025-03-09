@@ -141,7 +141,7 @@ export default function PricingPage() {
                 <Card className={`flex flex-col h-full ${!isProUser && user ? 'ring-2 ring-muted' : ''}`}>
                   <CardHeader className="pb-3">
                     <CardTitle>Free Tier</CardTitle>
-                    <CardDescription>Perfect for trying things out.</CardDescription>
+                    <CardDescription>Perfect for trying things out. No commitment, no cost—just endless possibilities.</CardDescription>
                     {!isProUser && user && (
                       <Badge variant="outline" className="mt-2 self-start">Current Plan</Badge>
                     )}
@@ -183,7 +183,7 @@ export default function PricingPage() {
                   </div>
                   <CardHeader className="pb-3">
                     <CardTitle>Pro Tier</CardTitle>
-                    <CardDescription>Unlock more power and save with annual plan.</CardDescription>
+                    <CardDescription>Unlock more power and save with our annual plan.</CardDescription>
                     {isProUser && (
                       <Badge className="bg-primary text-white mt-2 self-start">Current Plan</Badge>
                     )}
@@ -201,15 +201,11 @@ export default function PricingPage() {
                     <ul className="mt-4 space-y-3">
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Unlimited Model Generations</span>
+                        <span>{MODEL_LIMITS.PRO} Model Generations per Month</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Priority Processing</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Access to All Premium Templates</span>
+                        <span>Unlimited 3D Print Requests</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
@@ -217,8 +213,14 @@ export default function PricingPage() {
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Priority Support</span>
+                        <span>10% Discount on 3D Print Orders</span>
                       </li>
+                      {billingInterval === 'yearly' && (
+                        <li className="flex items-start">
+                          <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                          <span>Save 20% with Annual Billing</span>
+                        </li>
+                      )}
                     </ul>
                   </CardContent>
                   <CardFooter>
@@ -247,35 +249,12 @@ export default function PricingPage() {
                 {/* Enterprise Tier */}
                 <Card className="flex flex-col h-full">
                   <CardHeader className="pb-3">
-                    <CardTitle>Enterprise</CardTitle>
-                    <CardDescription>Custom solutions for businesses.</CardDescription>
+                    <CardTitle>Enterprise Solutions</CardTitle>
+                    <CardDescription>Looking for more? We offer custom solutions for businesses.</CardDescription>
                   </CardHeader>
                   <CardContent className="flex-1 pb-4">
                     <div className="text-2xl font-bold">Custom</div>
                     <div className="text-sm text-muted-foreground">Contact us for pricing</div>
-                    
-                    <ul className="mt-4 space-y-3">
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Unlimited Model Generations</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Enhanced Resource Allocation</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Enterprise Integration Options</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Priority Support Channels</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Enterprise Knowledge Resources</span>
-                      </li>
-                    </ul>
                   </CardContent>
                   <CardFooter>
                     <Button 

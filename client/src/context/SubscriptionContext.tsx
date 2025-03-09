@@ -7,6 +7,7 @@ export interface SubscriptionState {
   isPro: boolean;
   modelsRemainingThisMonth: number;
   modelsGeneratedThisMonth: number;
+  downloadsThisMonth: number;
   subscriptionStatus: string;
   subscriptionEndDate: string | null;
   subscriptionPlan: string;
@@ -18,12 +19,14 @@ interface SubscriptionContextType {
   refreshSubscription: () => Promise<void>;
   hasAccess: (feature: string) => boolean;
   decrementModelCount: () => Promise<boolean>;
+  trackDownload: () => Promise<boolean>;
 }
 
 const defaultSubscription: SubscriptionState = {
   isPro: false,
   modelsRemainingThisMonth: MODEL_LIMITS.FREE,
   modelsGeneratedThisMonth: 0,
+  downloadsThisMonth: 0,
   subscriptionStatus: 'none',
   subscriptionEndDate: null,
   subscriptionPlan: 'free',
@@ -35,6 +38,7 @@ const SubscriptionContext = createContext<SubscriptionContextType>({
   refreshSubscription: async () => {},
   hasAccess: () => false,
   decrementModelCount: async () => false,
+  trackDownload: async () => false,
 });
 
 export const useSubscription = () => useContext(SubscriptionContext);
@@ -57,6 +61,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         isPro: data.isPro,
         modelsRemainingThisMonth: data.modelsRemainingThisMonth,
         modelsGeneratedThisMonth: data.modelsGeneratedThisMonth,
+        downloadsThisMonth: data.downloadsThisMonth,
         subscriptionStatus: data.subscriptionStatus,
         subscriptionEndDate: data.subscriptionEndDate,
         subscriptionPlan: data.subscriptionPlan,
@@ -141,6 +146,49 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
+  // Track downloads in Firebase
+  const trackDownload = async (): Promise<boolean> => {
+    if (!user) return false;
+    
+    try {
+      // Call the API to update the download count in Firebase
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/track-download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+        }),
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to track download:', await response.text());
+        return false;
+      }
+      
+      const data = await response.json();
+      
+      // Update the local state with the new download count
+      setSubscription(prev => ({
+        ...prev,
+        downloadsThisMonth: data.downloadsThisMonth || prev.downloadsThisMonth + 1,
+      }));
+      
+      return true;
+    } catch (error) {
+      console.error('Error tracking download:', error);
+      
+      // Fallback to updating local state only
+      setSubscription(prev => ({
+        ...prev,
+        downloadsThisMonth: prev.downloadsThisMonth + 1,
+      }));
+      
+      return true;
+    }
+  };
+
   // Initial load and refresh when user changes
   useEffect(() => {
     refreshSubscription();
@@ -153,6 +201,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         refreshSubscription,
         hasAccess,
         decrementModelCount,
+        trackDownload,
       }}
     >
       {children}

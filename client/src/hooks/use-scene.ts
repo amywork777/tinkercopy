@@ -1346,28 +1346,44 @@ export const useScene = create<SceneState>((set, get) => {
             try {
               console.log("Attempting optimized subtraction for complex meshes");
               
-              // First try: Standard CSG subtraction
+              // First try: Standard CSG subtraction with double-sided materials
               try {
                 console.log("Performing standard CSG subtraction");
+                // Ensure both meshes have double-sided materials
+                if (tempMeshA.material instanceof THREE.Material) {
+                  (tempMeshA.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+                }
+                if (tempMeshB.material instanceof THREE.Material) {
+                  (tempMeshB.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+                }
+                
                 resultMesh = CSG.subtract(tempMeshA, tempMeshB);
                 operationSucceeded = true;
                 console.log("Standard subtraction successful");
               } catch (e) {
                 console.warn("Standard subtraction failed, trying with simplified geometries", e);
                 
-                // Second try: Simplify geometries before subtraction
-                const simplifyThreshold = 0.01; // Simplification factor
+                // Second try: Simplify geometries before subtraction with a modest threshold
+                const simplifyThreshold = 0.005; // Lower threshold for better precision
                 const altGeomA = simplifyGeometry(processedGeomA, simplifyThreshold);
                 const altGeomB = simplifyGeometry(processedGeomB, simplifyThreshold);
                 
                 const altMeshA = new THREE.Mesh(
                   altGeomA,
-                  new THREE.MeshStandardMaterial({ side: THREE.DoubleSide })
+                  new THREE.MeshStandardMaterial({ 
+                    side: THREE.DoubleSide,
+                    color: tempMeshA.material instanceof THREE.Material ? 
+                          (tempMeshA.material as THREE.MeshStandardMaterial).color : 0xffffff 
+                  })
                 );
                 
                 const altMeshB = new THREE.Mesh(
                   altGeomB,
-                  new THREE.MeshStandardMaterial({ side: THREE.DoubleSide })
+                  new THREE.MeshStandardMaterial({ 
+                    side: THREE.DoubleSide,
+                    color: tempMeshB.material instanceof THREE.Material ? 
+                          (tempMeshB.material as THREE.MeshStandardMaterial).color : 0xffffff
+                  })
                 );
                 
                 try {
@@ -1378,8 +1394,15 @@ export const useScene = create<SceneState>((set, get) => {
                   // Final attempt with basic material and different settings
                   console.warn("Simplified subtraction failed, trying final approach", altError);
                   
-                  const finalGeomA = ensureManifoldGeometry(meshA.geometry.clone().applyMatrix4(meshA.matrixWorld));
-                  const finalGeomB = ensureManifoldGeometry(meshB.geometry.clone().applyMatrix4(meshB.matrixWorld));
+                  // Try with a more aggressive simplification
+                  const finalGeomA = simplifyGeometry(
+                    ensureManifoldGeometry(meshA.geometry.clone().applyMatrix4(meshA.matrixWorld)),
+                    0.01
+                  );
+                  const finalGeomB = simplifyGeometry(
+                    ensureManifoldGeometry(meshB.geometry.clone().applyMatrix4(meshB.matrixWorld)),
+                    0.01
+                  );
                   
                   const finalMeshA = new THREE.Mesh(
                     finalGeomA,
@@ -1412,28 +1435,44 @@ export const useScene = create<SceneState>((set, get) => {
             try {
               console.log("Attempting optimized intersection for complex meshes");
               
-              // First try: Standard CSG intersection
+              // First try: Standard CSG intersection with double-sided materials
               try {
                 console.log("Performing standard CSG intersection");
+                // Ensure both meshes have double-sided materials
+                if (tempMeshA.material instanceof THREE.Material) {
+                  (tempMeshA.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+                }
+                if (tempMeshB.material instanceof THREE.Material) {
+                  (tempMeshB.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+                }
+                
                 resultMesh = CSG.intersect(tempMeshA, tempMeshB);
                 operationSucceeded = true;
                 console.log("Standard intersection successful");
               } catch (e) {
                 console.warn("Standard intersection failed, trying with simplified geometries", e);
                 
-                // Second try: Simplify geometries before intersection
-                const simplifyThreshold = 0.01; // Simplification factor
+                // Second try: Simplify geometries before intersection with a modest threshold
+                const simplifyThreshold = 0.005; // Lower threshold for better precision
                 const altGeomA = simplifyGeometry(processedGeomA, simplifyThreshold);
                 const altGeomB = simplifyGeometry(processedGeomB, simplifyThreshold);
                 
                 const altMeshA = new THREE.Mesh(
                   altGeomA,
-                  new THREE.MeshStandardMaterial({ side: THREE.DoubleSide })
+                  new THREE.MeshStandardMaterial({ 
+                    side: THREE.DoubleSide,
+                    color: tempMeshA.material instanceof THREE.Material ? 
+                          (tempMeshA.material as THREE.MeshStandardMaterial).color : 0xffffff 
+                  })
                 );
                 
                 const altMeshB = new THREE.Mesh(
                   altGeomB,
-                  new THREE.MeshStandardMaterial({ side: THREE.DoubleSide })
+                  new THREE.MeshStandardMaterial({ 
+                    side: THREE.DoubleSide,
+                    color: tempMeshB.material instanceof THREE.Material ? 
+                          (tempMeshB.material as THREE.MeshStandardMaterial).color : 0xffffff
+                  })
                 );
                 
                 try {
@@ -1444,8 +1483,15 @@ export const useScene = create<SceneState>((set, get) => {
                   // Final attempt with basic material and different settings
                   console.warn("Simplified intersection failed, trying final approach", altError);
                   
-                  const finalGeomA = ensureManifoldGeometry(meshA.geometry.clone().applyMatrix4(meshA.matrixWorld));
-                  const finalGeomB = ensureManifoldGeometry(meshB.geometry.clone().applyMatrix4(meshB.matrixWorld));
+                  // Try with a more aggressive simplification
+                  const finalGeomA = simplifyGeometry(
+                    ensureManifoldGeometry(meshA.geometry.clone().applyMatrix4(meshA.matrixWorld)),
+                    0.01
+                  );
+                  const finalGeomB = simplifyGeometry(
+                    ensureManifoldGeometry(meshB.geometry.clone().applyMatrix4(meshB.matrixWorld)),
+                    0.01
+                  );
                   
                   const finalMeshA = new THREE.Mesh(
                     finalGeomA,
@@ -2859,6 +2905,33 @@ function ensureManifoldGeometry(geometry: THREE.BufferGeometry): THREE.BufferGeo
       processedGeometry.computeBoundingBox();
     }
     
+    // Check if the geometry has an index, if not create one
+    if (!processedGeometry.index) {
+      console.log("Creating index for non-indexed geometry");
+      processedGeometry.setIndex(
+        Array.from({ length: processedGeometry.attributes.position.count }, (_, i) => i)
+      );
+    }
+    
+    // Make sure we don't have any invalid normals (NaN values)
+    const normals = processedGeometry.getAttribute('normal');
+    if (normals) {
+      const normalsArray = normals.array;
+      let hasInvalidNormals = false;
+      
+      for (let i = 0; i < normalsArray.length; i++) {
+        if (isNaN(normalsArray[i])) {
+          hasInvalidNormals = true;
+          normalsArray[i] = 0; // Replace NaN with 0
+        }
+      }
+      
+      if (hasInvalidNormals) {
+        console.warn("Fixed invalid normals in geometry");
+        processedGeometry.computeVertexNormals(); // Recompute all normals
+      }
+    }
+    
     // Merge any duplicate vertices with a small tolerance
     if (BufferGeometryUtils.mergeVertices) {
       return BufferGeometryUtils.mergeVertices(processedGeometry, 0.0001);
@@ -3018,21 +3091,27 @@ function robustMeshUnion(meshA: THREE.Mesh, meshB: THREE.Mesh): THREE.Mesh {
 function simplifyGeometry(geometry: THREE.BufferGeometry, threshold: number = 0.01): THREE.BufferGeometry {
   const simplified = geometry.clone();
   
-  // If the geometry is very complex, skip attributes that aren't essential
-  const position = simplified.getAttribute('position');
-  if (position && position.count > 10000) {
-    // For large geometries, only keep position, normal, and index
-    const keepAttributes = ['position', 'normal'];
+  try {
+    // If the geometry is very complex, skip attributes that aren't essential
+    const position = simplified.getAttribute('position');
+    if (!position) {
+      console.warn("Geometry has no position attribute, cannot simplify");
+      return simplified;
+    }
     
-    // Remove non-essential attributes to reduce complexity
-    for (const key in simplified.attributes) {
-      if (!keepAttributes.includes(key)) {
-        simplified.deleteAttribute(key);
+    // For large geometries, only keep essential attributes
+    if (position.count > 10000) {
+      // Keep only position, normal, and index
+      const keepAttributes = ['position', 'normal'];
+      
+      // Remove non-essential attributes to reduce complexity
+      for (const key in simplified.attributes) {
+        if (!keepAttributes.includes(key)) {
+          simplified.deleteAttribute(key);
+        }
       }
     }
-  }
 
-  if (simplified.index) {
     // Ensure we have proper vertex normals
     if (!simplified.getAttribute('normal')) {
       simplified.computeVertexNormals();
@@ -3043,9 +3122,27 @@ function simplifyGeometry(geometry: THREE.BufferGeometry, threshold: number = 0.
       simplified.computeBoundingBox();
     }
     
-    if (BufferGeometryUtils.mergeVertices) {
-      return BufferGeometryUtils.mergeVertices(simplified, threshold);
+    // Create an index if one doesn't exist
+    if (!simplified.index) {
+      simplified.setIndex(
+        Array.from({ length: position.count }, (_, i) => i)
+      );
     }
+    
+    // Merge vertices with the specified threshold
+    if (BufferGeometryUtils.mergeVertices) {
+      const optimized = BufferGeometryUtils.mergeVertices(simplified, threshold);
+      
+      // Verify the simplified geometry looks good
+      if (optimized.attributes.position.count === 0) {
+        console.warn("Simplification resulted in no vertices, using original geometry");
+        return simplified;
+      }
+      
+      return optimized;
+    }
+  } catch (error) {
+    console.warn("Error during geometry simplification:", error);
   }
   
   return simplified;
@@ -3060,28 +3157,49 @@ function validateResultMesh(mesh: THREE.Mesh): boolean {
   }
   
   // Check if the geometry has vertices
-  const position = mesh.geometry.attributes.position;
+  const position = mesh.geometry.getAttribute('position');
   if (!position || position.count === 0) {
     console.error("Result mesh has no vertices");
     return false;
   }
   
-  // Check if the geometry has a valid bounding box
-  if (!mesh.geometry.boundingBox) {
-    try {
-      mesh.geometry.computeBoundingBox();
-    } catch (e) {
-      console.error("Failed to compute bounding box for result mesh");
+  // Check if we have at least one triangle
+  if (mesh.geometry.index && mesh.geometry.index.count < 3) {
+    console.error("Result mesh has no triangles");
+    return false;
+  }
+  
+  // Check for NaN values in positions that would cause rendering issues
+  const positions = position.array;
+  for (let i = 0; i < positions.length; i++) {
+    if (isNaN(positions[i])) {
+      console.error("Result mesh has NaN position values");
       return false;
     }
   }
   
-  // Check if the geometry has face data (indices)
-  if (!mesh.geometry.index || mesh.geometry.index.count === 0) {
-    console.error("Result mesh has no face data");
+  // Make sure the bounding box is valid (not infinite or NaN)
+  mesh.geometry.computeBoundingBox();
+  const bbox = mesh.geometry.boundingBox;
+  if (!bbox) {
+    console.error("Failed to compute bounding box");
     return false;
   }
   
+  // Check for invalid bounding box values
+  if (isNaN(bbox.min.x) || isNaN(bbox.min.y) || isNaN(bbox.min.z) ||
+      isNaN(bbox.max.x) || isNaN(bbox.max.y) || isNaN(bbox.max.z)) {
+    console.error("Bounding box contains NaN values");
+    return false;
+  }
+  
+  if (!isFinite(bbox.min.x) || !isFinite(bbox.min.y) || !isFinite(bbox.min.z) ||
+      !isFinite(bbox.max.x) || !isFinite(bbox.max.y) || !isFinite(bbox.max.z)) {
+    console.error("Bounding box contains infinite values");
+    return false;
+  }
+  
+  // The mesh passed all validation checks
   return true;
 }
 

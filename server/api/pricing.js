@@ -255,6 +255,7 @@ router.get('/user-subscription/:userId', async (req, res) => {
       isPro: userData.isPro || false,
       modelsRemainingThisMonth: userData.modelsRemainingThisMonth || 0,
       modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+      downloadsThisMonth: userData.downloadsThisMonth || 0,
       subscriptionStatus: userData.subscriptionStatus || 'none',
       subscriptionEndDate: userData.subscriptionEndDate || null,
       subscriptionPlan: userData.subscriptionPlan || 'free',

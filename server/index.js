@@ -58,6 +58,44 @@ app.use(bodyParser.json());
 // API routes
 app.use('/api/pricing', pricingRoutes);
 
+// Add endpoint to track downloads
+app.post('/api/track-download', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    // Get user from database
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    
+    // Update the download count in the database
+    const currentDownloads = userData.downloadsThisMonth || 0;
+    const updatedData = {
+      downloadsThisMonth: currentDownloads + 1,
+      lastDownloadDate: new Date().toISOString()
+    };
+    
+    await userRef.update(updatedData);
+    
+    // Return the updated count
+    res.json({
+      downloadsThisMonth: currentDownloads + 1
+    });
+  } catch (error) {
+    console.error('Error tracking download:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Create a monthly reset function for model generations
 const resetMonthlyLimits = async () => {
   if (!db) {
@@ -95,6 +133,7 @@ const resetMonthlyLimits = async () => {
       batch.update(doc.ref, {
         modelsGeneratedThisMonth: 0,
         modelsRemainingThisMonth: modelLimit,
+        downloadsThisMonth: 0, // Reset downloads count too
         lastResetDate: currentMonth,
       });
       

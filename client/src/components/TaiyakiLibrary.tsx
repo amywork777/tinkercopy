@@ -223,30 +223,14 @@ export function TaiyakiLibrary() {
         </CardContent>
         
         <CardFooter className="p-3 flex-col" style={{minHeight: "80px"}}>
-          {/* Download counter for free users */}
-          {!subscription.isPro && (
-            <>
-              <div className="w-full mb-2">
-                <div className="flex justify-between items-center text-xs mb-1">
-                  <span>STL Downloads</span>
-                  <span className="font-medium">{modelsRemaining}/{modelLimit} remaining</span>
-                </div>
-                <Progress value={usagePercent} className="h-2" />
-              </div>
-              
-              <div className="w-full mt-2 flex justify-between items-center">
-                <span className="text-xs text-muted-foreground">Free users get {modelLimit} downloads per month</span>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => navigate('/pricing')}
-                >
-                  <Crown className="h-3 w-3 mr-1" />
-                  Upgrade for unlimited
-                </Button>
-              </div>
-            </>
+          {/* Info message only for Pro users */}
+          {subscription.isPro && (
+            <div className="w-full flex items-center justify-center">
+              <Info className="h-3 w-3 text-muted-foreground mr-1" />
+              <span className="text-xs text-muted-foreground">
+                Pro users have unlimited access to Taiyaki Library
+              </span>
+            </div>
           )}
         </CardFooter>
       </Card>

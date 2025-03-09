@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { useScene } from "@/hooks/use-scene";
-import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X, FileText, Layout, Undo, Redo, Image as ImageIcon, Crown } from "lucide-react";
+import { Download, Trash, Box, Type, Paintbrush, Upload, Shapes, Bot, Circle, Triangle, CircleDot, Layers, Droplets, Badge, Sparkles, Zap, Pencil, Printer, X, FileText, Layout, Undo, Redo, Image as ImageIcon, Crown, LibraryBig, PencilRuler, Palette } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { ModelList } from "./ModelList";
@@ -24,6 +24,8 @@ import { MagicFishAI } from "@/components/MagicFishAI";
 import { AssetLibrary } from "@/components/AssetLibrary";
 import { imageToSvg } from "@/lib/imageToSvg";
 import { useSubscription } from '@/context/SubscriptionContext';
+import { ThangsEmbed } from "@/components/ThangsEmbed";
+import { ThingiverseEmbed } from "@/components/ThingiverseEmbed";
 
 // Font options with their display names and paths
 const FONTS = [
@@ -1044,7 +1046,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     input.click();
   };
   
-  // Dedicated function for image imports
+  // Dedicated function for draft imports
   const handleImageImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1056,8 +1058,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       try {
         // Show loading toast
         toast({
-          title: "Converting Image",
-          description: "Converting image to SVG... This may take a moment.",
+          title: "Converting Draft",
+          description: "Converting draft to SVG... This may take a moment.",
         });
         
         // Convert image to SVG
@@ -1070,7 +1072,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         const fileName = file.name.replace(/\.[^/.]+$/, '') + '.svg';
         const svgFile = new File([svgBlob], fileName, { type: 'image/svg+xml' });
         
-        // The default extrude depth for converted images (in mm)
+        // The default extrude depth for converted drafts (in mm)
         const extrudeDepth = 2;
         
         // Load the SVG file with an extrusion depth
@@ -1078,13 +1080,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         
         toast({
           title: "Conversion Successful",
-          description: `Converted image to SVG and imported as 3D model`
+          description: `Converted draft to SVG and imported as 3D model`
         });
       } catch (error) {
-        console.error("Error converting image:", error);
+        console.error("Error converting draft:", error);
         toast({
           title: "Conversion Failed",
-          description: "There was an error converting your image to SVG",
+          description: "There was an error converting your draft to SVG",
           variant: "destructive",
         });
       }
@@ -1654,7 +1656,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         >
           <TabsList className="flex flex-col h-full py-4 border-r space-y-2 w-20 shrink-0 overflow-y-auto overflow-x-hidden">
             <TabsTrigger value="models" className="flex justify-center items-center flex-col py-3 px-2">
-              <Box className="h-5 w-5" />
+              <Layers className="h-5 w-5" />
               <span className="text-xs mt-1">Models</span>
             </TabsTrigger>
             <TabsTrigger value="library" className="flex justify-center items-center flex-col py-3 px-2 relative">
@@ -1695,6 +1697,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <Paintbrush className="h-5 w-5" />
               <span className="text-xs mt-1">Appearance</span>
             </TabsTrigger>
+            <TabsTrigger value="thingiverse" className="flex justify-center items-center flex-col py-3 px-2">
+              <LibraryBig className="h-5 w-5" />
+              <span className="text-xs mt-1">Thingiverse</span>
+            </TabsTrigger>
           </TabsList>
           
           <div className="flex-1 overflow-hidden">
@@ -1708,7 +1714,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   onClick={handleImportClick}
                 >
                   <Upload className="mr-1 h-4 w-4" />
-                  Import STL, SVG or Image
+                  Import STL, SVG or Draft
                 </Button>
                 
                 <Button
@@ -1740,9 +1746,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <TaiyakiLibrary />
             </TabsContent>
             
-            {/* Your Assets Tab */}
+            {/* Drafts Tab */}
             <TabsContent value="assets" className="flex-1 overflow-y-auto p-0 h-full" forceMount style={{ display: activeTab === 'assets' ? 'block' : 'none' }}>
-              <AssetLibrary />
+              <div style={{ maxHeight: "80vh", margin: "0 auto" }}>
+                <AssetLibrary />
+              </div>
             </TabsContent>
             
             {/* Shapes Tab */}
@@ -2141,6 +2149,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   </Button>
                 </div>
               </div>
+            </TabsContent>
+            
+            {/* Thingiverse Tab - External 3D models */}
+            <TabsContent value="thingiverse" className="flex-1 h-full overflow-hidden" forceMount style={{ display: activeTab === 'thingiverse' ? 'block' : 'none' }}>
+              <ThingiverseEmbed />
             </TabsContent>
           </div>
         </Tabs>

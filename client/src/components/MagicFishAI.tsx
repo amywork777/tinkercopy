@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Loader2, AlertCircle, Crown, Info, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ export function MagicFishAI() {
   const { hasAccess, subscription, decrementModelCount, trackDownload } = useSubscription();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const overlayRef = useRef<HTMLDivElement>(null); // Reference for the overlay
   
   // Calculate model limits and percentages
   const modelLimit = subscription.isPro ? 20 : 2;
@@ -83,40 +84,107 @@ export function MagicFishAI() {
     }
   };
 
-  // Monitor actual download events from the iframe
+  // Implement the overlay approach to intercept download button clicks
   useEffect(() => {
-    // Function to detect actual file downloads
-    const detectDownload = (e: MouseEvent) => {
-      // Only look for .stl file downloads
-      if (e.target && (e.target as HTMLElement).tagName === 'A' && 
-          ((e.target as HTMLAnchorElement).download || 
-           ((e.target as HTMLAnchorElement).href && (e.target as HTMLAnchorElement).href.toLowerCase().endsWith('.stl')))) {
-        console.log('Actual STL download detected', (e.target as HTMLAnchorElement).href);
-        handleDownloadDetected();
-      }
-    };
-
-    // Listen for beforeunload events which might indicate a download
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (e.target && (e.target as any).activeElement && 
-          (e.target as any).activeElement.tagName === 'IFRAME' && 
-          (e.target as any).activeElement.src.includes('magic.taiyaki.ai')) {
-        // This might be a download from the iframe
-        console.log('Potential download from iframe detected');
-      }
+    // Create an overlay only when the iframe is loaded
+    if (isLoading || hasError) return;
+    
+    console.log("Setting up download button overlay...");
+    
+    // The overlay positioning function
+    const positionOverlay = () => {
+      const iframe = document.querySelector('iframe[src="https://magic.taiyaki.ai"]') as HTMLIFrameElement;
+      if (!iframe || !overlayRef.current) return;
+      
+      // Get iframe position
+      const iframeRect = iframe.getBoundingClientRect();
+      
+      // Position our overlay container absolutely over the iframe
+      const overlayContainer = overlayRef.current;
+      overlayContainer.style.position = 'absolute';
+      overlayContainer.style.top = `${iframeRect.top}px`;
+      overlayContainer.style.left = `${iframeRect.left}px`;
+      overlayContainer.style.width = `${iframeRect.width}px`;
+      overlayContainer.style.height = `${iframeRect.height}px`;
+      overlayContainer.style.pointerEvents = 'none'; // Let events pass through by default
+      overlayContainer.style.zIndex = '1000';
+      
+      // Clear any existing interceptors
+      overlayContainer.innerHTML = '';
+      
+      // Create specific interceptors for known download button positions
+      const buttonPositions = getDownloadButtonPositions();
+      
+      buttonPositions.forEach((pos, index) => {
+        const interceptor = document.createElement('div');
+        interceptor.className = 'download-interceptor';
+        interceptor.style.position = 'absolute';
+        interceptor.style.top = `${pos.top}px`;
+        interceptor.style.left = `${pos.left}px`;
+        interceptor.style.width = `${pos.width}px`;
+        interceptor.style.height = `${pos.height}px`;
+        interceptor.style.pointerEvents = 'auto'; // Catch clicks
+        interceptor.style.cursor = 'pointer';
+        interceptor.style.background = 'rgba(0, 0, 0, 0)'; // Transparent
+        interceptor.dataset.buttonIndex = index.toString();
+        
+        // Add debug highlight (remove in production)
+        if (import.meta.env.DEV) {
+          interceptor.style.background = 'rgba(255, 0, 0, 0.1)';
+          interceptor.style.border = '1px solid red';
+        }
+        
+        // Add click listener
+        interceptor.addEventListener('click', (e) => {
+          e.stopPropagation();
+          console.log(`Download button intercepted at position ${index}`);
+          handleDownloadDetected();
+        });
+        
+        overlayContainer.appendChild(interceptor);
+      });
+      
+      console.log(`Positioned ${buttonPositions.length} download button interceptors`);
     };
     
-    // Add our event listeners
-    window.addEventListener('click', detectDownload, true);
-    window.addEventListener('beforeunload', handleBeforeUnload, true);
+    // This function returns the positions of download buttons based on the iframe content
+    // These positions would need to be determined by inspecting the iframe content
+    const getDownloadButtonPositions = () => {
+      // These values are examples and should be replaced with actual positions
+      // Try to locate the buttons in the Taiyaki AI interface
+      return [
+        // Top right corner - common position for export/download buttons
+        { top: 80, left: 520, width: 120, height: 40 },
+        
+        // Bottom right corner - another common position
+        { top: 480, left: 520, width: 120, height: 40 },
+        
+        // Middle right side - common for sidebar buttons
+        { top: 250, left: 520, width: 120, height: 40 },
+        
+        // If there's a specific download STL button you know about, add its position
+        // Example: "download stl" button in a specific location
+        { top: 400, left: 400, width: 150, height: 50 },
+      ];
+    };
     
+    // Position the overlay initially
+    positionOverlay();
+    
+    // Reposition on window resize or iframe content changes
+    window.addEventListener('resize', positionOverlay);
+    
+    // Check periodically for changes in the iframe content
+    const checkInterval = setInterval(positionOverlay, 2000);
+    
+    // Cleanup function
     return () => {
-      window.removeEventListener('click', detectDownload, true);
-      window.removeEventListener('beforeunload', handleBeforeUnload, true);
+      window.removeEventListener('resize', positionOverlay);
+      clearInterval(checkInterval);
     };
-  }, [handleDownloadDetected]);
+  }, [isLoading, hasError, handleDownloadDetected]);
 
-  // Add event handler for the iframe messages, focusing on download events
+  // Original event handler for the iframe messages
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       // Only handle messages from the iframe origin
@@ -278,6 +346,9 @@ export function MagicFishAI() {
                 allow="microphone; clipboard-write; camera; clipboard-read; display-capture"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads allow-modals allow-presentation allow-popups-to-escape-sandbox"
               />
+              
+              {/* Download button interceptor overlay container */}
+              <div ref={overlayRef} className="download-interceptor-container"></div>
               
               {/* Semi-transparent overlay when download limit is reached */}
               {!subscription.isPro && modelsRemaining <= 0 && !isLoading && !hasError && (

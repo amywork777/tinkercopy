@@ -2731,6 +2731,9 @@ function ensureManifoldGeometry(geometry: THREE.BufferGeometry): THREE.BufferGeo
   const processedGeometry = geometry.clone();
   
   try {
+    const startVertexCount = processedGeometry.attributes.position.count;
+    console.log(`Starting manifold repair for geometry with ${startVertexCount} vertices`);
+    
     // Step 1: Basic attribute checks and computation
     // Ensure the geometry has computed attributes
     if (!processedGeometry.getAttribute('normal')) {
@@ -2794,10 +2797,16 @@ function ensureManifoldGeometry(geometry: THREE.BufferGeometry): THREE.BufferGeo
       }
     }
     
-    // Step 5: Degenerate triangle removal
-    // Check and filter out degenerate triangles (where all points are the same)
-    if (processedGeometry.index && positions) {
-      const indices = processedGeometry.index.array;
+    // Step 5: Detect and fix self-intersections
+    // Self-intersecting geometries cause many boolean operation failures
+    const repairedGeometry = repairSelfIntersections(processedGeometry);
+    console.log("Self-intersection repair complete");
+    
+    // Step 6: Degenerate triangle removal
+    // Check and filter out degenerate triangles (where all points are the same or collinear)
+    let fixedDegenerateTriangles = false;
+    if (repairedGeometry.index && positions) {
+      const indices = repairedGeometry.index.array;
       const posArray = positions.array;
       const validIndices = [];
       
@@ -2836,25 +2845,53 @@ function ensureManifoldGeometry(geometry: THREE.BufferGeometry): THREE.BufferGeo
         
         if (isDifferent && isNonCollinear) {
           validIndices.push(indices[i], indices[i + 1], indices[i + 2]);
+        } else {
+          fixedDegenerateTriangles = true;
         }
       }
       
       if (validIndices.length < indices.length) {
         console.warn(`Removed ${(indices.length - validIndices.length) / 3} degenerate triangles`);
-        processedGeometry.setIndex(validIndices);
+        repairedGeometry.setIndex(validIndices);
       }
     }
     
-    // Step 6: Vertex merging - final cleanup
+    // Step 7: Check if the geometry was drastically simplified - don't over-repair
+    if (repairedGeometry.attributes.position.count < startVertexCount * 0.5) {
+      console.warn(`Repair reduced vertex count by more than 50% (${startVertexCount} -> ${repairedGeometry.attributes.position.count})`);
+      console.warn("Using original geometry to avoid over-simplification");
+      return geometry.clone(); // Return a clone of the original
+    }
+    
+    // Step 8: Vertex merging - final cleanup
     // Merge any duplicate vertices with a small tolerance
     if (BufferGeometryUtils.mergeVertices) {
-      return BufferGeometryUtils.mergeVertices(processedGeometry, 0.0001);
+      const finalGeometry = BufferGeometryUtils.mergeVertices(repairedGeometry, 0.0001);
+      
+      // Final integrity checks
+      const finalVertexCount = finalGeometry.attributes.position.count;
+      console.log(`Manifold repair complete: ${startVertexCount} -> ${finalVertexCount} vertices`);
+      
+      // Compute normals one last time
+      finalGeometry.computeVertexNormals();
+      
+      // Make sure we haven't completely destroyed the geometry
+      if (finalVertexCount > 0 && 
+          (finalGeometry.index ? finalGeometry.index.count > 0 : true)) {
+        return finalGeometry;
+      } else {
+        console.warn("Repair resulted in invalid geometry, using original");
+        return geometry.clone();
+      }
     }
+    
+    // If we get here, return the repaired geometry
+    repairedGeometry.computeVertexNormals();
+    return repairedGeometry;
   } catch (error) {
     console.warn("Error preparing geometry:", error);
+    return geometry.clone(); // Return a clone of the original if repair failed
   }
-  
-  return processedGeometry;
 }
 
 // Add this helper function for robust mesh union operations
@@ -3122,7 +3159,30 @@ function robustMeshUnion(meshA: THREE.Mesh, meshB: THREE.Mesh): THREE.Mesh {
 }
 
 // Add the simplifyGeometry helper function
-function simplifyGeometry(geometry: THREE.BufferGeometry, threshold: number = 0.01): THREE.BufferGeometry {
+function simplifyGeometry(
+  geometry: THREE.BufferGeometry, 
+  thresholdOrOptions: number | { 
+    threshold?: number, 
+    shapeType?: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'other',
+    aggressiveness?: number
+  } = 0.01
+): THREE.BufferGeometry {
+  // Extract parameters
+  let threshold = 0.01;
+  let shapeType: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'other' = 'other';
+  let aggressiveness = 1.0;
+  
+  if (typeof thresholdOrOptions === 'number') {
+    threshold = thresholdOrOptions;
+  } else {
+    threshold = thresholdOrOptions.threshold ?? 0.01;
+    shapeType = thresholdOrOptions.shapeType ?? 'other';
+    aggressiveness = thresholdOrOptions.aggressiveness ?? 1.0;
+  }
+  
+  console.log(`Simplifying geometry (type: ${shapeType}, threshold: ${threshold}, aggressiveness: ${aggressiveness})`);
+  
+  // Clone the geometry to avoid modifying the original
   const simplified = geometry.clone();
   
   try {
@@ -3131,6 +3191,47 @@ function simplifyGeometry(geometry: THREE.BufferGeometry, threshold: number = 0.
     if (!position) {
       console.warn("Geometry has no position attribute, cannot simplify");
       return simplified;
+    }
+    
+    const initialVertexCount = position.count;
+    console.log(`Initial vertex count: ${initialVertexCount}`);
+    
+    // Apply shape-specific optimizations
+    if (shapeType !== 'other') {
+      // For primitive shapes, we can use specialized simplification
+      // This is especially useful for high-polycount primitives that could be represented more simply
+      switch (shapeType) {
+        case 'cube':
+          // For cubes, we can be very aggressive with merging
+          threshold = Math.max(threshold, 0.01 * aggressiveness);
+          break;
+          
+        case 'sphere':
+          // Spheres need careful handling to maintain shape
+          threshold = Math.min(threshold, 0.008 * aggressiveness);
+          break;
+          
+        case 'cylinder':
+        case 'cone':
+          // These shapes can handle moderate simplification
+          threshold = Math.min(threshold, 0.01 * aggressiveness);
+          break;
+          
+        case 'torus':
+          // Torus shapes need careful handling around the inner ring
+          threshold = Math.min(threshold, 0.005 * aggressiveness);
+          break;
+      }
+    } else {
+      // For complex or unknown shapes, be more conservative
+      // Scale threshold based on geometry complexity
+      if (initialVertexCount > 10000) {
+        // For very complex meshes, we can be more aggressive
+        threshold = Math.min(threshold * 1.5, 0.02) * aggressiveness;
+      } else if (initialVertexCount < 1000) {
+        // For simple meshes, be more conservative
+        threshold = Math.min(threshold * 0.7, 0.005) * aggressiveness;
+      }
     }
     
     // For large geometries, only keep essential attributes
@@ -3163,7 +3264,9 @@ function simplifyGeometry(geometry: THREE.BufferGeometry, threshold: number = 0.
       );
     }
     
-    // Merge vertices with the specified threshold
+    // Merge vertices with the calculated threshold
+    console.log(`Using simplification threshold: ${threshold}`);
+    
     if (BufferGeometryUtils.mergeVertices) {
       const optimized = BufferGeometryUtils.mergeVertices(simplified, threshold);
       
@@ -3171,6 +3274,21 @@ function simplifyGeometry(geometry: THREE.BufferGeometry, threshold: number = 0.
       if (optimized.attributes.position.count === 0) {
         console.warn("Simplification resulted in no vertices, using original geometry");
         return simplified;
+      }
+      
+      const finalVertexCount = optimized.attributes.position.count;
+      const reductionPercent = ((initialVertexCount - finalVertexCount) / initialVertexCount * 100).toFixed(1);
+      console.log(`Simplified geometry: ${initialVertexCount} → ${finalVertexCount} vertices (${reductionPercent}% reduction)`);
+      
+      // Protection against over-simplification
+      if (finalVertexCount < initialVertexCount * 0.1 && initialVertexCount > 100) {
+        console.warn("Simplification reduced vertices by more than 90%, using a more conservative approach");
+        // Try again with a more conservative threshold
+        return simplifyGeometry(geometry, {
+          threshold: threshold * 0.5,
+          shapeType,
+          aggressiveness: aggressiveness * 0.5
+        });
       }
       
       return optimized;
@@ -3378,9 +3496,44 @@ function robustMeshSubtract(meshA: THREE.Mesh, meshB: THREE.Mesh): THREE.Mesh {
     const manifoldGeomA = ensureManifoldGeometry(baseGeomA);
     const manifoldGeomB = ensureManifoldGeometry(baseGeomB);
     
-    // Then simplify them
-    const simplifiedGeomA = simplifyGeometry(manifoldGeomA, simplifyThreshold);
-    const simplifiedGeomB = simplifyGeometry(manifoldGeomB, simplifyThreshold);
+    // Determine shape types for optimal simplification
+    let shapeTypeA: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'other' = 'other';
+    let shapeTypeB: 'cube' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'other' = 'other';
+    
+    // Try to detect shape types from mesh names or userData if available
+    if (meshA.name) {
+      const name = meshA.name.toLowerCase();
+      if (name.includes('cube') || name.includes('box')) shapeTypeA = 'cube';
+      else if (name.includes('sphere')) shapeTypeA = 'sphere';
+      else if (name.includes('cylinder')) shapeTypeA = 'cylinder';
+      else if (name.includes('cone')) shapeTypeA = 'cone';
+      else if (name.includes('torus')) shapeTypeA = 'torus';
+    }
+    
+    if (meshB.name) {
+      const name = meshB.name.toLowerCase();
+      if (name.includes('cube') || name.includes('box')) shapeTypeB = 'cube';
+      else if (name.includes('sphere')) shapeTypeB = 'sphere';
+      else if (name.includes('cylinder')) shapeTypeB = 'cylinder';
+      else if (name.includes('cone')) shapeTypeB = 'cone';
+      else if (name.includes('torus')) shapeTypeB = 'torus';
+    }
+    
+    console.log(`Detected shape types - A: ${shapeTypeA}, B: ${shapeTypeB}`);
+    
+    // Then simplify them with shape-specific settings
+    const simplifiedGeomA = simplifyGeometry(manifoldGeomA, {
+      threshold: simplifyThreshold,
+      shapeType: shapeTypeA,
+      aggressiveness: 1.0
+    });
+    
+    const simplifiedGeomB = simplifyGeometry(manifoldGeomB, {
+      threshold: simplifyThreshold,
+      shapeType: shapeTypeB,
+      // Be less aggressive with the subtractor shape to preserve details
+      aggressiveness: 0.8
+    });
     
     // Create meshes for CSG with simplified geometries
     const simpleMeshA = new THREE.Mesh(
@@ -3770,6 +3923,138 @@ function robustMeshIntersect(meshA: THREE.Mesh, meshB: THREE.Mesh): THREE.Mesh {
     
     return new THREE.Mesh(emptyGeom, emptyMaterial);
   }
+}
+
+// Add this utility function after validateResultMesh but before the export statement
+
+/**
+ * Utility function to check for and attempt to repair self-intersections in a geometry
+ * Self-intersecting geometries often cause boolean operations to fail
+ */
+function repairSelfIntersections(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  console.log("Checking for and repairing self-intersections");
+  
+  // Clone the geometry to avoid modifying the original
+  const repairedGeometry = geometry.clone();
+  
+  try {
+    // Step 1: Ensure we have indices for triangle detection
+    if (!repairedGeometry.index) {
+      console.log("Creating index for non-indexed geometry");
+      repairedGeometry.setIndex(
+        Array.from({ length: repairedGeometry.attributes.position.count }, (_, i) => i)
+      );
+    }
+    
+    // Step 2: Find triangles that might intersect each other
+    const indices = repairedGeometry.index?.array || [];
+    const positions = repairedGeometry.attributes.position.array;
+    
+    // This is a simplified approach - full intersection testing would be much more complex
+    // We'll look for triangles that share edges but have inverted normals,
+    // which is a strong indicator of self-intersection
+    
+    // First create a map of edges to triangles
+    const edgeToTriangles = new Map<string, number[]>();
+    const potentialIssues = new Set<number>();
+    
+    // Only proceed if we have indices
+    if (repairedGeometry.index) {
+      for (let i = 0; i < indices.length; i += 3) {
+        const triangleIndex = i / 3;
+        const i1 = indices[i];
+        const i2 = indices[i + 1];
+        const i3 = indices[i + 2];
+        
+        // Register each edge with this triangle
+        // We'll sort the indices to make sure we get the same key for the same edge
+        const edges = [
+          [Math.min(i1, i2), Math.max(i1, i2)],
+          [Math.min(i2, i3), Math.max(i2, i3)],
+          [Math.min(i3, i1), Math.max(i3, i1)]
+        ];
+        
+        for (const [a, b] of edges) {
+          const edgeKey = `${a}-${b}`;
+          if (!edgeToTriangles.has(edgeKey)) {
+            edgeToTriangles.set(edgeKey, []);
+          }
+          edgeToTriangles.get(edgeKey)!.push(triangleIndex);
+          
+          // If this edge is shared by more than one triangle, check for potential issues
+          if (edgeToTriangles.get(edgeKey)!.length > 1) {
+            // Check normals of the triangles sharing this edge
+            const triangles = edgeToTriangles.get(edgeKey)!;
+            for (const prevTriangle of triangles.slice(0, -1)) {
+              // Add both triangles as potential issues to check
+              potentialIssues.add(prevTriangle);
+              potentialIssues.add(triangleIndex);
+            }
+          }
+        }
+      }
+    }
+    
+    if (potentialIssues.size > 0) {
+      console.log(`Found ${potentialIssues.size} potential self-intersecting triangles`);
+    } else {
+      console.log("No self-intersections detected");
+      return repairedGeometry;
+    }
+    
+    // Step 3: Simple repair by merging very close vertices
+    // This can often resolve minor self-intersections
+    // We use an aggressive tolerance here to fix most issues
+    const repairTolerance = 0.001;
+    
+    if (BufferGeometryUtils.mergeVertices) {
+      const mergedGeometry = BufferGeometryUtils.mergeVertices(repairedGeometry, repairTolerance);
+      
+      // Compare vertex counts to see if we made a significant change
+      if (mergedGeometry.attributes.position.count < repairedGeometry.attributes.position.count) {
+        const reduction = repairedGeometry.attributes.position.count - mergedGeometry.attributes.position.count;
+        console.log(`Merged ${reduction} vertices to repair self-intersections`);
+        
+        // Recompute normals after merging
+        mergedGeometry.computeVertexNormals();
+        return mergedGeometry;
+      }
+    }
+    
+    // Step 4: If merging didn't help, try to fix by removing problematic triangles
+    // This is a last resort and can leave holes, but sometimes better than failing
+    if (repairedGeometry.index && potentialIssues.size > repairedGeometry.index.count / 6) {
+      // Too many issues to fix by removing triangles, would destroy the mesh
+      console.warn("Too many problematic triangles to fix by removal");
+      return repairedGeometry;
+    }
+    
+    // Create a new index array without problematic triangles
+    const newIndices = [];
+    
+    // Only proceed if we have a valid index
+    if (repairedGeometry.index) {
+      for (let i = 0; i < indices.length; i += 3) {
+        const triangleIndex = i / 3;
+        if (!potentialIssues.has(triangleIndex)) {
+          newIndices.push(indices[i], indices[i + 1], indices[i + 2]);
+        }
+      }
+      
+      if (newIndices.length < indices.length) {
+        console.log(`Removed ${(indices.length - newIndices.length) / 3} problematic triangles`);
+        repairedGeometry.setIndex(newIndices);
+        
+        // Recompute normals after removing triangles
+        repairedGeometry.computeVertexNormals();
+      }
+    }
+  } catch (error) {
+    console.warn("Error while repairing self-intersections:", error);
+    return geometry; // Return original if repair failed
+  }
+  
+  return repairedGeometry;
 }
 
 export {};

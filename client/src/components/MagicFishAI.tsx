@@ -1,28 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, AlertCircle, Crown, Info } from "lucide-react";
+import { Loader2, AlertCircle, Crown, Info, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from '@/context/SubscriptionContext';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { FEATURES } from '@/lib/constants';
 import { Progress } from '@/components/ui/progress';
-import { 
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 export function MagicFishAI() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [showLimitReachedDialog, setShowLimitReachedDialog] = useState(false);
   const { toast } = useToast();
-  const { hasAccess, subscription, decrementModelCount } = useSubscription();
+  const { hasAccess, subscription, decrementModelCount, trackDownload } = useSubscription();
   const { user } = useAuth();
   const navigate = useNavigate();
   
@@ -31,8 +21,102 @@ export function MagicFishAI() {
   const modelsRemaining = subscription.modelsRemainingThisMonth;
   const modelsUsed = modelLimit - modelsRemaining;
   const usagePercent = Math.min(100, Math.round((modelsUsed / modelLimit) * 100));
+  
+  // Track total downloads from Firebase
+  const totalDownloads = subscription.downloadsThisMonth || 0;
 
-  // Add event handler for the iframe messages, including generation count
+  // Function to track STL downloads - moved above effects for proper dependencies
+  const handleDownloadDetected = async () => {
+    console.log('STL Download detected - tracking in Firebase');
+    
+    // Track the download in Firebase
+    const success = await trackDownload();
+    
+    if (success) {
+      // Only decrement model count for free users
+      if (!subscription.isPro) {
+        // Check if user has reached their limit
+        if (modelsRemaining <= 0) {
+          toast({
+            title: "Download Limit Reached",
+            description: "You've reached your monthly limit of downloads as a free user.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        // Decrement the available count
+        const decrementSuccess = await decrementModelCount();
+        
+        if (!decrementSuccess) {
+          toast({
+            title: "Download Limit Reached",
+            description: "You've reached your monthly limit of 2 downloads as a free user.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "STL Downloaded",
+            description: `You have ${modelsRemaining - 1} downloads remaining this month.`,
+            variant: "default",
+          });
+          
+          // Check if this was their last download
+          if (modelsRemaining === 1) {
+            setTimeout(() => {
+              toast({
+                title: "Last Download Used",
+                description: "You've used your last free download for this month.",
+                variant: "default",
+              });
+            }, 2000);
+          }
+        }
+      } else {
+        // For Pro users, just show a notification about the count
+        toast({
+          title: "STL Downloaded",
+          description: `You've downloaded ${totalDownloads + 1} of 20 files this month.`,
+          variant: "default",
+        });
+      }
+    }
+  };
+
+  // Monitor actual download events from the iframe
+  useEffect(() => {
+    // Function to detect actual file downloads
+    const detectDownload = (e: MouseEvent) => {
+      // Only look for .stl file downloads
+      if (e.target && (e.target as HTMLElement).tagName === 'A' && 
+          ((e.target as HTMLAnchorElement).download || 
+           ((e.target as HTMLAnchorElement).href && (e.target as HTMLAnchorElement).href.toLowerCase().endsWith('.stl')))) {
+        console.log('Actual STL download detected', (e.target as HTMLAnchorElement).href);
+        handleDownloadDetected();
+      }
+    };
+
+    // Listen for beforeunload events which might indicate a download
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (e.target && (e.target as any).activeElement && 
+          (e.target as any).activeElement.tagName === 'IFRAME' && 
+          (e.target as any).activeElement.src.includes('magic.taiyaki.ai')) {
+        // This might be a download from the iframe
+        console.log('Potential download from iframe detected');
+      }
+    };
+    
+    // Add our event listeners
+    window.addEventListener('click', detectDownload, true);
+    window.addEventListener('beforeunload', handleBeforeUnload, true);
+    
+    return () => {
+      window.removeEventListener('click', detectDownload, true);
+      window.removeEventListener('beforeunload', handleBeforeUnload, true);
+    };
+  }, [handleDownloadDetected]);
+
+  // Add event handler for the iframe messages, focusing on download events
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       // Only handle messages from the iframe origin
@@ -52,48 +136,21 @@ export function MagicFishAI() {
           return;
         }
         
-        // Track model generation when a model is created - look for specific fishcad event types
-        if (event.data && typeof event.data === 'object' && 
-            (event.data.type === 'fishcad_generation_complete' || 
-             event.data.type === 'generation_complete' || 
-             event.data.type === 'modelGenerated' || 
-             event.data.action === 'modelGenerated')) {
-          console.log('Model generation completed - decrementing count');
-          
-          // Decrement the available count
-          const success = await decrementModelCount();
-          
-          if (!success && !subscription.isPro) {
-            // If decrement failed and user is not pro, show limit reached message
-            toast({
-              title: "Generation Limit Reached",
-              description: "You've reached your monthly limit of 2 generations as a free user.",
-              variant: "destructive",
-            });
-            
-            // Show the dialog instead of a confirm dialog
-            setShowLimitReachedDialog(true);
-          } else {
-            // Successful generation
-            toast({
-              title: "Model Generated",
-              description: `You have ${modelsRemaining - 1} generations remaining this month.`,
-              variant: "default",
-            });
-            
-            // Update the iframe with new limits
-            const iframe = document.querySelector('iframe[src="https://magic.taiyaki.ai"]') as HTMLIFrameElement;
-            if (iframe && iframe.contentWindow) {
-              iframe.contentWindow.postMessage(
-                { 
-                  type: 'fishcad_limits_updated', 
-                  modelsRemaining: modelsRemaining - 1,
-                  modelLimit: modelLimit
-                },
-                "https://magic.taiyaki.ai"
-              );
-            }
-          }
+        // Track ONLY download-specific events
+        // Look for download event types
+        const isDownloadEvent = event.data && typeof event.data === 'object' && (
+          // Very specific STL download events
+          (event.data.type === 'download_stl') ||
+          (event.data.action === 'download_stl') ||
+          // File download with .stl extension
+          (event.data.filename && event.data.filename.toLowerCase().endsWith('.stl')) ||
+          // Explicit download action with STL format
+          (event.data.action === 'download' && event.data.format === 'stl')
+        );
+        
+        if (isDownloadEvent) {
+          console.log('Confirmed STL download from iframe message');
+          await handleDownloadDetected();
         }
       } catch (error) {
         console.error('Error processing message from iframe:', error);
@@ -107,9 +164,9 @@ export function MagicFishAI() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [toast, decrementModelCount, subscription.isPro, navigate, modelsRemaining]);
+  }, [toast, decrementModelCount, subscription.isPro, navigate, modelsRemaining, trackDownload, totalDownloads]);
 
-  // Configure iframe on load
+  // Configure iframe on load - with improved download tracking
   useEffect(() => {
     const configureIframe = () => {
       const iframe = document.querySelector('iframe[src="https://magic.taiyaki.ai"]') as HTMLIFrameElement;
@@ -173,12 +230,14 @@ export function MagicFishAI() {
               <CardTitle className="text-lg">Taiyaki AI</CardTitle>
               <CardDescription>Create and edit 3D models using AI</CardDescription>
             </div>
-            {subscription.isPro && (
-              <span className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full flex items-center">
-                <Crown className="h-3 w-3 mr-1" />
-                Pro
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {subscription.isPro && (
+                <span className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full flex items-center">
+                  <Crown className="h-3 w-3 mr-1" />
+                  Pro
+                </span>
+              )}
+            </div>
           </div>
         </CardHeader>
         
@@ -209,29 +268,64 @@ export function MagicFishAI() {
               </Button>
             </div>
           ) : (
-            <iframe 
-              src="https://magic.taiyaki.ai"
-              className="w-full h-full border-0"
-              title="Taiyaki AI"
-              onLoad={() => setIsLoading(false)}
-              onError={handleIframeError}
-              allow="microphone; clipboard-write; camera; clipboard-read; display-capture"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads allow-modals allow-presentation allow-popups-to-escape-sandbox"
-            />
-          )}
-
-          {/* Show a warning overlay when generation limit is reached */}
-          {!subscription.isPro && modelsRemaining <= 0 && !isLoading && !hasError && (
-            <div className="absolute inset-0 bg-background/70 backdrop-blur-sm flex flex-col items-center justify-center z-20 p-6 text-center">
-              <Crown className="h-12 w-12 text-primary mb-4" />
-              <h3 className="text-lg font-medium mb-2">Generation Limit Reached</h3>
-              <p className="text-muted-foreground mb-6 max-w-md">
-                You've used all {modelLimit} of your free AI generations this month. 
-                Upgrade to Pro for {subscription.isPro ? 20 : 17} more generations per month!
-              </p>
-              <Button onClick={() => navigate('/pricing')}>
-                Upgrade to Pro
-              </Button>
+            <div className="relative h-full">
+              <iframe 
+                src="https://magic.taiyaki.ai"
+                className="w-full h-full border-0"
+                title="Taiyaki AI"
+                onLoad={() => setIsLoading(false)}
+                onError={handleIframeError}
+                allow="microphone; clipboard-write; camera; clipboard-read; display-capture"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads allow-modals allow-presentation allow-popups-to-escape-sandbox"
+              />
+              
+              {/* Semi-transparent overlay when download limit is reached */}
+              {!subscription.isPro && modelsRemaining <= 0 && !isLoading && !hasError && (
+                <div className="absolute inset-0 pointer-events-auto z-20 flex flex-col">
+                  {/* Top banner with limit message - using UI style colors */}
+                  <div className="bg-primary text-primary-foreground py-3 px-4 shadow-md">
+                    <div className="flex justify-between items-center max-w-4xl mx-auto">
+                      <div className="flex items-center">
+                        <Crown className="h-5 w-5 mr-2" />
+                        <span className="font-medium">Download Limit Reached</span>
+                      </div>
+                      <Button
+                        variant="secondary" 
+                        size="sm"
+                        onClick={() => navigate('/pricing')}
+                      >
+                        Upgrade to Pro
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Bottom message tray - matching card styling */}
+                  <div className="mt-auto bg-card text-card-foreground border-t p-4 text-center">
+                    <p className="text-sm font-medium mb-2">You've used all your free downloads this month.</p>
+                    <p className="text-xs text-muted-foreground">Upgrade to Pro for 20 downloads per month.</p>
+                  </div>
+                  
+                  {/* Center area with subtle overlay */}
+                  <div 
+                    className="flex-grow bg-background/30 backdrop-blur-[1px] pointer-events-auto flex items-center justify-center" 
+                    onClick={() => {
+                      toast({
+                        title: "Download Limit Reached",
+                        description: "You've used all your free downloads this month. Upgrade to Pro for 20 downloads per month.",
+                        variant: "destructive",
+                      });
+                    }}
+                  >
+                    {/* Hover message using card styling */}
+                    <div className="bg-card text-card-foreground border rounded-md shadow-md p-3 opacity-0 hover:opacity-100 transition-opacity duration-300">
+                      <div className="flex items-center gap-2">
+                        <Lock className="h-4 w-4 text-primary" />
+                        <span className="text-sm">Upgrade to Pro (20 downloads/month)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -240,7 +334,7 @@ export function MagicFishAI() {
           {/* Usage progress bar */}
           <div className="w-full mb-2">
             <div className="flex justify-between items-center text-xs mb-1">
-              <span>Model Generations</span>
+              <span>STL Downloads</span>
               <span className="font-medium">{modelsRemaining}/{modelLimit} remaining</span>
             </div>
             <Progress value={usagePercent} className="h-2" />
@@ -249,7 +343,7 @@ export function MagicFishAI() {
           {/* Upgrade notice for free users */}
           {!subscription.isPro && (
             <div className="w-full mt-2 flex justify-between items-center border border-orange-200 rounded bg-orange-50 p-2">
-              <span className="text-xs text-orange-700">For more downloads, upgrade to Pro</span>
+              <span className="text-xs text-orange-700">Pro users get 20 downloads per month</span>
               <Button 
                 variant="ghost"
                 size="sm"
@@ -266,35 +360,11 @@ export function MagicFishAI() {
           {subscription.isPro && (
             <div className="w-full mt-2 flex items-center">
               <Info className="h-3 w-3 text-muted-foreground mr-1" />
-              <span className="text-xs text-muted-foreground">Pro: 20 generations per month</span>
+              <span className="text-xs text-muted-foreground">Pro: 20 STL downloads per month</span>
             </div>
           )}
         </CardFooter>
       </Card>
-
-      {/* Limit reached dialog */}
-      <Dialog open={showLimitReachedDialog} onOpenChange={setShowLimitReachedDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generation Limit Reached</DialogTitle>
-            <DialogDescription>
-              You've used all {modelLimit} of your free AI generations this month. 
-              Upgrade to Pro for {subscription.isPro ? 20 : 17} more generations!
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowLimitReachedDialog(false)}>
-              Maybe Later
-            </Button>
-            <Button onClick={() => {
-              setShowLimitReachedDialog(false);
-              navigate('/pricing');
-            }}>
-              Upgrade to Pro
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 } 

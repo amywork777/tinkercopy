@@ -29,36 +29,145 @@ const estimatePriceFromVolume = (volume: number): number => {
 };
 
 // Calculate price of 3D printing based on various factors
-export const calculateModelPrice = async (modelData: any) => {
+export const calculateModelPrice = async (
+  modelData: any, 
+  quantity: number = 1, 
+  filamentId: string = 'white'
+) => {
   try {
+    console.log(`Calculating price for quantity: ${quantity}, filament: ${filamentId}`);
+    
     // Prepare the payload for the API
     const payload = {
-      ...modelData,
+      model: modelData,
+      quantity: quantity,
+      filamentId: filamentId,
+      options: {
+        infill: 20, // Default infill percentage
+        resolution: 0.2, // Default layer height in mm
+      }
     };
     
     // Call the Slant 3D API to calculate price
     const response = await slantApi.post('/calculate-price', payload);
     
-    // Extract the price from the response
-    return {
-      price: response.data?.price || 0,
-      volume: response.data?.volume || 0,
-      weight: response.data?.weight || 0,
-      materialCost: response.data?.materialCost || 0,
-      printTimeCost: response.data?.printTimeCost || 0,
-    };
+    // Process API response
+    if (response.data) {
+      const { 
+        price = 0, 
+        basePrice = 0,
+        shippingCost = 4.99,
+        totalPrice = 0,
+        volume = 0, 
+        weight = 0, 
+        materialCost = 0, 
+        printTimeCost = 0,
+        estimatedPrintTime = 0
+      } = response.data;
+      
+      // Return structured price data
+      return {
+        basePrice: basePrice || price || (quantity * 15), // Fallback to simple calculation
+        shippingCost: shippingCost,
+        totalPrice: totalPrice || (basePrice + shippingCost) || (price + shippingCost) || ((quantity * 15) + shippingCost),
+        volume,
+        weight,
+        materialCost,
+        printTimeCost,
+        estimatedPrintTime,
+        pricePerUnit: basePrice / quantity,
+        quantity
+      };
+    }
+    
+    throw new Error('Invalid response from price calculation API');
   } catch (error) {
     console.error('Error calculating price:', error);
     
     // Fallback price calculation
-    const estimatedPrice = estimatePriceFromVolume(modelData.volume);
+    const basePrice = 15 + ((quantity - 1) * 5); // $15 for first item, $5 for each additional
+    const shippingCost = 4.99;
+    const totalPrice = basePrice + shippingCost + (basePrice * 0.5); // Adding 50% service fee
     
     return {
-      price: estimatedPrice,
-      volume: modelData.volume || 0,
-      weight: modelData.weight || 0,
-      materialCost: estimatedPrice * 0.4, // Estimate 40% material cost
-      printTimeCost: estimatedPrice * 0.6, // Estimate 60% print time cost
+      basePrice,
+      shippingCost,
+      totalPrice,
+      volume: 0,
+      weight: 0,
+      materialCost: basePrice * 0.4, // Estimate 40% material cost
+      printTimeCost: basePrice * 0.6, // Estimate 60% print time cost
+      estimatedPrintTime: quantity * 120, // Estimate 2 hours per item
+      pricePerUnit: basePrice / quantity,
+      quantity
+    };
+  }
+};
+
+// Submit a print job to the 3D printing service
+export const submitPrintJob = async (printJobData: {
+  model: any;                  // Model data (STL as base64)
+  quantity: number;            // Number of copies to print
+  filamentId: string;          // Selected filament/material ID
+  shippingInfo: {              // Customer shipping information
+    name: string;
+    email: string;
+    phone: string;
+    address: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
+  options?: {                  // Optional printing parameters
+    infill?: number;           // Infill percentage (0-100)
+    resolution?: number;       // Layer height in mm
+    supports?: boolean;        // Whether to generate supports
+    rafts?: boolean;           // Whether to print with a raft
+  };
+}) => {
+  try {
+    console.log('Submitting print job to API');
+    
+    // Submit the print job to the API
+    const response = await slantApi.post('/submit-job', printJobData);
+    
+    // Return the job information
+    return {
+      success: true,
+      jobId: response.data?.jobId || response.data?.id || 'job-' + Math.random().toString(36).substring(2, 10),
+      estimatedCompletion: response.data?.estimatedCompletion || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      trackingUrl: response.data?.trackingUrl || null,
+      paymentUrl: response.data?.paymentUrl || null
+    };
+  } catch (error) {
+    console.error('Error submitting print job:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+};
+
+// Get the status of a print job
+export const getPrintJobStatus = async (jobId: string) => {
+  try {
+    const response = await slantApi.get(`/job-status/${jobId}`);
+    
+    return {
+      success: true,
+      status: response.data?.status || 'pending',
+      progress: response.data?.progress || 0,
+      estimatedCompletion: response.data?.estimatedCompletion,
+      trackingNumber: response.data?.trackingNumber || null,
+      trackingUrl: response.data?.trackingUrl || null,
+      details: response.data
+    };
+  } catch (error) {
+    console.error('Error fetching job status:', error);
+    return {
+      success: false,
+      status: 'unknown',
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
     };
   }
 };

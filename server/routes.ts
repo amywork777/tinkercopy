@@ -31,7 +31,7 @@ export async function registerRoutes(app: Express, httpServer?: Server, socketIo
       const targetPath = req.path.replace('/api/slant3d/', '');
       const url = `${API_BASE_URL}/${targetPath}`;
       
-      console.log(`Proxying request to: ${url}`);
+      console.log(`Proxying request to Slant 3D API: ${url}`);
       
       // Prepare headers
       const headers = {
@@ -39,14 +39,31 @@ export async function registerRoutes(app: Express, httpServer?: Server, socketIo
         'Content-Type': 'application/json'
       };
       
+      // For larger STL model uploads, increase timeout
+      const timeout = req.method !== 'GET' && (
+        targetPath.includes('calculate-price') || 
+        targetPath.includes('submit-job')
+      ) ? 30000 : 10000; // 30 seconds for uploads, 10 seconds for other requests
+
       // Forward the request to the Slant 3D API
       const response = await axios({
         method: req.method,
         url,
         headers,
         data: req.method !== 'GET' ? req.body : undefined,
-        params: req.method === 'GET' ? req.query : undefined
+        params: req.method === 'GET' ? req.query : undefined,
+        timeout,
+        maxContentLength: 20 * 1024 * 1024, // Allow up to 20MB for uploads
+        maxBodyLength: 20 * 1024 * 1024, // Allow up to 20MB for request body
       });
+      
+      // For job submission, log the response details
+      if (targetPath.includes('submit-job') && response.data) {
+        console.log('Successfully submitted print job:', {
+          jobId: response.data.jobId || response.data.id,
+          status: response.data.status || 'submitted'
+        });
+      }
       
       // Return the response from the API
       return res.status(response.status).json(response.data);
@@ -57,11 +74,25 @@ export async function registerRoutes(app: Express, httpServer?: Server, socketIo
       const axiosError = error as AxiosError;
       if (axiosError.response) {
         // The request was made and the server responded with a status code outside of 2xx
-        return res.status(axiosError.response.status).json(axiosError.response.data);
+        console.error('API Error Response:', axiosError.response.status, axiosError.response.data);
+        return res.status(axiosError.response.status).json({
+          error: 'Error from 3D printing service',
+          details: axiosError.response.data
+        });
+      } else if (axiosError.request) {
+        // The request was made but no response was received
+        console.error('No response received from API', axiosError.request);
+        return res.status(504).json({ 
+          error: '3D printing service timeout',
+          message: 'The service took too long to respond. Please try again.'
+        });
       }
       
       // Something else went wrong
-      return res.status(500).json({ error: 'Failed to proxy request to Slant 3D API' });
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        message: 'Failed to communicate with 3D printing service'
+      });
     }
   });
 

@@ -20,7 +20,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { calculateModelPrice, getFilaments, createPaymentLink } from "@/lib/slantApi";
+import { calculateModelPrice, getFilaments, createPaymentLink, submitPrintJob, getPrintJobStatus } from "@/lib/slantApi";
 
 // Initialize with empty array, will be populated from API
 const EMPTY_FILAMENT_COLORS: FilamentColor[] = [];
@@ -68,6 +68,13 @@ const Print3DTab = () => {
   const [uploadedModelData, setUploadedModelData] = useState<any>(null);
   const [filamentColors, setFilamentColors] = useState<FilamentColor[]>(EMPTY_FILAMENT_COLORS);
   const [isLoadingFilaments, setIsLoadingFilaments] = useState(false);
+  const [printJob, setPrintJob] = useState<{
+    jobId: string;
+    status: string;
+    estimatedCompletion?: string;
+    trackingUrl?: string;
+    paymentUrl?: string;
+  } | null>(null);
   
   // Form state
   const [shippingInfo, setShippingInfo] = useState<ShippingFormData>({
@@ -398,32 +405,88 @@ const Print3DTab = () => {
     setError(null);
     
     try {
-      // Prepare the order data for the payment link
-      const orderData = {
-        model: uploadedModelData || await exportSelectedModelAsSTL(),
+      let modelData;
+      
+      // Get model data either from the uploaded model or from the selected model in the scene
+      if (uploadedModelData) {
+        modelData = uploadedModelData;
+      } else if (selectedModelIndex !== null) {
+        // Export the selected model as STL
+        const stlBlob = await exportSelectedModelAsSTL();
+        if (!stlBlob) {
+          throw new Error('Failed to export model');
+        }
+        
+        // Convert the blob to base64 for submission
+        modelData = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(stlBlob);
+        });
+      } else {
+        throw new Error('No model selected or uploaded');
+      }
+      
+      // Prepare the print job data
+      const printJobData = {
+        model: modelData,
         quantity,
         filamentId: selectedFilament,
-        shipping: shippingInfo,
-        price: {
-          base: basePrice,
-          shipping: shippingCost,
-          total: finalPrice
+        shippingInfo: {
+          name: shippingInfo.name,
+          email: shippingInfo.email,
+          phone: shippingInfo.phone,
+          address: shippingInfo.address,
+          city: shippingInfo.city,
+          state: shippingInfo.state,
+          zip: shippingInfo.zip
+        },
+        options: {
+          infill: 20, // Default 20% infill
+          resolution: 0.2, // 0.2mm layer height
+          supports: true,
+          rafts: false
         }
       };
       
-      // Call the Slant 3D API to create a payment link
-      const response = await createPaymentLink(orderData);
-      setPaymentLink(response.paymentUrl);
+      // Submit the print job
+      console.log('Submitting print job:', printJobData);
+      const response = await submitPrintJob(printJobData);
       
-      // Move to the payment step
-      handleNextStep();
-      
+      if (response.success) {
+        // Store the job info in state
+        setPrintJob({
+          jobId: response.jobId,
+          status: 'submitted',
+          estimatedCompletion: response.estimatedCompletion,
+          trackingUrl: response.trackingUrl,
+          paymentUrl: response.paymentUrl
+        });
+        
+        // Set the payment link if available
+        if (response.paymentUrl) {
+          setPaymentLink(response.paymentUrl);
+        }
+        
+        // Move to the payment step
+        handleNextStep();
+        
+        toast({
+          title: "Print job submitted",
+          description: `Job ID: ${response.jobId}`,
+        });
+      } else {
+        throw new Error(response.error || 'Failed to submit print job');
+      }
     } catch (err) {
-      console.error('Payment link error:', err);
-      setError('Error creating payment link. Please try again.');
+      console.error('Print job submission error:', err);
+      setError('Error submitting print job. Please try again.');
       
-      // Fallback to simulation
-      handleSimulateSuccessfulPayment();
+      // Fallback to simulation in development environment
+      if (process.env.NODE_ENV === 'development') {
+        handleSimulateSuccessfulPayment();
+      }
     } finally {
       setIsLoading(false);
     }
@@ -441,18 +504,32 @@ const Print3DTab = () => {
       // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1500));
       
+      // Create a fake job ID
+      const simulatedJobId = 'sim-' + Math.random().toString(36).substring(2, 10);
+      
       // Set a fake payment link
-      setPaymentLink('https://example.com/payment/12345');
+      setPaymentLink('https://example.com/payment/' + simulatedJobId);
+      
+      // Set a simulated print job
+      setPrintJob({
+        jobId: simulatedJobId,
+        status: 'processing',
+        estimatedCompletion: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+        trackingUrl: 'https://example.com/track/' + simulatedJobId,
+        paymentUrl: 'https://example.com/payment/' + simulatedJobId
+      });
       
       // Go to confirmation step
       handleNextStep();
       
       toast({
-        title: "Order Confirmed",
-        description: "This is a simulated payment. In a real app, you would be redirected to a payment processor.",
+        title: "Demo Mode",
+        description: "This is a simulated order for demonstration purposes.",
+        variant: "default"
       });
-    } catch (err) {
-      setError('Error processing payment. Please try again.');
+    } catch (error) {
+      console.error('Simulation error:', error);
+      setError('Error in demo mode. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -749,153 +826,238 @@ const Print3DTab = () => {
   );
   
   const renderPaymentStep = () => (
-    <div className="space-y-4">
-      <div className="rounded-md border p-4 bg-card">
-        <h3 className="text-md font-medium mb-3">Order Summary</h3>
-        <div className="space-y-3">
-          <div>
-            <h4 className="text-sm font-medium mb-2">Selected Model</h4>
-            <div className="flex justify-between text-sm">
-              <span>Model:</span>
-              <span>
-                {selectedModelIndex !== null 
-                  ? models[selectedModelIndex]?.name || 'Unnamed Model'
-                  : 'Custom Model'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Quantity:</span>
-              <span>{quantity}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Filament Color:</span>
-              <span>{filamentColors.find?.(c => c.id === selectedFilament)?.name || selectedFilament}</span>
-            </div>
-          </div>
-          
-          <Separator />
-          
-          <div>
-            <h4 className="text-sm font-medium mb-2">Shipping Information</h4>
-            {Object.entries(shippingInfo).map(([key, value]) => (
-              <div className="flex justify-between text-sm" key={key}>
-                <span className="capitalize">{key}:</span>
-                <span>{value}</span>
-              </div>
-            ))}
-          </div>
-          
-          <Separator />
-          
-          <div>
-            <h4 className="text-sm font-medium mb-2">Price</h4>
-            <div className="flex justify-between">
-              <span>Base Price:</span>
-              <span>${typeof basePrice === 'number' ? basePrice.toFixed(2) : '0.00'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Shipping:</span>
-              <span>${typeof shippingCost === 'number' ? shippingCost.toFixed(2) : '0.00'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Service Fee (50%):</span>
-              <span>${(((typeof basePrice === 'number' ? basePrice : 0) + 
-                    (typeof shippingCost === 'number' ? shippingCost : 0)) * 0.5).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-medium mt-1">
-              <span>Total:</span>
-              <span>${typeof finalPrice === 'number' ? finalPrice.toFixed(2) : '0.00'}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div className="rounded-md border p-4 bg-card">
-        <h3 className="text-md font-medium mb-3">Payment</h3>
-        <p className="text-sm mb-4">
-          Your order is ready for payment. Click the button below to complete your payment securely:
+    <div className="space-y-6">
+      <div className="rounded-md bg-card border p-6">
+        <h2 className="text-xl font-bold mb-4">Complete Your Order</h2>
+        <p className="text-muted-foreground mb-6">
+          Your 3D printing job is ready for payment. Once payment is completed, 
+          printing will begin and your order will be shipped to your address.
         </p>
         
-        <div className="space-y-3">
-          <Button 
-            className="w-full" 
-            size="lg"
-            onClick={() => {
-              // In a real implementation, this would redirect to the Stripe checkout page
-              toast({
-                title: "Payment link ready",
-                description: "You would now be redirected to the payment page",
-              });
-            }}
-          >
-            <CreditCard className="h-4 w-4 mr-2" />
-            Pay ${typeof finalPrice === 'number' ? finalPrice.toFixed(2) : '0.00'}
-          </Button>
-          
-          <div className="text-center">
-            <Button 
-              variant="link" 
-              onClick={handleSimulateSuccessfulPayment}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Simulate Successful Payment"
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="ml-2">Processing payment...</span>
+          </div>
+        ) : (
+          <div className="flex flex-col space-y-6">
+            {/* Print job information if available */}
+            {printJob && (
+              <div className="bg-muted p-4 rounded-md">
+                <h3 className="font-medium mb-2">Job Details</h3>
+                <p className="text-sm text-muted-foreground mb-2">Job ID: <span className="font-mono">{printJob.jobId}</span></p>
+                <div className="flex items-center">
+                  <span className="text-sm text-muted-foreground mr-2">Status:</span>
+                  <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
+                    {printJob.status || 'Pending payment'}
+                  </span>
+                </div>
+              </div>
+            )}
+            
+            {/* External payment link if available */}
+            {paymentLink ? (
+              <div className="text-center">
+                <p className="mb-4">You'll be redirected to our secure payment processor to complete your order.</p>
+                <a 
+                  href={paymentLink} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="inline-block bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium hover:bg-primary/90 transition-colors"
+                >
+                  Proceed to Payment
+                </a>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Or click the button below to simulate a successful payment (for demo purposes only).
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col space-y-4">
+                <div className="border rounded-md p-4">
+                  <h3 className="text-sm font-medium mb-2">Payment Methods</h3>
+                  <div className="flex space-x-2 mb-4">
+                    <div className="border rounded-md p-2 flex-1 text-center cursor-pointer bg-muted">Credit Card</div>
+                    <div className="border rounded-md p-2 flex-1 text-center cursor-pointer">PayPal</div>
+                    <div className="border rounded-md p-2 flex-1 text-center cursor-pointer">Apple Pay</div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="cardNumber">Card Number</Label>
+                      <Input id="cardNumber" placeholder="4242 4242 4242 4242" disabled />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="expiry">Expiry Date</Label>
+                        <Input id="expiry" placeholder="MM/YY" disabled />
+                      </div>
+                      <div>
+                        <Label htmlFor="cvc">CVC</Label>
+                        <Input id="cvc" placeholder="123" disabled />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Order summary */}
+                <div className="border rounded-md p-4">
+                  <h3 className="text-sm font-medium mb-2">Order Summary</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>3D Print ({quantity})</span>
+                      <span>${basePrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Shipping</span>
+                      <span>${shippingCost.toFixed(2)}</span>
+                    </div>
+                    <Separator className="my-2" />
+                    <div className="flex justify-between font-medium">
+                      <span>Total</span>
+                      <span>${finalPrice.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={handlePreviousStep}>
+                Back
+              </Button>
+              
+              <Button onClick={handleSimulateSuccessfulPayment}>
+                {paymentLink ? 'Simulate Payment' : 'Pay Now'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+  
+  const renderConfirmationStep = () => (
+    <div className="confirmation-step">
+      <div className="bg-primary/10 rounded-lg p-8 text-center mb-6">
+        <CheckCircle2 className="h-16 w-16 text-primary mx-auto mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Thank You For Your Order!</h2>
+        <p className="text-muted-foreground mb-4">
+          Your 3D printing order has been submitted successfully.
+        </p>
+        
+        {printJob && (
+          <div className="bg-white/50 rounded-md p-4 my-4 text-left">
+            <h3 className="font-medium text-lg mb-2">Print Job Details</h3>
+            <div className="grid gap-2">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Job ID:</span>
+                <span className="font-mono">{printJob.jobId}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Status:</span>
+                <span className="capitalize bg-primary/20 text-primary rounded-full px-2 py-0.5 text-sm">
+                  {printJob.status}
+                </span>
+              </div>
+              {printJob.estimatedCompletion && (
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Estimated Completion:</span>
+                  <span>
+                    {new Date(printJob.estimatedCompletion).toLocaleDateString()} 
+                    {' '}
+                    {new Date(printJob.estimatedCompletion).toLocaleTimeString()}
+                  </span>
+                </div>
               )}
+              {printJob.trackingUrl && (
+                <div className="mt-2">
+                  <a 
+                    href={printJob.trackingUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="bg-primary text-white rounded-md py-2 px-4 w-full inline-block text-center"
+                  >
+                    Track Your Order
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
+        <div className="mt-6 space-y-4">
+          <p className="text-sm">
+            We've sent a confirmation email with all the details to <strong>{shippingInfo.email}</strong>
+          </p>
+          
+          <div className="flex justify-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={() => window.location.reload()}
+            >
+              Start Over
+            </Button>
+            
+            <Button onClick={() => window.print()}>
+              Print Receipt
             </Button>
           </div>
         </div>
       </div>
       
-      <Button 
-        variant="outline" 
-        onClick={handlePreviousStep}
-        disabled={isLoading}
-      >
-        Back
-      </Button>
-    </div>
-  );
-  
-  const renderConfirmationStep = () => (
-    <div className="space-y-4">
-      <div className="rounded-md border p-4 bg-card">
-        <div className="flex flex-col items-center justify-center py-6">
-          <CheckCircle2 className="h-12 w-12 text-green-500 mb-4" />
-          <h2 className="text-xl font-bold mb-2">Order Placed Successfully!</h2>
-          <p className="text-center text-muted-foreground mb-4">
-            Your 3D print order has been submitted and is being processed.
-          </p>
-          <div className="bg-muted p-3 rounded-md w-full max-w-sm text-center">
-            <p className="text-sm font-medium">Order ID:</p>
-            <p className="text-lg font-mono">{paymentLink}</p>
-          </div>
-        </div>
+      <div className="order-summary">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>Order Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between">
+              <span>Items:</span>
+              <span>{quantity} x 3D Print</span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span>Material:</span>
+              <span className="capitalize">
+                {filamentColors.find(f => f.id === selectedFilament)?.name || selectedFilament}
+              </span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span>Base Price:</span>
+              <span>${basePrice.toFixed(2)}</span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span>Shipping:</span>
+              <span>${shippingCost.toFixed(2)}</span>
+            </div>
+            
+            <Separator className="my-2" />
+            
+            <div className="flex justify-between font-bold">
+              <span>Total:</span>
+              <span>${finalPrice.toFixed(2)}</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
       
-      <div className="rounded-md border p-4 bg-card">
-        <h3 className="text-md font-medium mb-3">What's Next?</h3>
-        <ol className="space-y-3 list-decimal list-inside text-sm">
-          <li>Your order is being prepared for printing</li>
-          <li>You'll receive an email confirmation with your order details</li>
-          <li>Once your print is complete, it will be shipped to your address</li>
-          <li>You'll receive tracking information when your order ships</li>
-        </ol>
+      <div className="shipping-info mt-4">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>Shipping Details</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>{shippingInfo.name}</p>
+            <p>{shippingInfo.address}</p>
+            <p>{shippingInfo.city}, {shippingInfo.state} {shippingInfo.zip}</p>
+            <p>{shippingInfo.phone}</p>
+            <p>{shippingInfo.email}</p>
+          </CardContent>
+        </Card>
       </div>
-      
-      <Button 
-        onClick={() => {
-          // Reset the form for a new order
-          setCurrentStep(0);
-          setPaymentLink('');
-        }}
-      >
-        Place Another Order
-      </Button>
     </div>
   );
   

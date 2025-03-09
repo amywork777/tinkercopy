@@ -201,19 +201,19 @@ export default function PricingPage() {
                     <ul className="mt-4 space-y-3">
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>{MODEL_LIMITS.PRO} Model Generations per Month</span>
+                        <span>Unlimited Model Generations</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Unlimited 3D Print Requests</span>
+                        <span>Priority Processing</span>
+                      </li>
+                      <li className="flex items-start">
+                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                        <span>Access to All Premium Templates</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
                         <span>Full Access to Assets Library</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>10% Discount on 3D Print Orders</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
@@ -261,19 +261,19 @@ export default function PricingPage() {
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Premium API Access</span>
+                        <span>Enhanced Resource Allocation</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Dedicated Account Manager</span>
+                        <span>Enterprise Integration Options</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Tailored Deployment Options</span>
+                        <span>Priority Support Channels</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Customized Training & Support</span>
+                        <span>Enterprise Knowledge Resources</span>
                       </li>
                     </ul>
                   </CardContent>

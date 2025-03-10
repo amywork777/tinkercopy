@@ -8,6 +8,11 @@ import stlImportRouter, { initializeSTLImportRoutes } from './routes/stlImport.j
 import { Server as SocketIOServer } from 'socket.io';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Stripe } from 'stripe';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 // Try different API base URL formats
 const API_BASE_URLs = [
@@ -29,6 +34,11 @@ const API_KEY_FORMATS = {
   TOKEN: `token ${API_KEY_RAW}`,
   BEARER: `Bearer ${API_KEY_RAW}`
 };
+
+// Initialize Stripe with your live key
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-10-16',
+});
 
 export async function registerRoutes(app: Express, httpServer?: Server, socketIo?: SocketIOServer): Promise<Server> {
   // If httpServer is not provided, create one
@@ -847,6 +857,228 @@ ${feedback}
         details: String(error),
         emailSent: false
       });
+    }
+  });
+
+  // Order storage endpoint
+  app.post('/api/store-order', async (req, res) => {
+    try {
+      const { modelFile, color, quantity, customerEmail, totalPrice } = req.body;
+      
+      if (!modelFile || !color || !quantity || !customerEmail) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Missing required order information' 
+        });
+      }
+      
+      // Here you would typically store the order in a database
+      // For now, we'll just log it and simulate storage
+      console.log('Order received:', {
+        modelFile,
+        color,
+        quantity,
+        customerEmail,
+        totalPrice,
+        orderDate: new Date().toISOString()
+      });
+      
+      // Send confirmation email
+      // This is a placeholder - you'll need to integrate an email service
+      // like SendGrid, Mailgun, or AWS SES
+      const emailSent = await sendOrderConfirmationEmail(
+        customerEmail,
+        {
+          modelFile,
+          color,
+          quantity,
+          totalPrice,
+          orderDate: new Date().toISOString()
+        }
+      );
+      
+      return res.json({ 
+        success: true, 
+        message: 'Order stored successfully',
+        emailSent
+      });
+    } catch (error) {
+      console.error('Error storing order:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to store order' 
+      });
+    }
+  });
+
+  // Email sending function (placeholder)
+  async function sendOrderConfirmationEmail(email, orderDetails) {
+    // This is a placeholder - in a real implementation, you would:
+    // 1. Set up an email service (SendGrid, Mailgun, AWS SES, etc.)
+    // 2. Create an HTML template for your order confirmation
+    // 3. Send the actual email
+    
+    // For now, just log that we would send an email
+    console.log(`Would send order confirmation email to: ${email}`);
+    console.log('Order details:', orderDetails);
+    
+    // Return true to simulate successful sending
+    return true;
+    
+    // Example implementation with SendGrid would look like:
+    /*
+    const sgMail = require('@sendgrid/mail');
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    
+    const msg = {
+      to: email,
+      from: 'your-store@example.com',
+      subject: 'Your 3D Print Order Confirmation',
+      text: `Thank you for your order! Details: ${JSON.stringify(orderDetails)}`,
+      html: `
+        <h1>Order Confirmation</h1>
+        <p>Thank you for your order!</p>
+        <h2>Order Details:</h2>
+        <ul>
+          <li>Model: ${orderDetails.modelFile}</li>
+          <li>Color: ${orderDetails.color}</li>
+          <li>Quantity: ${orderDetails.quantity}</li>
+          <li>Total Price: $${orderDetails.totalPrice.toFixed(2)}</li>
+          <li>Order Date: ${orderDetails.orderDate}</li>
+        </ul>
+      `,
+    };
+    
+    await sgMail.send(msg);
+    return true;
+    */
+  }
+
+  // Update create-checkout-session endpoint
+  app.post('/api/create-checkout-session', async (req, res) => {
+    try {
+      const { modelName, color, quantity, finalPrice } = req.body;
+      
+      if (!modelName || !color || !quantity || !finalPrice) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Missing required checkout information' 
+        });
+      }
+
+      // Create a product for this specific order
+      const product = await stripe.products.create({
+        name: `3D Print: ${modelName}`,
+        description: `Custom 3D print - ${modelName} in ${color} (Qty: ${quantity})`,
+      });
+
+      // Create a price for the product
+      const price = await stripe.prices.create({
+        product: product.id,
+        unit_amount: Math.round(finalPrice * 100), // Convert to cents
+        currency: 'usd',
+      });
+
+      // Create a checkout session
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: price.id,
+            quantity: 1, // We already factored quantity into the price
+          },
+        ],
+        mode: 'payment',
+        success_url: `${req.headers.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${req.headers.origin}/print`,
+        metadata: {
+          modelName,
+          color,
+          quantity: quantity.toString(),
+          finalPrice: finalPrice.toString(),
+        },
+        // Enable billing address collection to get email and address for shipping
+        billing_address_collection: 'required',
+        shipping_address_collection: {
+          allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
+        },
+      });
+
+      // Return the session ID and URL
+      res.json({ 
+        success: true,
+        sessionId: session.id,
+        url: session.url 
+      });
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to create checkout session',
+        error: error.message
+      });
+    }
+  });
+
+  // Checkout session details endpoint
+  app.get('/api/checkout-sessions/:sessionId', async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      if (!sessionId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Session ID is required' 
+        });
+      }
+
+      // Retrieve the session from Stripe
+      const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['line_items', 'payment_intent'],
+      });
+      
+      return res.json({ 
+        success: true, 
+        session 
+      });
+    } catch (error) {
+      console.error('Error retrieving checkout session:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to retrieve checkout session',
+        error: error.message 
+      });
+    }
+  });
+
+  // Webhook handling
+  app.post('/api/webhook', express.raw({type: 'application/json'}), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    
+    try {
+      // Verify the event came from Stripe
+      const event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET || 'whsec_I56EExjs2G1bs238WW2CBHVBYUap2sYN'
+      );
+      
+      // Handle the event based on its type
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object;
+          // Store order in your database
+          console.log('Payment successful for session:', session.id);
+          // You would typically update your database here
+          break;
+        }
+        // Add more cases for other events you want to handle
+      }
+      
+      res.json({received: true});
+    } catch (err) {
+      console.error('Webhook Error:', err.message);
+      res.status(400).send(`Webhook Error: ${err.message}`);
     }
   });
 

@@ -20,6 +20,8 @@ import {
   calculate3DPrintPrice 
 } from "@/lib/slantApi";
 import { OrderSummary } from './OrderSummary';
+import { FormControl, FormLabel, FormHelperText, FormItem, SimpleForm } from "@/components/ui/form";
+import { loadStripe } from '@stripe/stripe-js';
 
 // Initialize with empty array, will be populated from API
 const EMPTY_FILAMENT_COLORS: FilamentColor[] = [];
@@ -38,6 +40,11 @@ interface FilamentApiItem {
   color?: string;
   [key: string]: any; // For any other properties
 }
+
+// Load Stripe outside of a component's render to avoid recreating the Stripe object on every render
+const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY 
+  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+  : loadStripe('pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi'); // Fallback key
 
 const Print3DTab = () => {
   const { models, selectedModelIndex, exportSelectedModelAsSTL, selectModel } = useScene();
@@ -666,6 +673,66 @@ const Print3DTab = () => {
     }).format(amount);
   };
 
+  // Update the handleCheckout function
+  const handleCheckout = async () => {
+    try {
+      // Validate required fields
+      if ((selectedModelIndex === null && !uploadedModelData) || !selectedFilament) {
+        toast({
+          title: "Missing required information",
+          description: "Please select a model and material before checkout.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Set loading state
+      setIsLoading(true);
+      
+      // Prepare checkout data
+      const checkoutData = {
+        modelName: selectedModelIndex !== null 
+          ? models[selectedModelIndex]?.name || 'Unnamed Model'
+          : 'Uploaded Model',
+        color: filamentColors.find(f => f.id === selectedFilament)?.name || selectedFilament,
+        quantity,
+        finalPrice
+      };
+      
+      toast({
+        title: "Creating checkout...",
+        description: "Preparing your order for payment",
+      });
+      
+      // Call the server endpoint to create a checkout session
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(checkoutData),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success && result.url) {
+        // Redirect to Stripe checkout
+        window.location.href = result.url;
+      } else {
+        throw new Error(result.message || 'Failed to create checkout session');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      toast({
+        title: "Checkout failed",
+        description: error.message || "There was an error processing your checkout",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Model selection section */}
@@ -834,6 +901,31 @@ const Print3DTab = () => {
             <>
               <Printer className="mr-2 h-4 w-4" />
               Recalculate Price
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Add this to your return statement after the "Recalculate Price" button */}
+      <div className="flex justify-between mt-6">
+        <div>
+          <p className="text-lg font-bold">
+            Total: {formatPrice(finalPrice)}
+          </p>
+        </div>
+        <Button
+          onClick={handleCheckout}
+          disabled={isLoading || isPriceCalculating || !selectedFilament || (selectedModelIndex === null && !uploadedModelData)}
+          className="bg-primary hover:bg-primary/90"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            <>
+              Checkout
             </>
           )}
         </Button>

@@ -705,7 +705,8 @@ const Print3DTab = () => {
       });
       
       // Call the server endpoint to create a checkout session
-      const response = await fetch('/api/create-checkout-session', {
+      // Use the local server URL instead of the production URL
+      const response = await fetch('http://localhost:3001/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -721,7 +722,7 @@ const Print3DTab = () => {
       } else {
         throw new Error(result.message || 'Failed to create checkout session');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Checkout error:', error);
       toast({
         title: "Checkout failed",
@@ -887,10 +888,11 @@ const Print3DTab = () => {
       />
       
       {/* Action buttons */}
-      <div className="flex justify-end">
+      <div className="flex justify-between">
         <Button
           onClick={calculatePriceFromAPI}
           disabled={isLoading || isPriceCalculating || !selectedFilament || (selectedModelIndex === null && !uploadedModelData)}
+          variant="outline"
         >
           {isPriceCalculating ? (
             <>
@@ -899,20 +901,11 @@ const Print3DTab = () => {
             </>
           ) : (
             <>
-              <Printer className="mr-2 h-4 w-4" />
               Recalculate Price
             </>
           )}
         </Button>
-      </div>
-
-      {/* Add this to your return statement after the "Recalculate Price" button */}
-      <div className="flex justify-between mt-6">
-        <div>
-          <p className="text-lg font-bold">
-            Total: {formatPrice(finalPrice)}
-          </p>
-        </div>
+        
         <Button
           onClick={handleCheckout}
           disabled={isLoading || isPriceCalculating || !selectedFilament || (selectedModelIndex === null && !uploadedModelData)}
@@ -925,7 +918,7 @@ const Print3DTab = () => {
             </>
           ) : (
             <>
-              Checkout
+              Checkout (${formatPrice(finalPrice)})
             </>
           )}
         </Button>

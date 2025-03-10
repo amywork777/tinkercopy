@@ -182,33 +182,6 @@ export function OrderSummary({
           </div>
         )}
         
-        {printability && printability.factor > 1.05 && (
-          <div className="flex justify-between items-center">
-            <span>Printability:</span>
-            <span className={printability.factor > 1.3 ? "text-amber-600 font-medium" : ""}>
-              {printability.category}
-              {printability.factor > 1.3 && " (+price)"}
-            </span>
-          </div>
-        )}
-        
-        {printability && (printability.hasOverhangs || printability.hasThinWalls || printability.hasFloatingIslands) && (
-          <div className="flex flex-col mt-1 text-xs text-amber-700 bg-amber-50 p-1 rounded">
-            <span className="font-medium">Print considerations:</span>
-            <ul className="list-disc pl-4 mt-1 space-y-0.5">
-              {printability.hasOverhangs && (
-                <li>Significant overhangs require supports</li>
-              )}
-              {printability.hasThinWalls && (
-                <li>Contains thin walls that may be fragile</li>
-              )}
-              {printability.hasFloatingIslands && (
-                <li>May have disconnected parts</li>
-              )}
-            </ul>
-          </div>
-        )}
-        
         <Separator className="my-2" />
         
         <div className="flex justify-between items-center text-sm">

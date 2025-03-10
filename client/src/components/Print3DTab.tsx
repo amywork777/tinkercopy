@@ -93,6 +93,24 @@ const Print3DTab = () => {
     }
   }, [selectedModelIndex, uploadedModelData, selectedFilament, quantity]);
   
+  // Effect to ensure prices are recalculated when the model changes
+  useEffect(() => {
+    // Reset saved pricing when model is changed
+    setPriceSource('estimate');
+    setConnectionAttempts(0);
+    
+    if ((selectedModelIndex !== null || uploadedModelData) && selectedFilament) {
+      calculatePriceFromAPI();
+    }
+  }, [selectedModelIndex, uploadedModelData]);
+  
+  // Effect for recalculation when filament or quantity changes
+  useEffect(() => {
+    if ((selectedModelIndex !== null || uploadedModelData) && selectedFilament) {
+      calculatePriceFromAPI();
+    }
+  }, [selectedFilament, quantity]);
+  
   // Fetch filaments from the API
   const fetchFilaments = async () => {
     setIsLoading(true);
@@ -104,17 +122,31 @@ const Print3DTab = () => {
       let colors = [];
       
       if (Array.isArray(response)) {
-        colors = response.map((item: FilamentApiItem) => ({
-          id: item.id || item.filament || item.name || 'unknown',
-          name: item.name || item.filament || 'Unknown Color',
-          hex: item.hex || item.color || '#808080'
-        }));
+        colors = response.map((item: FilamentApiItem) => {
+          // Clean the name to remove any "PLA" to avoid redundancy
+          let name = item.name || item.filament || 'Unknown Color';
+          name = name.replace(/\bPLA\b/gi, '').trim();
+          name = name.replace(/^[\s-]+|[\s-]+$/g, ''); // Remove leading/trailing spaces and hyphens
+          
+          return {
+            id: item.id || item.filament || item.name || 'unknown',
+            name: name,
+            hex: item.hex || item.color || '#808080'
+          };
+        });
       } else if (response && response.filaments && Array.isArray(response.filaments)) {
-        colors = response.filaments.map((item: FilamentApiItem) => ({
-          id: item.id || item.filament || item.name || 'unknown',
-          name: item.name || item.filament || 'Unknown Color',
-          hex: item.hex || item.color || '#808080'
-        }));
+        colors = response.filaments.map((item: FilamentApiItem) => {
+          // Clean the name to remove any "PLA" to avoid redundancy
+          let name = item.name || item.filament || 'Unknown Color';
+          name = name.replace(/\bPLA\b/gi, '').trim();
+          name = name.replace(/^[\s-]+|[\s-]+$/g, ''); // Remove leading/trailing spaces and hyphens
+          
+          return {
+            id: item.id || item.filament || item.name || 'unknown',
+            name: name,
+            hex: item.hex || item.color || '#808080'
+          };
+        });
       }
       
       console.log('Normalized filament colors:', colors);
@@ -122,11 +154,21 @@ const Print3DTab = () => {
       // Use fallback if no valid colors found
       if (colors.length === 0) {
         colors = [
-          { id: 'black', name: 'Black', hex: '#000000' },
-          { id: 'white', name: 'White', hex: '#ffffff' },
-          { id: 'gray', name: 'Gray', hex: '#808080' },
-          { id: 'red', name: 'Red', hex: '#ff0000' },
-          { id: 'blue', name: 'Blue', hex: '#0000ff' }
+          { id: 'black-pla', name: 'Black', hex: '#121212' },
+          { id: 'white-pla', name: 'White', hex: '#f9f9f9' },
+          { id: 'gray-pla', name: 'Gray', hex: '#9e9e9e' },
+          { id: 'red-pla', name: 'Red', hex: '#f44336' },
+          { id: 'blue-pla', name: 'Royal Blue', hex: '#1976d2' },
+          { id: 'green-pla', name: 'Forest Green', hex: '#2e7d32' },
+          { id: 'yellow-pla', name: 'Bright Yellow', hex: '#fbc02d' },
+          { id: 'orange-pla', name: 'Orange', hex: '#ff9800' },
+          { id: 'purple-pla', name: 'Purple', hex: '#7b1fa2' },
+          { id: 'pink-pla', name: 'Hot Pink', hex: '#e91e63' },
+          { id: 'teal-pla', name: 'Teal', hex: '#009688' },
+          { id: 'silver-pla', name: 'Silver Metallic', hex: '#b0bec5' },
+          { id: 'gold-pla', name: 'Gold Metallic', hex: '#ffd700' },
+          { id: 'bronze-pla', name: 'Bronze Metallic', hex: '#cd7f32' },
+          { id: 'glow-pla', name: 'Glow-in-the-Dark', hex: '#c6ff00' }
         ];
       }
       
@@ -138,19 +180,26 @@ const Print3DTab = () => {
       console.error('Error fetching filaments:', err);
       toast({
         title: "Failed to load filaments",
-        description: "Using demo colors instead",
-        variant: "destructive"
+        description: "Using default color options",
+        variant: "destructive",
       });
-      // Fallback to demo colors if API fails
-      const demoColors = [
-        { id: 'black', name: 'Black', hex: '#000000' },
-        { id: 'white', name: 'White', hex: '#ffffff' },
-        { id: 'gray', name: 'Gray', hex: '#808080' },
-        { id: 'red', name: 'Red', hex: '#ff0000' },
-        { id: 'blue', name: 'Blue', hex: '#0000ff' }
+      
+      // Use fallback colors on error
+      const fallbackColors = [
+        { id: 'black-pla', name: 'Black', hex: '#121212' },
+        { id: 'white-pla', name: 'White', hex: '#f9f9f9' },
+        { id: 'gray-pla', name: 'Gray', hex: '#9e9e9e' },
+        { id: 'red-pla', name: 'Red', hex: '#f44336' },
+        { id: 'blue-pla', name: 'Royal Blue', hex: '#1976d2' },
+        { id: 'green-pla', name: 'Forest Green', hex: '#2e7d32' },
+        { id: 'yellow-pla', name: 'Bright Yellow', hex: '#fbc02d' },
+        { id: 'orange-pla', name: 'Orange', hex: '#ff9800' },
+        { id: 'purple-pla', name: 'Purple', hex: '#7b1fa2' },
+        { id: 'pink-pla', name: 'Hot Pink', hex: '#e91e63' }
       ];
-      setFilamentColors(demoColors);
-      setSelectedFilament(demoColors[0].id);
+      
+      setFilamentColors(fallbackColors);
+      setSelectedFilament(fallbackColors[0].id);
     } finally {
       setIsLoading(false);
     }
@@ -174,17 +223,17 @@ const Print3DTab = () => {
     
     // Set reasonable fallback prices that scale with quantity
     const calculateFallbackPrices = () => {
-      // Base price formula: More gradual scaling based on quantity
+      // Base price formula: More gradual scaling based on quantity with 20% increase
       let basePriceFallback;
       
       if (quantity === 1) {
-        basePriceFallback = 5; // Single item
+        basePriceFallback = 6; // Single item (previously 5, now with 20% markup)
       } else if (quantity <= 5) {
-        basePriceFallback = 5 + (quantity - 1) * 3; // $5 + $3 per additional up to 5
+        basePriceFallback = 6 + (quantity - 1) * 3.6; // $6 + $3.60 per additional up to 5
       } else if (quantity <= 10) {
-        basePriceFallback = 17 + (quantity - 5) * 2.5; // $17 + $2.50 per additional from 6-10
+        basePriceFallback = 20.4 + (quantity - 5) * 3; // $20.40 + $3 per additional from 6-10
       } else {
-        basePriceFallback = 30 + (quantity - 10) * 2; // $30 + $2 per additional after 10
+        basePriceFallback = 36 + (quantity - 10) * 2.4; // $36 + $2.40 per additional after 10
       }
       
       // For backend compatibility, still calculate material and printing costs
@@ -198,8 +247,9 @@ const Print3DTab = () => {
       const totalPriceFallback = basePriceFallback + shippingCostFallback;
       
       console.log('Using fallback prices:', {
-        quantity,
         basePriceFallback,
+        materialCostFallback,
+        printingCostFallback,
         shippingCostFallback,
         totalPriceFallback
       });
@@ -734,6 +784,7 @@ const Print3DTab = () => {
     }
   };
 
+  // Return the component UI
   return (
     <div className="space-y-6">
       {/* Model selection section */}
@@ -825,24 +876,18 @@ const Print3DTab = () => {
         
         <div className="space-y-4">
           <div>
-            <Label htmlFor="filament-select">Material</Label>
+            <Label htmlFor="filament-select" className="mb-2 block font-semibold">Select PLA Color</Label>
             <Select
               value={selectedFilament}
               onValueChange={setSelectedFilament}
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a material" />
+              <SelectTrigger className="w-full" id="filament-select">
+                <SelectValue placeholder="Select a material color" />
               </SelectTrigger>
               <SelectContent>
                 {filamentColors.map((filament) => (
                   <SelectItem key={filament.id} value={filament.id}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full border border-input" 
-                        style={{ backgroundColor: filament.hex }}
-                      />
-                      {filament.name}
-                    </div>
+                    {filament.name} PLA
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -908,7 +953,7 @@ const Print3DTab = () => {
         
         <Button
           onClick={handleCheckout}
-          disabled={isLoading || isPriceCalculating || !selectedFilament || (selectedModelIndex === null && !uploadedModelData)}
+          disabled={isLoading || isPriceCalculating || !selectedFilament || (selectedModelIndex === null && !uploadedModelData) || priceSource === 'estimate'}
           className="bg-primary hover:bg-primary/90"
         >
           {isLoading ? (

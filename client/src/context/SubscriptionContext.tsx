@@ -53,7 +53,7 @@ const SubscriptionContext = createContext<SubscriptionContextType>({
 export const useSubscription = () => useContext(SubscriptionContext);
 
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, refreshUserStatus } = useAuth();
   const [subscription, setSubscription] = useState<SubscriptionState>(defaultSubscription);
   const { toast } = useToast();
 
@@ -130,7 +130,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const isPro = data.isPro === true;
       console.log(`User pro status: ${isPro ? 'PRO' : 'FREE'}`);
       
-      setSubscription({
+      const subscriptionData = {
         isPro, // Use our validated value
         modelsRemainingThisMonth: data.modelsRemainingThisMonth || 0,
         modelsGeneratedThisMonth: data.modelsGeneratedThisMonth || 0,
@@ -141,7 +141,20 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         trialActive: data.trialActive === true,
         trialEndDate: data.trialEndDate || null,
         loading: false
-      });
+      };
+      
+      setSubscription(subscriptionData);
+      
+      // Also update the auth context with the pro status
+      if (user && user.isPro !== isPro) {
+        console.log(`Updating auth context with new subscription status: ${isPro ? 'PRO' : 'FREE'}`);
+        // This will refresh the user status in AuthContext
+        try {
+          await refreshUserStatus();
+        } catch (error) {
+          console.error('Failed to update auth context with subscription status:', error);
+        }
+      }
     } catch (error) {
       console.error('All subscription data fetching methods failed:', error);
       

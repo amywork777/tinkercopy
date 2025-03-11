@@ -8,14 +8,17 @@ import {
   scheduleRefresh
 } from '@/lib/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
-import { getFirestore, doc, updateDoc } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { getUserSubscription } from '@/lib/stripeApi';
 
 interface User {
   id: string;
   displayName: string;
   email: string;
   profilePicture?: string;
+  isPro?: boolean;
+  subscriptionPlan?: string;
 }
 
 interface AuthContextType {
@@ -24,10 +27,13 @@ interface AuthContextType {
   isAuthenticating: boolean;
   isSigningOut: boolean;
   isAuthenticated: boolean;
+  isPro: boolean;
+  subscriptionPlan: string;
   login: () => void;
   logout: () => void;
   checkAuth: () => Promise<boolean>;
   resetAuthState: () => void;
+  refreshUserStatus: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -36,10 +42,13 @@ const AuthContext = createContext<AuthContextType>({
   isAuthenticating: false,
   isSigningOut: false,
   isAuthenticated: false,
+  isPro: false,
+  subscriptionPlan: 'free',
   login: () => {},
   logout: () => {},
   checkAuth: async () => false,
   resetAuthState: () => {},
+  refreshUserStatus: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -55,6 +64,8 @@ const formatUser = (firebaseUser: FirebaseUser): User => {
     displayName: firebaseUser.displayName || 'User',
     email: firebaseUser.email || '',
     profilePicture: firebaseUser.photoURL || undefined,
+    isPro: false,
+    subscriptionPlan: 'free',
   };
 };
 
@@ -64,8 +75,73 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isPro, setIsPro] = useState(false);
+  const [subscriptionPlan, setSubscriptionPlan] = useState('free');
   const [authTimeoutId, setAuthTimeoutId] = useState<number | null>(null);
   const [longAuthDelayId, setLongAuthDelayId] = useState<number | null>(null);
+
+  // Function to get user subscription data directly from Firestore
+  const getUserSubscriptionData = async (userId: string): Promise<{isPro: boolean, subscriptionPlan: string}> => {
+    try {
+      console.log(`Fetching subscription data for user: ${userId}`);
+      
+      // First try to get from API
+      try {
+        const subscriptionData = await getUserSubscription(userId);
+        console.log('API subscription data:', subscriptionData);
+        return {
+          isPro: subscriptionData.isPro,
+          subscriptionPlan: subscriptionData.subscriptionPlan
+        };
+      } catch (apiError) {
+        console.warn('API error, falling back to direct Firestore query', apiError);
+        
+        // Fallback to direct Firestore query
+        const userRef = doc(db, 'users', userId);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          console.log('Firestore user data:', userData);
+          return {
+            isPro: userData.isPro === true,
+            subscriptionPlan: userData.subscriptionPlan || 'free'
+          };
+        }
+        
+        return { isPro: false, subscriptionPlan: 'free' };
+      }
+    } catch (error) {
+      console.error('Error fetching user subscription data:', error);
+      return { isPro: false, subscriptionPlan: 'free' };
+    }
+  };
+
+  // Function to refresh user status - can be called from anywhere
+  const refreshUserStatus = async () => {
+    if (!user) return;
+    
+    try {
+      const { isPro: newIsPro, subscriptionPlan: newPlan } = await getUserSubscriptionData(user.id);
+      
+      // Update context state
+      setIsPro(newIsPro);
+      setSubscriptionPlan(newPlan);
+      
+      // Update user object with subscription data
+      setUser(prevUser => 
+        prevUser ? {
+          ...prevUser,
+          isPro: newIsPro,
+          subscriptionPlan: newPlan
+        } : null
+      );
+      
+      console.log(`User status refreshed: isPro=${newIsPro}, plan=${newPlan}`);
+    } catch (error) {
+      console.error('Failed to refresh user status:', error);
+    }
+  };
 
   // Reset authentication state (can be called when sign-in gets stuck)
   const resetAuthState = useCallback(() => {
@@ -104,9 +180,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Set up auth state observer
   useEffect(() => {
-    const unsubscribe = onAuthStateChange((firebaseUser: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChange(async (firebaseUser: FirebaseUser | null) => {
       console.log("Auth state change detected", firebaseUser ? firebaseUser.uid : 'signed out');
-      setIsLoading(false);
       
       if (firebaseUser) {
         const formattedUser = formatUser(firebaseUser);
@@ -128,16 +203,52 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setLongAuthDelayId(null);
         }
         
-        // Show sign-in success toast only if we were in the authentication process
-        if (isAuthenticating) {
+        // Immediately fetch user subscription status
+        try {
+          console.log(`Immediately fetching subscription status for user ${firebaseUser.uid}`);
+          const { isPro: userIsPro, subscriptionPlan: userPlan } = await getUserSubscriptionData(firebaseUser.uid);
+          
+          // Update state with subscription info
+          setIsPro(userIsPro);
+          setSubscriptionPlan(userPlan);
+          
+          // Update user object
+          setUser(prevUser => prevUser ? {
+            ...prevUser,
+            isPro: userIsPro,
+            subscriptionPlan: userPlan
+          } : null);
+          
+          console.log(`User authenticated with role: ${userIsPro ? 'PRO' : 'FREE'}, plan: ${userPlan}`);
+          
+          // Dismiss the loading toast if it exists
+          toast.dismiss('auth-loading');
+          
+          // Show appropriate welcome message based on subscription status
+          showWelcomeMessage({
+            ...formattedUser,
+            isPro: userIsPro,
+            subscriptionPlan: userPlan
+          });
+        } catch (error) {
+          console.error('Error fetching subscription status on login:', error);
+          // Still show welcome message even if subscription fetch fails
+          toast.dismiss('auth-loading');
           showWelcomeMessage(formattedUser);
+        } finally {
+          // Ensure loading state is set to false in all cases
+          setIsLoading(false);
         }
       } else {
+        // User is signed out
         setUser(null);
         setIsAuthenticated(false);
+        setIsPro(false);
+        setSubscriptionPlan('free');
+        setIsLoading(false);
         
-        // Reset auth states when auth state changes
-        setIsAuthenticating(false);
+        // Reset signing out state
+        setIsSigningOut(false);
         
         // Clear any timeout
         if (authTimeoutId) {
@@ -150,48 +261,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setLongAuthDelayId(null);
         }
         
-        // Show sign-out success toast only if we were in the sign-out process
-        if (isSigningOut) {
-          toast.success('You have been signed out', {
-            description: 'See you soon!',
-            duration: 3000
-          });
-          setIsSigningOut(false);
-        }
+        toast.dismiss('signout-loading');
       }
     });
 
-    // Clean up observer on unmount
-    return () => {
-      unsubscribe();
-      
-      // Clear any timeout
-      if (authTimeoutId) {
-        window.clearTimeout(authTimeoutId);
-      }
-      
-      if (longAuthDelayId) {
-        window.clearTimeout(longAuthDelayId);
-      }
-    };
-  }, [isAuthenticating, isSigningOut, authTimeoutId, longAuthDelayId]);
+    // Clean up subscription on unmount
+    return () => unsubscribe();
+  }, [authTimeoutId, longAuthDelayId]);
 
   // Helper function to show an enhanced welcome message
   const showWelcomeMessage = (user: User) => {
-    // Clear any existing auth toasts
-    toast.dismiss('auth-loading');
-    
-    // Show welcome toast with avatar if available
-    toast.success(
+    toast(
       <div className="flex items-center gap-2">
-        <div className="flex-shrink-0 h-6 w-6 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
           {user.profilePicture ? (
-            <img src={user.profilePicture} alt={user.displayName} className="h-full w-full object-cover" />
+            <img 
+              src={user.profilePicture} 
+              alt={user.displayName} 
+              className="h-full w-full rounded-full object-cover"
+            />
           ) : (
             user.displayName.substring(0, 1)
           )}
         </div>
-        <div>Welcome, {user.displayName}!</div>
+        <div>
+          Welcome, {user.displayName}!
+          {user.isPro && (
+            <p className="text-xs font-semibold text-primary">
+              PRO {user.subscriptionPlan === 'annual' ? 'ANNUAL' : 'MONTHLY'} SUBSCRIPTION ACTIVE
+            </p>
+          )}
+        </div>
       </div>,
       {
         description: 
@@ -201,6 +301,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               Your profile is in the top-right corner
               <span className="inline-block ml-1 animate-pulse">↗️</span>
             </p>
+            {user.isPro && (
+              <p className="text-xs mt-1 text-green-600 font-medium">
+                Your PRO features are active
+              </p>
+            )}
           </div>,
         duration: 5000
       }
@@ -369,10 +474,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isAuthenticating,
         isSigningOut,
         isAuthenticated,
+        isPro,
+        subscriptionPlan,
         login,
         logout,
         checkAuth,
         resetAuthState,
+        refreshUserStatus,
       }}
     >
       {children}

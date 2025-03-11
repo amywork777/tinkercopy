@@ -1,6 +1,7 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables or use localhost in development
 const isDevelopment = window.location.hostname === 'localhost';
+// Use fishcad.com domain explicitly for production to fix the checkout issue
 const API_URL = isDevelopment 
   ? 'http://localhost:3001/api' 
   : (import.meta.env.VITE_API_URL || 'https://fishcad.com/api');
@@ -55,8 +56,12 @@ export const createCheckoutSession = async (
   email: string
 ): Promise<{ url: string }> => {
   try {
-    const endpoint = addCacheBuster(`${API_URL}/pricing/create-checkout-session`);
-    console.log(`Making request to ${endpoint}`);
+    // Use fishcad.com domain explicitly if we're on that domain
+    const isFishCad = window.location.hostname.includes('fishcad.com');
+    const endpoint = addCacheBuster(`${isFishCad ? 'https://fishcad.com/api' : API_URL}/pricing/create-checkout-session`);
+    
+    console.log(`Making checkout request to ${endpoint} for user ${userId} with price ${priceId}`);
+    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -69,11 +74,13 @@ export const createCheckoutSession = async (
         priceId,
         userId,
         email,
+        domain: window.location.hostname // Send the current domain to ensure correct redirect URLs
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.json();
+      console.error('Checkout session creation failed:', errorData);
       throw new Error(errorData.error || 'Failed to create checkout session');
     }
 

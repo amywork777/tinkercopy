@@ -4,7 +4,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 const router = express.Router();
 
 // Constants
-const DOMAIN = process.env.DOMAIN || 'https://fishcad.com';
+const DEFAULT_DOMAIN = process.env.DOMAIN || 'https://fishcad.com';
 const STRIPE_PRICES = {
   MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE',
   ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
@@ -18,10 +18,18 @@ router.post('/create-checkout-session', async (req, res) => {
   }
   
   try {
-    const { priceId, userId, email } = req.body;
+    const { priceId, userId, email, domain } = req.body;
     
     if (!priceId || !userId) {
       return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // Determine the correct domain for success/cancel URLs
+    let checkoutDomain = DEFAULT_DOMAIN;
+    if (domain) {
+      // Ensure the domain has https://
+      checkoutDomain = domain.startsWith('http') ? domain : `https://${domain}`;
+      console.log(`Using customer-provided domain for checkout: ${checkoutDomain}`);
     }
     
     // Get user data from Firestore
@@ -33,6 +41,7 @@ router.post('/create-checkout-session', async (req, res) => {
     let customerId;
     if (userDoc.exists && userDoc.data().stripeCustomerId) {
       customerId = userDoc.data().stripeCustomerId;
+      console.log(`Using existing Stripe customer ID: ${customerId}`);
     } else {
       // Create a new customer
       const customer = await stripe.customers.create({
@@ -42,6 +51,7 @@ router.post('/create-checkout-session', async (req, res) => {
         },
       });
       customerId = customer.id;
+      console.log(`Created new Stripe customer: ${customerId}`);
       
       // Update user with Stripe customer ID
       await userRef.update({
@@ -59,8 +69,8 @@ router.post('/create-checkout-session', async (req, res) => {
         },
       ],
       mode: 'subscription',
-      success_url: `${DOMAIN}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${DOMAIN}/pricing`,
+      success_url: `${checkoutDomain}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${checkoutDomain}/pricing`,
       subscription_data: {
         metadata: {
           userId: userId,
@@ -68,6 +78,7 @@ router.post('/create-checkout-session', async (req, res) => {
       },
     });
     
+    console.log(`Created checkout session: ${session.id} with URL: ${session.url}`);
     res.json({ url: session.url });
   } catch (error) {
     console.error('Error creating checkout session:', error);

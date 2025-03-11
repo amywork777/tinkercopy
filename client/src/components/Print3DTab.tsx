@@ -759,49 +759,63 @@ const Print3DTab = () => {
       setIsLoading(true);
       
       // Get the STL file data or reference
-      let stlFileData = null;
       let stlFileName = "unknown.stl";
-      let stlDownloadData = null;
       let stlDownloadUrl = null;
       
       if (selectedModelIndex !== null) {
-        // For pre-defined models, we can send the model reference
-        stlFileData = models[selectedModelIndex]?.id || `model-${selectedModelIndex}`;
+        // For pre-defined models, use the model reference
         stlFileName = `${models[selectedModelIndex]?.name || 'Unnamed Model'}.stl`;
-        // We don't have direct download data for predefined models
-        // In a real implementation, you might have permanent URLs for predefined models
-        stlDownloadUrl = `http://localhost:3001/api/predefined-models/${models[selectedModelIndex]?.id || 'unknown'}`;
+        // We don't need to send the actual STL data for predefined models
       } else if (uploadedModelData) {
-        // Extract the actual STL data for upload
-        let rawStlData;
-        
-        // Handle the updated uploadedModelData structure
+        // Extract metadata from uploaded model
         if (typeof uploadedModelData === 'object' && 'fileName' in uploadedModelData) {
-          // We have the new structure with metadata
           stlFileName = uploadedModelData.fileName;
-          rawStlData = uploadedModelData.data; // For upload to server
-          stlDownloadData = uploadedModelData.data; // For local download
         } else {
-          // Legacy format (string data)
-          rawStlData = uploadedModelData;
-          stlDownloadData = uploadedModelData; // For local download  
           stlFileName = "Uploaded Model.stl";
         }
         
-        // Upload the STL file to our server to get a permanent URL
+        // Important: Do NOT send the actual STL data in the checkout request
+        // Instead upload it first and use the URL reference
         try {
           toast({
             title: "Uploading STL file...",
             description: "Preparing your 3D model for checkout",
           });
           
+          // Create a smaller representation of the model data if it's too large
+          let rawStlData;
+          if (typeof uploadedModelData === 'object' && 'data' in uploadedModelData) {
+            // Extract just the beginning of the data to identify it
+            // Don't send the full data in the initial request
+            const dataStr = typeof uploadedModelData.data === 'string' 
+              ? uploadedModelData.data
+              : String(uploadedModelData.data);
+              
+            // Just send model metadata instead of full model data
+            rawStlData = {
+              fileName: stlFileName,
+              fileSize: dataStr.length,
+              fileType: 'stl'
+            };
+          } else {
+            // Legacy format, just send metadata
+            rawStlData = {
+              fileName: stlFileName,
+              fileSize: String(uploadedModelData).length,
+              fileType: 'stl'
+            };
+          }
+          
+          // Upload STL file separately rather than with checkout data
           const uploadResponse = await fetch('/api/stl-files', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              stlData: rawStlData,
+              stlData: typeof uploadedModelData === 'object' && 'data' in uploadedModelData
+                ? uploadedModelData.data
+                : uploadedModelData,
               fileName: stlFileName
             }),
           });
@@ -812,35 +826,32 @@ const Print3DTab = () => {
             stlDownloadUrl = uploadResult.url;
             console.log('STL file uploaded successfully:', stlDownloadUrl);
             
-            // Store the reference
-            stlFileData = uploadResult.fileId;
-            
             toast({
               title: "STL file uploaded",
               description: "Your model is ready for checkout",
             });
           } else {
             console.error('Failed to upload STL file:', uploadResult);
-            // Fall back to session storage method
-            const modelKey = `model-${Date.now()}`;
-            sessionStorage.setItem(modelKey, typeof rawStlData === 'string' ? 
-              rawStlData : JSON.stringify(rawStlData));
-            stlFileData = modelKey;
+            toast({
+              title: "STL upload warning",
+              description: "We'll proceed with checkout but your model data may be limited",
+              variant: "destructive"
+            });
           }
         } catch (uploadError) {
           console.error('Error uploading STL file:', uploadError);
-          // Fall back to session storage method
-          const modelKey = `model-${Date.now()}`;
-          sessionStorage.setItem(modelKey, typeof rawStlData === 'string' ? 
-            rawStlData : JSON.stringify(rawStlData));
-          stlFileData = modelKey;
+          toast({
+            title: "STL upload warning",
+            description: "We'll proceed with checkout without your model data",
+            variant: "destructive"
+          });
         }
       }
       
       // Get color name for display
       const colorName = filamentColors.find(f => f.id === selectedFilament)?.name || selectedFilament;
       
-      // Prepare checkout data
+      // Prepare checkout data - without full STL data to prevent request size issues
       const checkoutData = {
         modelName: selectedModelIndex !== null 
           ? models[selectedModelIndex]?.name || 'Unnamed Model'
@@ -850,10 +861,11 @@ const Print3DTab = () => {
         color: colorName,
         quantity,
         finalPrice,
-        stlFileData,  // Add STL file data or reference
         stlFileName,  // Add STL file name
         stlDownloadUrl // Add the permanent download URL if available
       };
+      
+      console.log('Sending checkout data:', JSON.stringify(checkoutData));
       
       toast({
         title: "Creating checkout...",
@@ -869,13 +881,22 @@ const Print3DTab = () => {
         body: JSON.stringify(checkoutData),
       });
       
-      const result = await response.json();
+      // Get the response body as text first to debug any issues
+      const responseText = await response.text();
       
-      if (result.success && result.url) {
-        // Redirect directly to Stripe checkout
-        window.location.href = result.url;
-      } else {
-        throw new Error(result.message || 'Failed to create checkout session');
+      try {
+        // Try to parse the response as JSON
+        const result = JSON.parse(responseText);
+        
+        if (result.success && result.url) {
+          // Redirect directly to Stripe checkout
+          window.location.href = result.url;
+        } else {
+          throw new Error(result.message || 'Failed to create checkout session');
+        }
+      } catch (jsonError) {
+        console.error('Error parsing response:', responseText);
+        throw new Error('Invalid response from server. Please try again.');
       }
     } catch (error: any) {
       console.error('Checkout error:', error);

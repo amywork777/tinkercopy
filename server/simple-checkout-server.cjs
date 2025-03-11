@@ -11,30 +11,50 @@ const nodemailer = require('nodemailer');
 dotenv.config();
 
 // Initialize Firebase Admin SDK if not already initialized
-try {
-  if (!admin.apps.length) {
-    // If you have a service account file
-    const serviceAccount = require('./firebase-service-account.json');
-    
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'model-fusion-studio.appspot.com'
-    });
-    
-    console.log('Firebase Admin SDK initialized successfully');
-  }
-} catch (error) {
-  console.error('Failed to initialize Firebase Admin SDK:', error);
-  // Continue without Firebase - will fallback to memory storage
-}
-
-// Create Firestore references if available
 let firestore;
+let storage;
+
 try {
+  if (!admin.apps || !admin.apps.length) {
+    try {
+      // First try using service account file
+      const serviceAccount = require('./firebase-service-account.json');
+      
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+      });
+      
+      console.log('Firebase Admin SDK initialized successfully with service account file');
+    } catch (serviceAccountError) {
+      console.error('Error loading service account:', serviceAccountError);
+      
+      // Fallback to environment variables
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+        : undefined;
+      
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: process.env.FIREBASE_PROJECT_ID,
+          privateKey: privateKey,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        }),
+        storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+      });
+      
+      console.log('Firebase Admin SDK initialized with environment variables');
+    }
+  }
+  
+  // Create Firestore references if available
   firestore = admin.firestore();
+  storage = admin.storage().bucket();
   console.log('Firestore connection established');
 } catch (error) {
-  console.error('Failed to connect to Firestore:', error);
+  console.error('Failed to initialize Firebase Admin SDK:', error);
+  console.log('Continuing without Firebase - will fallback to memory storage');
+  // Firestore and storage will be undefined
 }
 
 // Initialize email service
@@ -49,6 +69,31 @@ const transporter = nodemailer.createTransport({
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// Validate Stripe key
+(async function validateStripeKey() {
+  try {
+    // Attempt to make a simple API call to check if the key is valid
+    const testBalance = await stripe.balance.retrieve();
+    console.log('Stripe API key is valid. Connected to Stripe successfully.');
+  } catch (error) {
+    console.error('⚠️ Stripe API key validation failed:', error.message);
+    console.error('⚠️ Checkout functionality will not work correctly without a valid Stripe API key');
+    if (error.type === 'StripeAuthenticationError') {
+      console.error('⚠️ Please check your Stripe secret key in the .env file');
+    }
+  }
+})();
+
+// Create an in-memory store for orders when Firestore is unavailable
+const memoryOrderStore = [];
+
+// Create temporary directory for STL files
+const stlFilesDir = path.join(__dirname, 'temp-stl-files');
+if (!fs.existsSync(stlFilesDir)) {
+  fs.mkdirSync(stlFilesDir, { recursive: true });
+  console.log(`Created STL files directory: ${stlFilesDir}`);
+}
+
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -61,13 +106,6 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Special case for Stripe webhook to handle raw body
 app.use('/api/webhook', express.raw({ type: 'application/json' }));
 
-// Create a directory for temporary STL files
-const stlFilesDir = path.join(__dirname, 'temp-stl-files');
-if (!fs.existsSync(stlFilesDir)) {
-  fs.mkdirSync(stlFilesDir, { recursive: true });
-  console.log(`Created STL files directory: ${stlFilesDir}`);
-}
-
 // In-memory storage for quick lookups
 const stlFileStorage = new Map();
 const orderStorage = new Map();
@@ -77,7 +115,15 @@ app.post('/api/stl-files', (req, res) => {
   try {
     const { stlData, fileName } = req.body;
     
+    console.log('Received STL file upload request:', { 
+      hasStlData: !!stlData, 
+      fileName,
+      dataType: typeof stlData,
+      dataLength: stlData ? (typeof stlData === 'string' ? stlData.length : 'non-string') : 0
+    });
+    
     if (!stlData) {
+      console.error('STL file upload failed: No STL data provided');
       return res.status(400).json({ 
         success: false, 
         message: 'No STL data provided' 
@@ -91,20 +137,45 @@ app.post('/api/stl-files', (req, res) => {
     
     // Process the data if it's a data URL
     let fileContent;
-    if (typeof stlData === 'string' && stlData.startsWith('data:')) {
-      const matches = stlData.match(/^data:([^;]+);base64,(.+)$/);
-      if (matches && matches.length >= 3) {
-        fileContent = Buffer.from(matches[2], 'base64');
+    try {
+      if (typeof stlData === 'string' && stlData.startsWith('data:')) {
+        const matches = stlData.match(/^data:([^;]+);base64,(.+)$/);
+        if (matches && matches.length >= 3) {
+          fileContent = Buffer.from(matches[2], 'base64');
+          console.log(`Decoded base64 data URL, size: ${fileContent.length} bytes`);
+        } else {
+          console.log('Data URL format not recognized, treating as raw data');
+          fileContent = Buffer.from(stlData);
+        }
       } else {
+        console.log('Not a data URL, treating as raw data');
         fileContent = Buffer.from(stlData);
       }
-    } else {
-      fileContent = Buffer.from(stlData);
+      
+      if (!fileContent || fileContent.length === 0) {
+        throw new Error('Processed file content is empty');
+      }
+    } catch (dataProcessingError) {
+      console.error('STL data processing error:', dataProcessingError);
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to process STL data',
+        error: dataProcessingError.message
+      });
     }
     
     // Write the file
-    fs.writeFileSync(filePath, fileContent);
-    console.log(`Stored STL file at: ${filePath}`);
+    try {
+      fs.writeFileSync(filePath, fileContent);
+      console.log(`Stored STL file at: ${filePath}, size: ${fileContent.length} bytes`);
+    } catch (fileWriteError) {
+      console.error('File write error:', fileWriteError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to write STL file to disk',
+        error: fileWriteError.message
+      });
+    }
     
     // Store the metadata in memory
     stlFileStorage.set(fileId, {
@@ -115,6 +186,7 @@ app.post('/api/stl-files', (req, res) => {
     
     // Generate the public URL
     const publicUrl = `http://localhost:${process.env.PORT || 3001}/api/stl-files/${fileId}`;
+    console.log(`Created public URL for STL file: ${publicUrl}`);
     
     return res.status(200).json({
       success: true,
@@ -122,10 +194,11 @@ app.post('/api/stl-files', (req, res) => {
       url: publicUrl
     });
   } catch (error) {
-    console.error('Error storing STL file:', error);
+    console.error('Unexpected error storing STL file:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to store STL file'
+      message: 'Failed to store STL file',
+      error: error.message
     });
   }
 });
@@ -216,6 +289,10 @@ async function handleSuccessfulPayment(session) {
         console.log(`Order ${orderId} stored in Firestore`);
       } catch (firestoreError) {
         console.error('Error storing order in Firestore:', firestoreError);
+        // Check if it's an authentication error
+        if (firestoreError.code === 16 && firestoreError.details && firestoreError.details.includes('invalid authentication credentials')) {
+          console.log('Firebase authentication failed, using memory storage fallback');
+        }
         // Fallback to memory storage
         orderStorage.set(orderId, orderData);
         console.log(`Order ${orderId} stored in memory (Firestore failed)`);
@@ -379,7 +456,18 @@ app.post('/api/create-checkout-session', async (req, res) => {
   try {
     const { modelName, color, quantity, finalPrice, stlFileData, stlFileName, stlDownloadUrl } = req.body;
     
+    console.log('Received checkout request with:', { 
+      modelName, 
+      color, 
+      quantity, 
+      finalPrice, 
+      hasStlFileData: !!stlFileData, 
+      stlFileName, 
+      stlDownloadUrl 
+    });
+    
     if (!modelName || !color || !quantity || !finalPrice) {
+      console.log('Missing required checkout information');
       return res.status(400).json({ 
         success: false, 
         message: 'Missing required checkout information' 
@@ -394,62 +482,93 @@ app.post('/api/create-checkout-session', async (req, res) => {
       stlInfo += `\n\nSTL FILE DOWNLOAD LINK: ${stlDownloadUrl}`;
     }
 
-    // Create a product for this specific order
-    const product = await stripe.products.create({
-      name: `3D Print: ${modelName}`,
-      description: `Custom 3D print - ${modelName} in ${color} (Qty: ${quantity})${stlInfo}`,
-      metadata: {
-        stlFileName: stlFileName || 'unknown.stl',
-        hasStlData: stlFileData ? 'true' : 'false',
-        stlDownloadUrl: stlDownloadUrl || ''
-      }
-    });
+    try {
+      // Create a product for this specific order
+      console.log('Creating Stripe product...');
+      const product = await stripe.products.create({
+        name: `3D Print: ${modelName}`,
+        description: `Custom 3D print - ${modelName} in ${color} (Qty: ${quantity})${stlInfo}`,
+        metadata: {
+          stlFileName: stlFileName || 'unknown.stl',
+          hasStlData: stlFileData ? 'true' : 'false',
+          stlDownloadUrl: stlDownloadUrl || ''
+        }
+      });
+      console.log('Stripe product created:', product.id);
 
-    // Create a price for the product
-    const price = await stripe.prices.create({
-      product: product.id,
-      unit_amount: Math.round(finalPrice * 100), // Convert to cents
-      currency: 'usd',
-    });
+      // Create a price for the product
+      console.log('Creating Stripe price...');
+      const price = await stripe.prices.create({
+        product: product.id,
+        unit_amount: Math.round(finalPrice * 100), // Convert to cents
+        currency: 'usd',
+      });
+      console.log('Stripe price created:', price.id);
 
-    // Update the success_url to use a dynamic host
-    const host = req.headers.origin || 'http://localhost:5174';
-    
-    // Create a checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: price.id,
-          quantity: 1, // We already factored quantity into the price
+      // Update the success_url to use a dynamic host
+      const host = req.headers.origin || 'http://localhost:5175';
+      console.log('Using host for redirect:', host);
+      
+      // Create a checkout session
+      console.log('Creating Stripe checkout session...');
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: price.id,
+            quantity: 1, // We already factored quantity into the price
+          },
+        ],
+        mode: 'payment',
+        success_url: `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${host}/`,
+        metadata: {
+          modelName,
+          color,
+          quantity: quantity.toString(),
+          finalPrice: finalPrice.toString(),
+          stlFileName: stlFileName || 'unknown.stl',
+          stlDownloadUrl: stlDownloadUrl || '',
         },
-      ],
-      mode: 'payment',
-      success_url: `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${host}/`,
-      metadata: {
-        modelName,
-        color,
-        quantity: quantity.toString(),
-        finalPrice: finalPrice.toString(),
-        stlFileName: stlFileName || 'unknown.stl',
-        stlDownloadUrl: stlDownloadUrl || '',
-      },
-      // Enable billing address collection to get email and address for shipping
-      billing_address_collection: 'required',
-      shipping_address_collection: {
-        allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
-      },
-    });
+        // Enable billing address collection to get email and address for shipping
+        billing_address_collection: 'required',
+        shipping_address_collection: {
+          allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
+        },
+      });
+      console.log('Stripe checkout session created:', session.id);
 
-    // Return the session ID and URL
-    res.json({ 
-      success: true,
-      sessionId: session.id,
-      url: session.url 
-    });
+      // Return the session ID and URL
+      res.json({ 
+        success: true,
+        sessionId: session.id,
+        url: session.url 
+      });
+    } catch (stripeError) {
+      console.error('Stripe API Error:', stripeError.type, stripeError.message);
+      // Check for specific Stripe error types and handle them appropriately
+      if (stripeError.type === 'StripeAuthenticationError') {
+        return res.status(500).json({
+          success: false,
+          message: 'Authentication with Stripe failed. Check API keys.',
+          error: stripeError.message
+        });
+      } else if (stripeError.type === 'StripeConnectionError') {
+        return res.status(500).json({
+          success: false,
+          message: 'Could not connect to Stripe API.',
+          error: stripeError.message
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: 'Stripe API error',
+          error: stripeError.message
+        });
+      }
+    }
   } catch (error) {
-    console.error('Error creating checkout session:', error);
+    console.error('General error creating checkout session:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create checkout session',

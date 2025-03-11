@@ -116,7 +116,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         stripeSubscriptionId: subscription.id,
         subscriptionStatus: subscription.status,
         subscriptionEndDate: new Date(subscription.current_period_end * 1000),
-        modelsRemainingThisMonth: 20, // Reset limit to Pro level
+        modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
         // Keep track of the subscription plan
         subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
       });
@@ -166,7 +166,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         await db.collection('users').doc(userDoc.id).update({
           isPro: false,
           subscriptionStatus: 'canceled',
-          modelsRemainingThisMonth: 3, // Reset to free tier limit
+          modelsRemainingThisMonth: 0, // Free tier with no generations
         });
       }
       
@@ -193,7 +193,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             subscriptionEndDate: new Date(subscription.current_period_end * 1000),
             // Reset monthly limits
             modelsGeneratedThisMonth: 0,
-            modelsRemainingThisMonth: 20,
+            modelsRemainingThisMonth: Infinity, // Pro tier with unlimited generations
             lastResetDate: new Date().toISOString().substring(0, 7),
           });
         }

@@ -347,93 +347,50 @@ export function MagicFishAI() {
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads allow-modals allow-presentation allow-popups-to-escape-sandbox"
               />
               
+              {/* Transparent overlay for non-Pro users that prevents interaction but allows viewing */}
+              {!subscription.isPro && !isLoading && !hasError && (
+                <div 
+                  className="absolute inset-0 z-20 pointer-events-auto cursor-not-allowed" 
+                  style={{ background: 'transparent' }}
+                  onClick={() => {
+                    toast({
+                      title: "Pro Feature",
+                      description: "The AI Generator is available exclusively to Pro users.",
+                      variant: "default",
+                    });
+                  }}
+                />
+              )}
+              
               {/* Download button interceptor overlay container */}
               <div ref={overlayRef} className="download-interceptor-container"></div>
-              
-              {/* Semi-transparent overlay when download limit is reached */}
-              {!subscription.isPro && modelsRemaining <= 0 && !isLoading && !hasError && (
-                <div className="absolute inset-0 pointer-events-auto z-20 flex flex-col">
-                  {/* Top banner with limit message - using UI style colors */}
-                  <div className="bg-primary text-primary-foreground py-3 px-4 shadow-md">
-                    <div className="flex justify-between items-center max-w-4xl mx-auto">
-                      <div className="flex items-center">
-                        <Crown className="h-5 w-5 mr-2" />
-                        <span className="font-medium">Download Limit Reached</span>
-                      </div>
-                      <Button
-                        variant="secondary" 
-                        size="sm"
-                        onClick={() => navigate('/pricing')}
-                      >
-                        Upgrade to Pro
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  {/* Bottom message tray - matching card styling */}
-                  <div className="mt-auto bg-card text-card-foreground border-t p-4 text-center">
-                    <p className="text-sm font-medium mb-2">You've used all your free downloads this month.</p>
-                    <p className="text-xs text-muted-foreground">Upgrade to Pro for 20 downloads per month.</p>
-                  </div>
-                  
-                  {/* Center area with subtle overlay */}
-                  <div 
-                    className="flex-grow bg-background/30 backdrop-blur-[1px] pointer-events-auto flex items-center justify-center" 
-                    onClick={() => {
-                      toast({
-                        title: "Download Limit Reached",
-                        description: "You've used all your free downloads this month. Upgrade to Pro for 20 downloads per month.",
-                        variant: "destructive",
-                      });
-                    }}
-                  >
-                    {/* Hover message using card styling */}
-                    <div className="bg-card text-card-foreground border rounded-md shadow-md p-3 opacity-0 hover:opacity-100 transition-opacity duration-300">
-                      <div className="flex items-center gap-2">
-                        <Lock className="h-4 w-4 text-primary" />
-                        <span className="text-sm">Upgrade to Pro (20 downloads/month)</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </CardContent>
         
         <CardFooter className="p-3 flex-col" style={{minHeight: "80px"}}>
-          {/* Usage progress bar */}
-          <div className="w-full mb-2">
-            <div className="flex justify-between items-center text-xs mb-1">
-              <span>STL Downloads</span>
-              <span className="font-medium">{modelsRemaining}/{modelLimit} remaining</span>
-            </div>
-            <Progress value={usagePercent} className="h-2" />
+          {/* Pro feature indicator */}
+          <div className="w-full flex items-center justify-center">
+            {subscription.isPro ? (
+              <div className="flex items-center">
+                <Info className="h-3 w-3 text-muted-foreground mr-1" />
+                <span className="text-xs text-muted-foreground">Pro Feature: Create custom 3D models with AI</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs text-muted-foreground">Upgrade to unlock this feature</span>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => navigate('/pricing')}
+                >
+                  <Crown className="h-3 w-3 mr-1" />
+                  Upgrade to Pro
+                </Button>
+              </div>
+            )}
           </div>
-          
-          {/* Upgrade notice for free users */}
-          {!subscription.isPro && (
-            <div className="w-full mt-2 flex justify-between items-center border border-orange-200 rounded bg-orange-50 p-2">
-              <span className="text-xs text-orange-700">Pro users get 20 downloads per month</span>
-              <Button 
-                variant="ghost"
-                size="sm"
-                className="ml-2 text-xs text-orange-600 hover:bg-orange-100 hover:text-orange-800"
-                onClick={() => navigate('/pricing')}
-              >
-                <Crown className="h-3 w-3 mr-1" />
-                Upgrade
-              </Button>
-            </div>
-          )}
-          
-          {/* Info for Pro users */}
-          {subscription.isPro && (
-            <div className="w-full mt-2 flex items-center">
-              <Info className="h-3 w-3 text-muted-foreground mr-1" />
-              <span className="text-xs text-muted-foreground">Pro: 20 STL downloads per month</span>
-            </div>
-          )}
         </CardFooter>
       </Card>
     </div>

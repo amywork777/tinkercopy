@@ -27,8 +27,12 @@ export default function SubscriptionStatus() {
   // Calculate the total allowed models based on subscription
   const totalModels = subscription.isPro ? MODEL_LIMITS.PRO : MODEL_LIMITS.FREE;
   
-  // Calculate percentage used
-  const usedPercentage = Math.min(
+  // Check if user has unlimited generations (pro) or none (free)
+  const hasUnlimitedGenerations = subscription.isPro;
+  const hasNoGenerations = !subscription.isPro;
+  
+  // Calculate percentage used, only if not unlimited or zero
+  const usedPercentage = hasUnlimitedGenerations || hasNoGenerations ? 0 : Math.min(
     100,
     Math.round(
       ((totalModels - subscription.modelsRemainingThisMonth) / totalModels) * 100
@@ -50,13 +54,19 @@ export default function SubscriptionStatus() {
         <div className="flex justify-between text-xs">
           <span>Model Generations</span>
           <span>
-            {totalModels - subscription.modelsRemainingThisMonth}/{totalModels} used
+            {hasUnlimitedGenerations 
+              ? "Unlimited" 
+              : hasNoGenerations 
+                ? "24h trial on signup" 
+                : `${totalModels - subscription.modelsRemainingThisMonth}/${totalModels} used`}
           </span>
         </div>
-        <Progress value={usedPercentage} className="h-2" />
+        {!hasUnlimitedGenerations && !hasNoGenerations && (
+          <Progress value={usedPercentage} className="h-2" />
+        )}
       </div>
       
-      {!subscription.isPro && subscription.modelsRemainingThisMonth < 2 && (
+      {!subscription.isPro && (
         <div className="mt-3">
           <Button 
             variant="outline" 
@@ -64,9 +74,7 @@ export default function SubscriptionStatus() {
             className="w-full text-xs"
             onClick={() => navigate('/pricing')}
           >
-            {subscription.modelsRemainingThisMonth === 0
-              ? 'Upgrade for More Models'
-              : 'Running Low - Upgrade Now'}
+            Upgrade to Pro for Full Access
           </Button>
         </div>
       )}

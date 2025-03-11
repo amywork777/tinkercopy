@@ -44,6 +44,7 @@ export const getUserSubscription = async (userId: string): Promise<{
   isPro: boolean;
   modelsRemainingThisMonth: number;
   modelsGeneratedThisMonth: number;
+  downloadsThisMonth: number;
   subscriptionStatus: string;
   subscriptionEndDate: string | null;
   subscriptionPlan: string;
@@ -93,23 +94,11 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
   }
 };
 
-// Calculate discounted price for pro users
+// Calculate discounted price for pro users - now always returns original price
 export const calculateDiscountedPrice = async (
   basePrice: number,
   userId: string
 ): Promise<number> => {
-  try {
-    // Get user subscription status
-    const subscription = await getUserSubscription(userId);
-    
-    // Apply 10% discount for Pro users
-    if (subscription.isPro) {
-      return basePrice * 0.9;
-    }
-    
-    return basePrice;
-  } catch (error) {
-    console.error('Error calculating discounted price:', error);
-    return basePrice; // Fall back to original price on error
-  }
+  // No discount applied anymore - always return the original price
+  return basePrice;
 }; 

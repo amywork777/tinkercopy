@@ -475,25 +475,7 @@ export const getPrintJobStatus = async (jobId: string) => {
 // Calculate price from volume with proper margins based on user subscription
 export const calculatePriceWithMargin = async (basePrice: number, userId?: string) => {
   try {
-    // If a userId is provided and we have the subscription context, check subscription status
-    if (userId) {
-      try {
-        // Import here to avoid circular dependencies
-        const { getUserSubscription } = await import('./stripeApi');
-        const subscription = await getUserSubscription(userId);
-        
-        // Apply discount for Pro users - 40% margin instead of 50%
-        if (subscription.isPro) {
-          // 40% margin means multiply by 1.67 (1/0.6) instead of 2.0 (1/0.5)
-          return parseFloat((basePrice * 1.67).toFixed(2));
-        }
-      } catch (error) {
-        console.error('Error checking subscription for pricing:', error);
-        // Fall back to standard pricing if there's an error
-      }
-    }
-    
-    // Standard pricing for non-Pro users (50% margin)
+    // Standard pricing for all users (50% margin)
     return parseFloat((basePrice * 2.0).toFixed(2));
   } catch (error) {
     console.error('Error calculating price with margin:', error);

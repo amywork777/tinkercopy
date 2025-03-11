@@ -77,16 +77,16 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const hasAccess = (feature: string): boolean => {
     switch (feature) {
       case 'modelGeneration':
-        // Both pro and free users can generate models if they have remaining generations
-        return subscription.isPro || subscription.modelsRemainingThisMonth > 0;
+        // Only pro users can generate models now
+        return subscription.isPro;
         
       case 'fullAssetsLibrary':
         // Only pro users have access to full assets library
         return subscription.isPro;
         
       case 'printDiscount':
-        // Only pro users get print discount
-        return subscription.isPro;
+        // Pro users no longer get a discount
+        return false;
         
       default:
         return false;
@@ -97,53 +97,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const decrementModelCount = async (): Promise<boolean> => {
     if (!user) return false;
     
-    // Pro users always have access
-    if (subscription.isPro) return true;
-    
-    // Free users need to have remaining models
-    if (subscription.modelsRemainingThisMonth <= 0) {
-      return false;
-    }
-    
-    try {
-      // Call the API to update the count in the database
-      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/decrement-model-count`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user.id,
-        }),
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to update model count:', await response.text());
-        return false;
-      }
-      
-      const data = await response.json();
-      
-      // Update the local state with the values from the server
-      setSubscription(prev => ({
-        ...prev,
-        modelsRemainingThisMonth: data.modelsRemainingThisMonth,
-        modelsGeneratedThisMonth: data.modelsGeneratedThisMonth,
-      }));
-      
-      return true;
-    } catch (error) {
-      console.error('Error updating model count:', error);
-      
-      // Fallback to updating local state only if API call fails
-      setSubscription(prev => ({
-        ...prev,
-        modelsRemainingThisMonth: prev.modelsRemainingThisMonth - 1,
-        modelsGeneratedThisMonth: prev.modelsGeneratedThisMonth + 1,
-      }));
-      
-      return true;
-    }
+    // Only Pro users have access now
+    return subscription.isPro;
   };
 
   // Track downloads in Firebase

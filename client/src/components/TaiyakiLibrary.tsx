@@ -67,59 +67,24 @@ export function TaiyakiLibrary() {
         if (event.data && typeof event.data === 'object') {
           // If this is a download request
           if (event.data.type === 'download_stl' || event.data.type === 'download' || event.data.action === 'download') {
-            // Check if user has Pro access or has remaining downloads
+            // Check if user has Pro access
             if (!subscription.isPro) {
-              if (modelsRemaining <= 0) {
-                // Block download if not a Pro user and no credits left
-                toast({
-                  title: "Limit Reached",
-                  description: "You've used all your free downloads this month. Upgrade to Pro for unlimited access.",
-                  variant: "destructive",
-                });
-                
-                // Respond to iframe that download is not allowed
-                if (iframeRef.current && iframeRef.current.contentWindow) {
-                  iframeRef.current.contentWindow.postMessage(
-                    { type: 'download_blocked', requiresUpgrade: true },
-                    "https://library.taiyaki.ai"
-                  );
-                }
-                
-                // Ask if they want to upgrade
-                if (window.confirm("You've reached your download limit. Would you like to upgrade to Pro for unlimited downloads?")) {
-                  navigate('/pricing');
-                }
-                
-                return;
-              } else {
-                // Free user with remaining downloads
-                // Decrement the model count (reusing the same counter)
-                const success = await decrementModelCount();
-                
-                if (success) {
-                  toast({
-                    title: "Download Started",
-                    description: `You have ${modelsRemaining - 1} downloads remaining this month.`,
-                    variant: "default",
-                  });
-                  
-                  // Allow the download
-                  if (iframeRef.current && iframeRef.current.contentWindow) {
-                    iframeRef.current.contentWindow.postMessage(
-                      { type: 'download_allowed' },
-                      "https://library.taiyaki.ai"
-                    );
-                  }
-                } else {
-                  // Should never happen but just in case
-                  toast({
-                    title: "Download Error",
-                    description: "Could not process your download. Please try again.",
-                    variant: "destructive",
-                  });
-                  return;
-                }
+              // Block download for non-Pro users
+              toast({
+                title: "Pro Feature",
+                description: "STL downloads from Taiyaki Library are available exclusively to Pro users.",
+                variant: "default",
+              });
+              
+              // Respond to iframe that download is not allowed
+              if (iframeRef.current && iframeRef.current.contentWindow) {
+                iframeRef.current.contentWindow.postMessage(
+                  { type: 'download_blocked', requiresUpgrade: true },
+                  "https://library.taiyaki.ai"
+                );
               }
+              
+              return;
             } else {
               // Pro users can download without limitations
               if (iframeRef.current && iframeRef.current.contentWindow) {
@@ -200,38 +165,33 @@ export function TaiyakiLibrary() {
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
           />
           
-          {/* Free user restriction banner */}
-          {!subscription.isPro && !isLoading && (
-            <div className="absolute bottom-0 left-0 right-0 bg-orange-50 border-t border-orange-200 p-2 flex items-center justify-between">
-              <div className="flex items-center">
-                <Lock className="h-4 w-4 text-orange-500 mr-2" />
-                <span className="text-xs text-orange-700">
-                  STL downloads from Taiyaki Library require a Pro subscription
-                </span>
-              </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-xs text-orange-600 hover:text-orange-800 hover:bg-orange-100"
-                onClick={() => navigate('/pricing')}
-              >
-                <Crown className="h-3 w-3 mr-1" />
-                Upgrade
-              </Button>
-            </div>
-          )}
+          {/* Removing the full overlay that prevents all interaction */}
+          {/* We'll handle download restrictions through the message event instead */}
         </CardContent>
         
         <CardFooter className="p-3 flex-col" style={{minHeight: "80px"}}>
-          {/* Info message only for Pro users */}
-          {subscription.isPro && (
-            <div className="w-full flex items-center justify-center">
-              <Info className="h-3 w-3 text-muted-foreground mr-1" />
-              <span className="text-xs text-muted-foreground">
-                Pro users have unlimited access to Taiyaki Library
-              </span>
-            </div>
-          )}
+          {/* Pro feature indicator */}
+          <div className="w-full flex items-center justify-center">
+            {subscription.isPro ? (
+              <div className="flex items-center">
+                <Info className="h-3 w-3 text-muted-foreground mr-1" />
+                <span className="text-xs text-muted-foreground">Pro Feature: Access unlimited models from Taiyaki Library</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs text-muted-foreground">Upgrade to unlock downloads from Taiyaki Library</span>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => navigate('/pricing')}
+                >
+                  <Crown className="h-3 w-3 mr-1" />
+                  Upgrade to Pro
+                </Button>
+              </div>
+            )}
+          </div>
         </CardFooter>
       </Card>
     </div>

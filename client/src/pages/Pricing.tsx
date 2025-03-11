@@ -153,7 +153,7 @@ export default function PricingPage() {
                     <ul className="mt-4 space-y-3">
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>{MODEL_LIMITS.FREE} Model Generations per Month</span>
+                        <span>Try it out upon account creation</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
@@ -201,7 +201,7 @@ export default function PricingPage() {
                     <ul className="mt-4 space-y-3">
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>{MODEL_LIMITS.PRO} Model Generations per Month</span>
+                        <span>Unlimited Model Generations</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
@@ -210,10 +210,6 @@ export default function PricingPage() {
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
                         <span>Full Access to Assets Library</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>10% Discount on 3D Print Orders</span>
                       </li>
                       {billingInterval === 'yearly' && (
                         <li className="flex items-start">

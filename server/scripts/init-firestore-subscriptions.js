@@ -58,7 +58,7 @@ async function initializeSubscriptions() {
       const updates = {
         isPro: false,
         modelsGeneratedThisMonth: 0,
-        modelsRemainingThisMonth: 3, // Free tier limit
+        modelsRemainingThisMonth: 0, // Free tier with no generations
         lastResetDate: currentMonth,
         stripeCustomerId: userData.stripeCustomerId || null,
         stripeSubscriptionId: userData.stripeSubscriptionId || null, 

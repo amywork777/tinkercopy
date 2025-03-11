@@ -128,7 +128,7 @@ const resetMonthlyLimits = async () => {
       }
       
       // Set appropriate limits based on subscription
-      const modelLimit = userData.isPro ? 20 : 2;
+      const modelLimit = userData.isPro ? Infinity : 0;
       
       batch.update(doc.ref, {
         modelsGeneratedThisMonth: 0,

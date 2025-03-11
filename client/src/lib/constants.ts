@@ -24,7 +24,7 @@ export const PRICING_PLANS = {
 export const FEATURES = {
   MODEL_GENERATION: 'modelGeneration',      // Only for Pro and Trial
   FULL_ASSETS_LIBRARY: 'fullAssetsLibrary', // Only for Pro and Trial
-  TRIAL_ACCESS: 'trialAccess',              // 24-hour trial for new users
+  TRIAL_ACCESS: 'trialAccess',              // one-hour trial for new users
 };
 
 // Constants for localStorage keys

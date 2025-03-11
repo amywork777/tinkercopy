@@ -189,15 +189,11 @@ export default function PricingPage() {
                     <ul className="mt-4 space-y-3">
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>24-hour Pro trial upon signup</span>
+                        <span>One-hour Pro trial upon signup</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
                         <span>Unlimited 3D Print Requests</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Limited Access to Assets Library</span>
                       </li>
                     </ul>
                   </CardContent>

@@ -11,6 +11,12 @@ export const STRIPE_PRICES = {
   ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 
+// Helper to add cache-busting parameter
+const addCacheBuster = (url: string): string => {
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}_t=${Date.now()}`;
+};
+
 // Create a checkout session for a subscription
 export const createCheckoutSession = async (
   priceId: string,
@@ -18,11 +24,15 @@ export const createCheckoutSession = async (
   email: string
 ): Promise<{ url: string }> => {
   try {
-    console.log(`Making request to ${API_URL}/pricing/create-checkout-session`);
-    const response = await fetch(`${API_URL}/pricing/create-checkout-session`, {
+    const endpoint = addCacheBuster(`${API_URL}/pricing/create-checkout-session`);
+    console.log(`Making request to ${endpoint}`);
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       body: JSON.stringify({
         priceId,
@@ -56,11 +66,15 @@ export const getUserSubscription = async (userId: string): Promise<{
   trialEndDate: string | null;
 }> => {
   try {
-    console.log(`Fetching subscription for user: ${userId} from ${API_URL}/pricing/user-subscription/${userId}`);
-    const response = await fetch(`${API_URL}/pricing/user-subscription/${userId}`, {
+    const endpoint = addCacheBuster(`${API_URL}/pricing/user-subscription/${userId}`);
+    console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
+    const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       // Add a reasonable timeout
       signal: AbortSignal.timeout(10000), // 10 second timeout
@@ -109,10 +123,14 @@ export const getUserSubscription = async (userId: string): Promise<{
 // Cancel subscription
 export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const response = await fetch(`${API_URL}/pricing/cancel-subscription`, {
+    const endpoint = addCacheBuster(`${API_URL}/pricing/cancel-subscription`);
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       body: JSON.stringify({
         userId,
@@ -151,11 +169,15 @@ export const verifySubscription = async (
   message: string;
 }> => {
   try {
+    const endpoint = addCacheBuster(`${API_URL}/pricing/verify-subscription`);
     console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'}`);
-    const response = await fetch(`${API_URL}/pricing/verify-subscription`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       body: JSON.stringify({
         userId,

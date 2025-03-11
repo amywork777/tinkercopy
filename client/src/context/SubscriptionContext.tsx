@@ -313,6 +313,62 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     refreshSubscription();
   }, [user]);
 
+  // Add periodic subscription refresh (every 5 minutes)
+  useEffect(() => {
+    if (!user) return;
+    
+    console.log('Setting up periodic subscription refresh');
+    
+    // Initial refresh
+    refreshSubscription();
+    
+    // Set up interval for periodic refresh
+    const intervalId = setInterval(() => {
+      console.log('Performing periodic subscription refresh');
+      refreshSubscription();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    // Clean up interval on unmount
+    return () => {
+      console.log('Cleaning up subscription refresh interval');
+      clearInterval(intervalId);
+    };
+  }, [user?.id]); // Only re-run if user ID changes
+
+  // Add listener for visibility changes to refresh when tab becomes visible
+  useEffect(() => {
+    if (!user) return;
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Page visibility changed to visible, refreshing subscription');
+        refreshSubscription();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.id]);
+
+  // Add response validation to check if the subscription data matches expected format
+  useEffect(() => {
+    if (!user || !subscription.isPro) return;
+    
+    // Check for potential data corruption or invalid state
+    const isValidProSubscription = 
+      subscription.isPro === true && 
+      subscription.subscriptionStatus === 'active' &&
+      subscription.subscriptionPlan === 'pro';
+    
+    if (!isValidProSubscription) {
+      console.error('Inconsistent subscription state detected, refreshing data');
+      refreshSubscription();
+    }
+  }, [subscription, user]);
+
   // Test function to verify trial expiration works correctly
   const testTrialExpiration = async (): Promise<any> => {
     if (!user) {

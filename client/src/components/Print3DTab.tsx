@@ -41,6 +41,15 @@ interface FilamentApiItem {
   [key: string]: any; // For any other properties
 }
 
+// Interface for uploaded model data
+interface UploadedModelData {
+  data: string | ArrayBuffer | null;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  uploadTime: string;
+}
+
 // Load Stripe outside of a component's render to avoid recreating the Stripe object on every render
 const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY 
   ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
@@ -77,7 +86,7 @@ const Print3DTab = () => {
   });
   const [priceSource, setPriceSource] = useState<'api' | 'estimate'>('estimate');
   const [error, setError] = useState<string | null>(null);
-  const [uploadedModelData, setUploadedModelData] = useState<any>(null);
+  const [uploadedModelData, setUploadedModelData] = useState<UploadedModelData | string | null>(null);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -129,9 +138,9 @@ const Print3DTab = () => {
           name = name.replace(/^[\s-]+|[\s-]+$/g, ''); // Remove leading/trailing spaces and hyphens
           
           return {
-            id: item.id || item.filament || item.name || 'unknown',
+          id: item.id || item.filament || item.name || 'unknown',
             name: name,
-            hex: item.hex || item.color || '#808080'
+          hex: item.hex || item.color || '#808080'
           };
         });
       } else if (response && response.filaments && Array.isArray(response.filaments)) {
@@ -142,9 +151,9 @@ const Print3DTab = () => {
           name = name.replace(/^[\s-]+|[\s-]+$/g, ''); // Remove leading/trailing spaces and hyphens
           
           return {
-            id: item.id || item.filament || item.name || 'unknown',
+          id: item.id || item.filament || item.name || 'unknown',
             name: name,
-            hex: item.hex || item.color || '#808080'
+          hex: item.hex || item.color || '#808080'
           };
         });
       }
@@ -314,7 +323,7 @@ const Print3DTab = () => {
             basePrice = 10 + ((volumeCubicCm - 200) / 800) * 20; // $10-$30
           } else if (volumeCubicCm < 5000) {
             basePrice = 30 + ((volumeCubicCm - 1000) / 4000) * 70; // $30-$100
-          } else {
+      } else {
             // For extremely large models, continue scaling (approximately $15 per 1000 cubic cm)
             basePrice = 100 + ((volumeCubicCm - 5000) / 1000) * 15;
           }
@@ -449,7 +458,7 @@ const Print3DTab = () => {
       setIsPriceCalculating(false);
     }
   };
-  
+
   // Calculate the volume of a 3D model in cubic millimeters
   const calculateModelVolume = (model: any) => {
     try {
@@ -532,7 +541,7 @@ const Print3DTab = () => {
       
       // Fallback - use bounding box volume
       const boundingBox = new THREE.Box3().setFromObject(model.mesh);
-      const size = new THREE.Vector3();
+    const size = new THREE.Vector3();
       boundingBox.getSize(size);
       
       // Return volume in cubic millimeters with reasonable bounds
@@ -682,15 +691,25 @@ const Print3DTab = () => {
         if (target && target.files && target.files[0]) {
           const file = target.files[0];
           
+          // Store the original filename
+          const originalFileName = file.name;
+          
           // Convert file to base64 for model preview and API use
           const reader = new FileReader();
           reader.onload = async (event) => {
             if (event.target && event.target.result) {
-              setUploadedModelData(event.target.result);
+              // Store both the file data and metadata
+              setUploadedModelData({
+                data: event.target.result,
+                fileName: originalFileName,
+                fileSize: file.size,
+                fileType: file.type,
+                uploadTime: new Date().toISOString()
+              });
               
               toast({
                 title: "Model uploaded successfully",
-                description: `${file.name} (${Math.round(file.size / 1024)}KB)`,
+                description: `${originalFileName} (${Math.round(file.size / 1024)}KB)`,
               });
               
               // Calculate price for the uploaded model
@@ -739,14 +758,101 @@ const Print3DTab = () => {
       // Set loading state
       setIsLoading(true);
       
+      // Get the STL file data or reference
+      let stlFileData = null;
+      let stlFileName = "unknown.stl";
+      let stlDownloadData = null;
+      let stlDownloadUrl = null;
+      
+      if (selectedModelIndex !== null) {
+        // For pre-defined models, we can send the model reference
+        stlFileData = models[selectedModelIndex]?.id || `model-${selectedModelIndex}`;
+        stlFileName = `${models[selectedModelIndex]?.name || 'Unnamed Model'}.stl`;
+        // We don't have direct download data for predefined models
+        // In a real implementation, you might have permanent URLs for predefined models
+        stlDownloadUrl = `http://localhost:3001/api/predefined-models/${models[selectedModelIndex]?.id || 'unknown'}`;
+      } else if (uploadedModelData) {
+        // Extract the actual STL data for upload
+        let rawStlData;
+        
+        // Handle the updated uploadedModelData structure
+        if (typeof uploadedModelData === 'object' && 'fileName' in uploadedModelData) {
+          // We have the new structure with metadata
+          stlFileName = uploadedModelData.fileName;
+          rawStlData = uploadedModelData.data; // For upload to server
+          stlDownloadData = uploadedModelData.data; // For local download
+        } else {
+          // Legacy format (string data)
+          rawStlData = uploadedModelData;
+          stlDownloadData = uploadedModelData; // For local download  
+          stlFileName = "Uploaded Model.stl";
+        }
+        
+        // Upload the STL file to our server to get a permanent URL
+        try {
+          toast({
+            title: "Uploading STL file...",
+            description: "Preparing your 3D model for checkout",
+          });
+          
+          const uploadResponse = await fetch('http://localhost:3001/api/stl-files', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              stlData: rawStlData,
+              fileName: stlFileName
+            }),
+          });
+          
+          const uploadResult = await uploadResponse.json();
+          
+          if (uploadResult.success && uploadResult.url) {
+            stlDownloadUrl = uploadResult.url;
+            console.log('STL file uploaded successfully:', stlDownloadUrl);
+            
+            // Store the reference
+            stlFileData = uploadResult.fileId;
+            
+            toast({
+              title: "STL file uploaded",
+              description: "Your model is ready for checkout",
+            });
+          } else {
+            console.error('Failed to upload STL file:', uploadResult);
+            // Fall back to session storage method
+            const modelKey = `model-${Date.now()}`;
+            sessionStorage.setItem(modelKey, typeof rawStlData === 'string' ? 
+              rawStlData : JSON.stringify(rawStlData));
+            stlFileData = modelKey;
+          }
+        } catch (uploadError) {
+          console.error('Error uploading STL file:', uploadError);
+          // Fall back to session storage method
+          const modelKey = `model-${Date.now()}`;
+          sessionStorage.setItem(modelKey, typeof rawStlData === 'string' ? 
+            rawStlData : JSON.stringify(rawStlData));
+          stlFileData = modelKey;
+        }
+      }
+      
+      // Get color name for display
+      const colorName = filamentColors.find(f => f.id === selectedFilament)?.name || selectedFilament;
+      
       // Prepare checkout data
       const checkoutData = {
         modelName: selectedModelIndex !== null 
           ? models[selectedModelIndex]?.name || 'Unnamed Model'
-          : 'Uploaded Model',
-        color: filamentColors.find(f => f.id === selectedFilament)?.name || selectedFilament,
+          : (uploadedModelData && typeof uploadedModelData === 'object' && 'fileName' in uploadedModelData
+             ? uploadedModelData.fileName.replace(/\.stl$/i, '') 
+             : 'Uploaded Model'),
+        color: colorName,
         quantity,
-        finalPrice
+        finalPrice,
+        stlFileData,  // Add STL file data or reference
+        stlFileName,  // Add STL file name
+        stlDownloadUrl // Add the permanent download URL if available
       };
       
       toast({
@@ -755,7 +861,6 @@ const Print3DTab = () => {
       });
       
       // Call the server endpoint to create a checkout session
-      // Use the local server URL instead of the production URL
       const response = await fetch('http://localhost:3001/api/create-checkout-session', {
         method: 'POST',
         headers: {
@@ -767,7 +872,7 @@ const Print3DTab = () => {
       const result = await response.json();
       
       if (result.success && result.url) {
-        // Redirect to Stripe checkout
+        // Redirect directly to Stripe checkout
         window.location.href = result.url;
       } else {
         throw new Error(result.message || 'Failed to create checkout session');
@@ -815,13 +920,13 @@ const Print3DTab = () => {
                     models.map((model, index) => (
                       <SelectItem key={index} value={index.toString()}>
                         {model.name || `Model ${index + 1}`}
-                      </SelectItem>
-                    ))
-                  ) : (
+                    </SelectItem>
+                  ))
+                ) : (
                     <SelectItem value="no-models" disabled>
                       No models available
                     </SelectItem>
-                  )}
+                )}
                 </SelectGroup>
                 <SelectItem value="upload">
                   Upload New Model...
@@ -838,7 +943,7 @@ const Print3DTab = () => {
                   <div className="text-sm">
                     <span className="font-medium">Selected: </span>
                     {models[selectedModelIndex]?.name || `Model ${selectedModelIndex + 1}`}
-                  </div>
+            </div>
                 </CardContent>
               </Card>
             ) : uploadedModelData ? (
@@ -847,19 +952,19 @@ const Print3DTab = () => {
                   <div className="text-sm">
                     <span className="font-medium">Uploaded: </span>
                     Custom Model
-                  </div>
+          </div>
                 </CardContent>
               </Card>
             ) : (
-              <Button 
-                variant="outline" 
+            <Button 
+              variant="outline" 
                 className="w-full"
                 onClick={handleUploadModel}
-              >
+            >
                 Upload STL Model
-              </Button>
-            )}
-          </div>
+            </Button>
+        )}
+      </div>
           
           {error && (
             <div className="text-sm text-red-500 flex items-center gap-1.5">
@@ -867,9 +972,9 @@ const Print3DTab = () => {
               {error}
             </div>
           )}
-        </div>
-      </div>
-      
+            </div>
+          </div>
+          
       {/* Filament selection section */}
       <div className="bg-card rounded-md border p-4">
         <h2 className="text-lg font-semibold mb-3">Select Filament</h2>
@@ -897,18 +1002,18 @@ const Print3DTab = () => {
           {/* Quantity selector */}
           <div>
             <Label htmlFor="quantity">Quantity</Label>
-            <Input
+              <Input
               id="quantity"
               type="number"
               value={quantity}
               onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
               className="w-full"
               min={1}
-            />
-          </div>
+              />
+            </div>
         </div>
-      </div>
-      
+            </div>
+            
       {/* Order Summary */}
       <OrderSummary 
         basePrice={basePrice}
@@ -934,10 +1039,10 @@ const Print3DTab = () => {
       
       {/* Action buttons */}
       <div className="flex justify-between">
-        <Button
+        <Button 
           onClick={calculatePriceFromAPI}
           disabled={isLoading || isPriceCalculating || !selectedFilament || (selectedModelIndex === null && !uploadedModelData)}
-          variant="outline"
+          variant="outline" 
         >
           {isPriceCalculating ? (
             <>
@@ -951,23 +1056,23 @@ const Print3DTab = () => {
           )}
         </Button>
         
-        <Button
+          <Button 
           onClick={handleCheckout}
           disabled={isLoading || isPriceCalculating || !selectedFilament || (selectedModelIndex === null && !uploadedModelData) || priceSource === 'estimate'}
           className="bg-primary hover:bg-primary/90"
-        >
-          {isLoading ? (
-            <>
+            >
+              {isLoading ? (
+                <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Processing...
-            </>
-          ) : (
+                  Processing...
+                </>
+              ) : (
             <>
               Checkout (${formatPrice(finalPrice)})
             </>
-          )}
-        </Button>
-      </div>
+              )}
+            </Button>
+          </div>
     </div>
   );
 };

@@ -957,7 +957,7 @@ ${feedback}
   // Update create-checkout-session endpoint
   app.post('/api/create-checkout-session', async (req, res) => {
     try {
-      const { modelName, color, quantity, finalPrice } = req.body;
+      const { modelName, color, quantity, finalPrice, stlFileData, stlFileName, stlDownloadUrl } = req.body;
       
       if (!modelName || !color || !quantity || !finalPrice) {
         return res.status(400).json({ 
@@ -966,10 +966,23 @@ ${feedback}
         });
       }
 
+      // Format STL information for the description
+      let stlInfo = stlFileName ? ` - File: ${stlFileName}` : '';
+      
+      // Add a download link if available
+      if (stlDownloadUrl) {
+        stlInfo += `\n\n----------------------------------\nSTL FILE DOWNLOAD LINK:\n${stlDownloadUrl}\n----------------------------------\n\nSave this link to download your STL file for printing.`;
+      }
+
       // Create a product for this specific order
       const product = await stripe.products.create({
         name: `3D Print: ${modelName}`,
-        description: `Custom 3D print - ${modelName} in ${color} (Qty: ${quantity})`,
+        description: `Custom 3D print - ${modelName} in ${color} (Qty: ${quantity})${stlInfo}`,
+        metadata: {
+          stlFileName: stlFileName || 'unknown.stl',
+          hasStlData: stlFileData ? 'true' : 'false',
+          stlDownloadUrl: stlDownloadUrl || ''
+        }
       });
 
       // Create a price for the product
@@ -990,12 +1003,18 @@ ${feedback}
         ],
         mode: 'payment',
         success_url: `${req.headers.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${req.headers.origin}/print`,
+        cancel_url: `${req.headers.origin}/`,
         metadata: {
           modelName,
           color,
           quantity: quantity.toString(),
           finalPrice: finalPrice.toString(),
+          stlFileName: stlFileName || 'unknown.stl',
+          stlDownloadUrl: stlDownloadUrl || '',
+          // We cannot store the full STL data in metadata (limited to 500 chars)
+          // Instead, store a reference or use Stripe Files API for large data
+          stlFileReference: stlFileData && stlFileData.length <= 500 ? 
+            stlFileData : (typeof stlFileData === 'string' ? stlFileData.substring(0, 100) + '...' : 'reference-only'),
         },
         // Enable billing address collection to get email and address for shipping
         billing_address_collection: 'required',
@@ -1003,6 +1022,21 @@ ${feedback}
           allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
         },
       });
+
+      // For larger STL files, we would need to store them separately
+      // This could be in a database, cloud storage, or using Stripe's Files API
+      if (stlFileData && stlFileData.length > 500 && !stlDownloadUrl) {
+        // In a production app, you would upload this to a permanent storage
+        console.log(`STL file for order ${session.id} is too large for metadata.`);
+        console.log(`Storing reference to STL file: ${stlFileName}`);
+        
+        // Example of how you might store in a database (pseudo-code)
+        // await db.stlFiles.create({
+        //   sessionId: session.id,
+        //   fileName: stlFileName,
+        //   fileData: stlFileData
+        // });
+      }
 
       // Return the session ID and URL
       res.json({ 
@@ -1079,6 +1113,124 @@ ${feedback}
     } catch (err) {
       console.error('Webhook Error:', err.message);
       res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+  });
+
+  // Add an endpoint to store and retrieve STL files
+  // Create a directory for STL files if it doesn't exist
+  const stlFilesDir = path.join(__dirname, '../stl-files');
+  if (!fs.existsSync(stlFilesDir)) {
+    fs.mkdirSync(stlFilesDir, { recursive: true });
+    console.log(`Created STL files directory: ${stlFilesDir}`);
+  }
+  
+  // In-memory storage for quick lookups (in a production app, this would be a database)
+  const stlFileStorage = new Map(); 
+  
+  // Endpoint to store an STL file and get a public URL
+  app.post('/api/stl-files', express.json({limit: '50mb'}), (req, res) => {
+    try {
+      const { stlData, fileName } = req.body;
+      
+      if (!stlData) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'No STL data provided' 
+        });
+      }
+      
+      // Generate a unique ID for the file
+      const fileId = `stl-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+      const safeName = fileName?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'model.stl';
+      const filePath = path.join(stlFilesDir, `${fileId}-${safeName}`);
+      
+      // Store STL data to filesystem for persistence
+      // If it's a data URL, extract the actual data part
+      let fileContent = stlData;
+      if (typeof stlData === 'string' && stlData.startsWith('data:')) {
+        const matches = stlData.match(/^data:([^;]+);base64,(.+)$/);
+        if (matches && matches.length >= 3) {
+          fileContent = Buffer.from(matches[2], 'base64');
+        }
+      } else if (typeof stlData === 'string' && stlData.startsWith('base64,')) {
+        fileContent = Buffer.from(stlData.substring(7), 'base64');
+      }
+      
+      // Write the file
+      fs.writeFileSync(filePath, fileContent);
+      console.log(`Stored STL file at: ${filePath}`);
+      
+      // Store the metadata in memory for quick lookups
+      stlFileStorage.set(fileId, {
+        filePath,
+        fileName: safeName,
+        createdAt: new Date().toISOString()
+      });
+      
+      // Generate the public URL
+      const publicUrl = `${req.protocol}://${req.get('host')}/api/stl-files/${fileId}`;
+      
+      // Return the file ID and URL
+      return res.status(200).json({
+        success: true,
+        fileId,
+        url: publicUrl
+      });
+    } catch (error) {
+      console.error('Error storing STL file:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to store STL file'
+      });
+    }
+  });
+  
+  // Endpoint to retrieve and download an STL file by ID
+  app.get('/api/stl-files/:fileId', (req, res) => {
+    try {
+      const { fileId } = req.params;
+      
+      // Try to retrieve the file metadata from memory first
+      let fileData = stlFileStorage.get(fileId);
+      
+      if (!fileData) {
+        // If not in memory, try to find the file on disk
+        const files = fs.readdirSync(stlFilesDir);
+        const matchingFile = files.find(file => file.startsWith(fileId));
+        
+        if (matchingFile) {
+          // Found a matching file, create metadata
+          const fileName = matchingFile.substring(fileId.length + 1); // Remove fileId- prefix
+          const filePath = path.join(stlFilesDir, matchingFile);
+          
+          fileData = {
+            filePath,
+            fileName,
+            createdAt: new Date().toISOString()
+          };
+          
+          // Store in memory for future lookups
+          stlFileStorage.set(fileId, fileData);
+        } else {
+          return res.status(404).json({
+            success: false,
+            message: 'STL file not found'
+          });
+        }
+      }
+      
+      // Set appropriate headers for file download
+      res.setHeader('Content-Disposition', `attachment; filename="${fileData.fileName}"`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      
+      // Send the file
+      return res.sendFile(fileData.filePath);
+    } catch (error) {
+      console.error('Error retrieving STL file:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to retrieve STL file'
+      });
     }
   });
 

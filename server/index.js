@@ -9,6 +9,8 @@ require('dotenv').config();
 
 // Import routes
 const pricingRoutes = require('./api/pricing');
+const optimizeSubscriptionRoute = require('./api/pricing/optimize-subscription');
+const statusCheckRoute = require('./api/status-check');
 
 // Initialize Firebase Admin SDK
 let firebaseApp;
@@ -64,6 +66,8 @@ app.use(bodyParser.json());
 
 // API routes
 app.use('/api/pricing', pricingRoutes);
+app.use('/api/pricing', optimizeSubscriptionRoute);
+app.use('/api', statusCheckRoute);
 
 // Add endpoint to track downloads
 app.post('/api/track-download', async (req, res) => {
@@ -299,6 +303,16 @@ app.get('/api/check-expired-trials', async (req, res) => {
     res.status(500).json({ error: 'Failed to check trials' });
   }
 });
+
+// Add memory usage monitoring and logging
+setInterval(() => {
+  const memUsage = process.memoryUsage();
+  console.log('Memory usage stats:');
+  console.log(`  RSS: ${Math.round(memUsage.rss / 1024 / 1024)} MB`);
+  console.log(`  Heap Total: ${Math.round(memUsage.heapTotal / 1024 / 1024)} MB`);
+  console.log(`  Heap Used: ${Math.round(memUsage.heapUsed / 1024 / 1024)} MB`);
+  console.log(`  External: ${Math.round(memUsage.external / 1024 / 1024)} MB`);
+}, 60 * 60 * 1000); // Log every hour
 
 // Static files
 app.use(express.static(path.join(__dirname, '../client/dist')));

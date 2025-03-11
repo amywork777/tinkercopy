@@ -1,10 +1,15 @@
-import { Router, Request, Response } from 'express';
+import express, { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import axios from 'axios';
 import { Server as SocketIOServer } from 'socket.io';
 import multer from 'multer';
+import { fileURLToPath } from 'url';
+
+// For ES modules compatibility - replicate __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Type for import job status
 type ImportJobStatus = 'pending' | 'downloading' | 'processing' | 'completed' | 'failed';
@@ -363,4 +368,4 @@ function cleanupOldImports(): void {
 // Run cleanup job every hour
 setInterval(cleanupOldImports, 60 * 60 * 1000);
 
-export default router; 
+export default router;

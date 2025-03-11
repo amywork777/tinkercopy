@@ -795,7 +795,7 @@ const Print3DTab = () => {
             description: "Preparing your 3D model for checkout",
           });
           
-          const uploadResponse = await fetch('http://localhost:3001/api/stl-files', {
+          const uploadResponse = await fetch('/api/stl-files', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -861,7 +861,7 @@ const Print3DTab = () => {
       });
       
       // Call the server endpoint to create a checkout session
-      const response = await fetch('http://localhost:3001/api/create-checkout-session', {
+      const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

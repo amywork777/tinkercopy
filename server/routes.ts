@@ -10,6 +10,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Stripe } from 'stripe';
 import dotenv from 'dotenv';
+import { sendOrderNotificationEmail, sendCustomerConfirmationEmail } from './email-service.js';
+import { storeSTLInFirebase, cleanupTempSTLFile, storeTempSTLFile } from './file-service.js';
+import { firestore } from './firebase-admin.js';
 
 // Load environment variables
 dotenv.config();
@@ -36,7 +39,7 @@ const API_KEY_FORMATS = {
 };
 
 // Initialize Stripe with your live key
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2023-10-16',
 });
 
@@ -966,6 +969,26 @@ ${feedback}
         });
       }
 
+      // Store STL file temporarily if provided and no download URL exists
+      let tempFilePath = '';
+      let stlFileReference = '';
+      
+      if (stlFileData && !stlDownloadUrl) {
+        try {
+          // Store the STL file temporarily
+          const { fileId, filePath } = await storeTempSTLFile(stlFileData, stlFileName || 'model.stl');
+          
+          // Save the reference and path for later use
+          tempFilePath = filePath;
+          stlFileReference = `temp-${fileId}:${filePath}`;
+          
+          console.log(`Stored STL file temporarily at: ${filePath}`);
+        } catch (storeError) {
+          console.error('Error storing STL file temporarily:', storeError);
+          // Continue with checkout even if temporary storage fails
+        }
+      }
+
       // Format STL information for the description
       let stlInfo = stlFileName ? ` - File: ${stlFileName}` : '';
       
@@ -1011,10 +1034,8 @@ ${feedback}
           finalPrice: finalPrice.toString(),
           stlFileName: stlFileName || 'unknown.stl',
           stlDownloadUrl: stlDownloadUrl || '',
-          // We cannot store the full STL data in metadata (limited to 500 chars)
-          // Instead, store a reference or use Stripe Files API for large data
-          stlFileReference: stlFileData && stlFileData.length <= 500 ? 
-            stlFileData : (typeof stlFileData === 'string' ? stlFileData.substring(0, 100) + '...' : 'reference-only'),
+          // Store reference to temporary file if available
+          stlFileReference: stlFileReference || ''
         },
         // Enable billing address collection to get email and address for shipping
         billing_address_collection: 'required',
@@ -1022,21 +1043,6 @@ ${feedback}
           allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
         },
       });
-
-      // For larger STL files, we would need to store them separately
-      // This could be in a database, cloud storage, or using Stripe's Files API
-      if (stlFileData && stlFileData.length > 500 && !stlDownloadUrl) {
-        // In a production app, you would upload this to a permanent storage
-        console.log(`STL file for order ${session.id} is too large for metadata.`);
-        console.log(`Storing reference to STL file: ${stlFileName}`);
-        
-        // Example of how you might store in a database (pseudo-code)
-        // await db.stlFiles.create({
-        //   sessionId: session.id,
-        //   fileName: stlFileName,
-        //   fileData: stlFileData
-        // });
-      }
 
       // Return the session ID and URL
       res.json({ 
@@ -1049,7 +1055,7 @@ ${feedback}
       res.status(500).json({ 
         success: false, 
         message: 'Failed to create checkout session',
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
@@ -1087,7 +1093,7 @@ ${feedback}
 
   // Webhook handling
   app.post('/api/webhook', express.raw({type: 'application/json'}), async (req, res) => {
-    const sig = req.headers['stripe-signature'];
+    const sig = req.headers['stripe-signature'] as string;
     
     try {
       // Verify the event came from Stripe
@@ -1101,20 +1107,146 @@ ${feedback}
       switch (event.type) {
         case 'checkout.session.completed': {
           const session = event.data.object;
-          // Store order in your database
           console.log('Payment successful for session:', session.id);
-          // You would typically update your database here
+          
+          // Process the completed checkout session
+          await handleSuccessfulPayment(session);
           break;
         }
         // Add more cases for other events you want to handle
       }
       
       res.json({received: true});
-    } catch (err) {
+    } catch (err: any) {
       console.error('Webhook Error:', err.message);
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
   });
+
+  /**
+   * Handle successful payment processing
+   * - Store STL file in Firebase Storage
+   * - Store order details in Firestore
+   * - Send email notifications
+   */
+  async function handleSuccessfulPayment(session: Stripe.Checkout.Session) {
+    try {
+      console.log('Processing successful payment for session:', session.id);
+      
+      // Extract metadata from the session
+      const { 
+        modelName, 
+        color, 
+        quantity, 
+        finalPrice, 
+        stlFileName, 
+        stlFileReference,
+        stlDownloadUrl: existingDownloadUrl
+      } = session.metadata || {};
+      
+      // Create order ID
+      const orderId = `order-${Date.now()}-${session.id.substring(0, 6)}`;
+      
+      // Temporary file location if provided in the reference
+      let tempFilePath = null;
+      if (stlFileReference && stlFileReference.startsWith('temp-') && stlFileReference.includes(':')) {
+        tempFilePath = stlFileReference.split(':')[1];
+      }
+      
+      // Firebase storage URL for the STL file
+      let stlFileUrl = existingDownloadUrl;
+      
+      // If we have a temp file path and no download URL, upload to Firebase
+      if (tempFilePath && !stlFileUrl) {
+        try {
+          console.log(`Uploading STL file from temp location: ${tempFilePath}`);
+          const { downloadUrl, firebasePath } = await storeSTLInFirebase(tempFilePath, stlFileName || 'model.stl');
+          stlFileUrl = downloadUrl;
+          
+          console.log(`STL file uploaded to Firebase: ${firebasePath}`);
+          console.log(`Download URL: ${downloadUrl}`);
+          
+          // Clean up the temp file after successful upload
+          cleanupTempSTLFile(tempFilePath);
+        } catch (uploadError) {
+          console.error('Error uploading STL to Firebase:', uploadError);
+          // Continue with order processing even if upload fails
+        }
+      }
+      
+      // Get customer information
+      let customerName = 'Customer';
+      let customerEmail = '';
+      
+      if (session.customer_details) {
+        customerName = session.customer_details.name || 'Customer';
+        customerEmail = session.customer_details.email || '';
+      }
+      
+      // Create order document for Firestore
+      const orderData = {
+        orderId,
+        sessionId: session.id,
+        customerId: session.customer || null,
+        customerName,
+        customerEmail,
+        modelName: modelName || 'Unknown Model',
+        color: color || 'Unknown Color',
+        quantity: parseInt(quantity || '1', 10),
+        finalPrice: parseFloat(finalPrice || '0'),
+        paymentId: session.payment_intent || session.id,
+        paymentStatus: session.payment_status || 'paid',
+        stlFileName: stlFileName || 'model.stl',
+        stlFileUrl,
+        orderDate: new Date().toISOString(),
+        shippingAddress: session.shipping_details?.address || null,
+        billingAddress: session.customer_details?.address || null,
+        fulfillmentStatus: 'pending',
+        notes: ''
+      };
+      
+      // Store the order in Firestore
+      await firestore.collection('orders').doc(orderId).set(orderData);
+      console.log(`Order ${orderId} stored in Firestore`);
+      
+      // Send email notification to business
+      await sendOrderNotificationEmail({
+        orderId,
+        customerName,
+        customerEmail,
+        modelName: modelName || 'Unknown Model',
+        color: color || 'Unknown Color',
+        quantity: parseInt(quantity || '1', 10),
+        finalPrice: parseFloat(finalPrice || '0'),
+        paymentId: session.payment_intent || session.id,
+        stlFileName: stlFileName || 'model.stl',
+        stlFileUrl: stlFileUrl || 'No file URL available',
+        shippingAddress: session.shipping_details?.address,
+        billingAddress: session.customer_details?.address
+      });
+      
+      // Send confirmation email to customer if we have their email
+      if (customerEmail) {
+        await sendCustomerConfirmationEmail({
+          orderId,
+          customerName,
+          customerEmail,
+          modelName: modelName || 'Unknown Model',
+          color: color || 'Unknown Color',
+          quantity: parseInt(quantity || '1', 10),
+          finalPrice: parseFloat(finalPrice || '0'),
+          paymentId: session.payment_intent || session.id,
+          stlFileName: stlFileName || 'model.stl',
+          stlFileUrl: stlFileUrl || 'No file URL available',
+          shippingAddress: session.shipping_details?.address
+        });
+      }
+      
+      console.log(`Order ${orderId} processing completed successfully`);
+    } catch (error: any) {
+      console.error('Error processing successful payment:', error);
+    }
+  }
 
   // Add an endpoint to store and retrieve STL files
   // Create a directory for STL files if it doesn't exist
@@ -1128,7 +1260,7 @@ ${feedback}
   const stlFileStorage = new Map(); 
   
   // Endpoint to store an STL file and get a public URL
-  app.post('/api/stl-files', express.json({limit: '50mb'}), (req, res) => {
+  app.post('/api/stl-files', express.json({limit: '50mb'}), async (req, res) => {
     try {
       const { stlData, fileName } = req.body;
       
@@ -1139,97 +1271,150 @@ ${feedback}
         });
       }
       
-      // Generate a unique ID for the file
-      const fileId = `stl-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
-      const safeName = fileName?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'model.stl';
-      const filePath = path.join(stlFilesDir, `${fileId}-${safeName}`);
+      const safeFileName = fileName?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'model.stl';
       
-      // Store STL data to filesystem for persistence
-      // If it's a data URL, extract the actual data part
-      let fileContent = stlData;
-      if (typeof stlData === 'string' && stlData.startsWith('data:')) {
-        const matches = stlData.match(/^data:([^;]+);base64,(.+)$/);
-        if (matches && matches.length >= 3) {
-          fileContent = Buffer.from(matches[2], 'base64');
-        }
-      } else if (typeof stlData === 'string' && stlData.startsWith('base64,')) {
-        fileContent = Buffer.from(stlData.substring(7), 'base64');
-      }
+      // Store the STL file temporarily
+      const { fileId, filePath } = await storeTempSTLFile(stlData, safeFileName);
       
-      // Write the file
-      fs.writeFileSync(filePath, fileContent);
-      console.log(`Stored STL file at: ${filePath}`);
+      // Generate a URL for accessing the file (temporary)
+      const fileUrl = `http://${req.headers.host}/api/stl-files/${fileId}`;
       
-      // Store the metadata in memory for quick lookups
+      // Store the mapping for retrieval
       stlFileStorage.set(fileId, {
-        filePath,
-        fileName: safeName,
-        createdAt: new Date().toISOString()
+        path: filePath,
+        fileName: safeFileName,
+        uploadTime: new Date().toISOString()
       });
       
-      // Generate the public URL
-      const publicUrl = `${req.protocol}://${req.get('host')}/api/stl-files/${fileId}`;
-      
-      // Return the file ID and URL
+      // Return success with file ID and URL
       return res.status(200).json({
         success: true,
+        message: 'STL file stored successfully',
         fileId,
-        url: publicUrl
+        fileName: safeFileName,
+        url: fileUrl
       });
     } catch (error) {
       console.error('Error storing STL file:', error);
       return res.status(500).json({
         success: false,
-        message: 'Failed to store STL file'
+        message: 'Error storing STL file',
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
   
-  // Endpoint to retrieve and download an STL file by ID
+  // Endpoint to retrieve an STL file by ID
   app.get('/api/stl-files/:fileId', (req, res) => {
     try {
       const { fileId } = req.params;
       
-      // Try to retrieve the file metadata from memory first
-      let fileData = stlFileStorage.get(fileId);
+      // Look up the file in our storage
+      const fileInfo = stlFileStorage.get(fileId);
       
-      if (!fileData) {
-        // If not in memory, try to find the file on disk
-        const files = fs.readdirSync(stlFilesDir);
-        const matchingFile = files.find(file => file.startsWith(fileId));
-        
-        if (matchingFile) {
-          // Found a matching file, create metadata
-          const fileName = matchingFile.substring(fileId.length + 1); // Remove fileId- prefix
-          const filePath = path.join(stlFilesDir, matchingFile);
-          
-          fileData = {
-            filePath,
-            fileName,
-            createdAt: new Date().toISOString()
-          };
-          
-          // Store in memory for future lookups
-          stlFileStorage.set(fileId, fileData);
-        } else {
-          return res.status(404).json({
-            success: false,
-            message: 'STL file not found'
-          });
-        }
+      if (!fileInfo || !fs.existsSync(fileInfo.path)) {
+        return res.status(404).json({
+          success: false,
+          message: 'STL file not found'
+        });
       }
       
-      // Set appropriate headers for file download
-      res.setHeader('Content-Disposition', `attachment; filename="${fileData.fileName}"`);
-      res.setHeader('Content-Type', 'application/octet-stream');
+      // Set appropriate headers
+      res.setHeader('Content-Type', 'model/stl');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileInfo.fileName}"`);
       
-      // Send the file
-      return res.sendFile(fileData.filePath);
+      // Stream the file to the response
+      const fileStream = fs.createReadStream(fileInfo.path);
+      fileStream.pipe(res);
     } catch (error) {
       console.error('Error retrieving STL file:', error);
       return res.status(500).json({
         success: false,
-        message: 'Failed to retrieve STL file'
+        message: 'Error retrieving STL file',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Add an endpoint to get order details by session ID
+  app.get('/api/order-details', async (req, res) => {
+    try {
+      const { session_id } = req.query;
+      
+      if (!session_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Session ID is required'
+        });
+      }
+      
+      // First check Firestore for an order with this session ID
+      const ordersSnapshot = await firestore
+        .collection('orders')
+        .where('sessionId', '==', session_id)
+        .limit(1)
+        .get();
+      
+      if (!ordersSnapshot.empty) {
+        // Return the order details from Firestore
+        const orderDoc = ordersSnapshot.docs[0];
+        const orderData = orderDoc.data();
+        
+        return res.status(200).json({
+          success: true,
+          order: {
+            orderId: orderData.orderId,
+            sessionId: orderData.sessionId,
+            modelName: orderData.modelName,
+            color: orderData.color, 
+            quantity: orderData.quantity,
+            finalPrice: orderData.finalPrice,
+            paymentStatus: orderData.paymentStatus,
+            stlFileUrl: orderData.stlFileUrl,
+            orderDate: orderData.orderDate
+          }
+        });
+      }
+      
+      // If no order found in Firestore, try to get the checkout session from Stripe
+      const session = await stripe.checkout.sessions.retrieve(session_id.toString());
+      
+      if (!session) {
+        return res.status(404).json({
+          success: false,
+          message: 'Order not found'
+        });
+      }
+      
+      // Extract order details from the Stripe session
+      const {
+        metadata = {},
+        amount_total = 0,
+        payment_status = 'unpaid'
+      } = session;
+      
+      const orderDetails = {
+        orderId: `temp-${session.id.substring(0, 8)}`,
+        sessionId: session.id,
+        modelName: metadata.modelName || 'Custom 3D Print',
+        color: metadata.color || 'Unknown',
+        quantity: parseInt(metadata.quantity || '1', 10),
+        finalPrice: amount_total / 100, // Convert from cents to dollars
+        paymentStatus: payment_status,
+        stlFileUrl: metadata.stlDownloadUrl || '',
+        orderDate: new Date(session.created * 1000).toISOString()
+      };
+      
+      return res.status(200).json({
+        success: true,
+        order: orderDetails
+      });
+    } catch (error) {
+      console.error('Error getting order details:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching order details',
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });

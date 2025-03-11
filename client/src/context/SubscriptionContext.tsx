@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getUserSubscription } from '@/lib/stripeApi';
 import { useAuth } from './AuthContext';
 import { MODEL_LIMITS } from '@/lib/constants';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -57,6 +57,40 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [subscription, setSubscription] = useState<SubscriptionState>(defaultSubscription);
   const { toast } = useToast();
 
+  // Direct Firestore fallback function
+  const getSubscriptionDirectFromFirestore = async (userId: string) => {
+    try {
+      console.log(`FALLBACK: Getting subscription directly from Firestore for user: ${userId}`);
+      
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      
+      if (!userSnap.exists()) {
+        console.error('User document not found in Firestore');
+        return null;
+      }
+      
+      const userData = userSnap.data();
+      console.log('FALLBACK: Direct Firestore user data:', userData);
+      
+      // Format the response to match API structure
+      return {
+        isPro: userData.isPro === true,
+        modelsRemainingThisMonth: userData.modelsRemainingThisMonth || 0,
+        modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+        downloadsThisMonth: userData.downloadsThisMonth || 0,
+        subscriptionStatus: userData.subscriptionStatus || 'none',
+        subscriptionEndDate: userData.subscriptionEndDate || null,
+        subscriptionPlan: userData.subscriptionPlan || 'free',
+        trialActive: userData.trialActive === true,
+        trialEndDate: userData.trialEndDate || null,
+      };
+    } catch (error) {
+      console.error('FALLBACK: Error getting subscription from Firestore:', error);
+      return null;
+    }
+  };
+
   const refreshSubscription = async () => {
     if (!user) {
       setSubscription({ ...defaultSubscription, loading: false });
@@ -67,8 +101,30 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setSubscription(prev => ({ ...prev, loading: true }));
       console.log(`Refreshing subscription data for user: ${user.id}`);
       
-      const data = await getUserSubscription(user.id);
-      console.log('Received subscription data:', data);
+      // Try to get data from API first
+      let data;
+      try {
+        data = await getUserSubscription(user.id);
+        console.log('Received subscription data:', data);
+      } catch (apiError) {
+        console.error('Error fetching subscription data:', apiError);
+        
+        // If API fails, try direct Firestore fallback
+        console.log('API failed, trying Firestore fallback...');
+        data = await getSubscriptionDirectFromFirestore(user.id);
+        
+        if (data) {
+          console.log('FALLBACK SUCCESS: Got subscription data directly from Firestore');
+          toast({
+            title: 'Using Firestore Fallback',
+            description: 'Server API is unavailable. Using direct database connection.',
+            variant: 'default',
+          });
+        } else {
+          // Both API and fallback failed
+          throw new Error('Both API and Firestore fallback failed');
+        }
+      }
       
       // Ensure we have a valid value for isPro (default to false if missing)
       const isPro = data.isPro === true;
@@ -87,16 +143,22 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         loading: false
       });
     } catch (error) {
-      console.error('Error fetching subscription data:', error);
+      console.error('All subscription data fetching methods failed:', error);
       
       // Check if we should retry the request
       try {
         console.log('Retrying subscription data fetch after error...');
-        const data = await getUserSubscription(user.id);
+        
+        // Try direct Firestore as a last resort if previous attempt didn't
+        let data = await getSubscriptionDirectFromFirestore(user.id);
+        
+        if (!data) {
+          throw new Error('Final Firestore attempt failed');
+        }
         
         // Ensure we have a valid value for isPro (default to false if missing)
         const isPro = data.isPro === true;
-        console.log(`Retry successful. User pro status: ${isPro ? 'PRO' : 'FREE'}`);
+        console.log(`Final retry successful. User pro status: ${isPro ? 'PRO' : 'FREE'}`);
         
         setSubscription({
           isPro, // Use our validated value

@@ -41,6 +41,12 @@ export default function PricingPage() {
     if (plan === PRICING_PLANS.PRO_ANNUAL) {
       setBillingInterval('yearly');
     }
+    
+    // Force a repaint to ensure the modal is visible
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [location]);
 
   const handleSubscribe = async (priceId: string) => {
@@ -114,10 +120,10 @@ export default function PricingPage() {
   return (
     <div className="flex min-h-screen bg-background/95 flex-col items-center justify-center p-4 md:p-8 relative">
       {/* Semi-transparent background overlay */}
-      <div className="fixed inset-0 bg-black/25 backdrop-blur-sm z-0" onClick={() => navigate('/')}></div>
+      <div className="fixed inset-0 bg-black/25 backdrop-blur-sm z-10" onClick={() => navigate('/')}></div>
       
       {/* Main content container */}
-      <div className="bg-background rounded-xl shadow-xl border max-w-5xl w-full z-10 overflow-hidden relative">
+      <div className="bg-background rounded-xl shadow-xl border max-w-5xl w-full z-20 overflow-hidden relative">
         {/* Close button moved inside the card */}
         <Button 
           variant="ghost" 

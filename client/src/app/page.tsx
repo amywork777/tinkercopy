@@ -132,7 +132,8 @@ export default function Home() {
 
   // Navigate to pricing page
   const navigateToPricing = () => {
-    navigate('/pricing');
+    console.log('Navigating to pricing page');
+    window.location.href = '/pricing';
   };
 
   // If mobile version is active, render the simplified mobile view

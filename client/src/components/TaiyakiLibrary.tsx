@@ -288,7 +288,7 @@ export function TaiyakiLibrary() {
   // Function to handle upgrade button click
   const handleUpgradeClick = () => {
     console.log('Upgrade to Pro button clicked, navigating to pricing page');
-    navigate('/pricing');
+    window.location.href = '/pricing';
   };
 
   return (

@@ -36,7 +36,10 @@ export default function PricingButton({
       variant={variant}
       size={size}
       className={className}
-      onClick={() => navigate('/pricing')}
+      onClick={() => {
+        console.log('PricingButton clicked, navigating to pricing page');
+        window.location.href = '/pricing';
+      }}
       {...props}
     >
       {showIcon && <Star className="h-4 w-4 mr-2" />}

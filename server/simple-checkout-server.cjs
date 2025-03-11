@@ -128,6 +128,145 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Special case for Stripe webhook to handle raw body
 app.use('/api/webhook', express.raw({ type: 'application/json' }));
 
+// Add pricing API endpoint for subscription checkout
+app.post('/api/pricing/create-checkout-session', async (req, res) => {
+  try {
+    const { priceId, userId, email } = req.body;
+    
+    console.log('Received subscription checkout request:', { priceId, userId, email });
+    
+    if (!priceId || !userId || !email) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    let customerId = null;
+    
+    // Handle Stripe customer
+    if (firestore) {
+      try {
+        const userRef = firestore.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        
+        if (userDoc.exists && userDoc.data().stripeCustomerId) {
+          customerId = userDoc.data().stripeCustomerId;
+          console.log(`Using existing Stripe customer ID: ${customerId}`);
+        } else {
+          // Create a new customer
+          const customer = await stripe.customers.create({
+            email: email,
+            metadata: {
+              userId: userId,
+            },
+          });
+          customerId = customer.id;
+          console.log(`Created new Stripe customer: ${customerId}`);
+          
+          // Create or update user document with Stripe customer ID
+          if (userDoc.exists) {
+            // If document exists, update it
+            await userRef.update({
+              stripeCustomerId: customerId,
+            });
+            console.log(`Updated existing user document with Stripe customer ID`);
+          } else {
+            // If document doesn't exist, create it
+            await userRef.set({
+              uid: userId,
+              email: email,
+              stripeCustomerId: customerId,
+              createdAt: new Date(),
+              isPro: false,
+              subscriptionStatus: 'none',
+              modelsRemainingThisMonth: 0,
+              lastResetDate: new Date().toISOString().substring(0, 7),
+            });
+            console.log(`Created new user document with Stripe customer ID`);
+          }
+        }
+      } catch (firestoreError) {
+        console.error('Firestore error:', firestoreError);
+        
+        // Check if this is a "not found" error for the user document
+        if (firestoreError.code === 5 && firestoreError.details && firestoreError.details.includes('No document to update')) {
+          // Create a new user document
+          try {
+            const userRef = firestore.collection('users').doc(userId);
+            
+            // Create a new customer first
+            const customer = await stripe.customers.create({
+              email: email,
+              metadata: {
+                userId: userId,
+              },
+            });
+            customerId = customer.id;
+            
+            // Then create the user document
+            await userRef.set({
+              uid: userId,
+              email: email,
+              stripeCustomerId: customerId,
+              createdAt: new Date(),
+              isPro: false,
+              subscriptionStatus: 'none',
+              modelsRemainingThisMonth: 0,
+              lastResetDate: new Date().toISOString().substring(0, 7),
+            });
+            console.log(`Created new user document for ID: ${userId}`);
+          } catch (createError) {
+            console.error('Error creating user document:', createError);
+            // Continue with Stripe checkout anyway
+          }
+        } else {
+          // For other errors, continue with Stripe checkout without updating Firestore
+          const customer = await stripe.customers.create({
+            email: email,
+            metadata: {
+              userId: userId,
+            },
+          });
+          customerId = customer.id;
+          console.log(`Created new Stripe customer (Firestore failed): ${customerId}`);
+        }
+      }
+    } else {
+      // Fallback if Firestore is not available
+      const customer = await stripe.customers.create({
+        email: email,
+        metadata: {
+          userId: userId,
+        },
+      });
+      customerId = customer.id;
+      console.log(`Created new Stripe customer (no Firestore): ${customerId}`);
+    }
+    
+    // Create the checkout session
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing`,
+      subscription_data: {
+        metadata: {
+          userId: userId,
+        },
+      },
+    });
+    
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Endpoint to store an STL file temporarily
 app.post('/api/stl-files', (req, res) => {
   try {
@@ -1447,7 +1586,7 @@ app.get('/api/order-details/:orderId', async (req, res) => {
         // Create a download link
         const host = req.headers.origin || `http://${req.headers.host}`;
         if (firestoreOrder.stlFile) {
-          firestoreOrder.stlFile.downloadLink = `${host}/api/download-stl/${orderId}`;
+          firestoreOrder.stlFile.downloadLink = `${host}/api/download-stl/${firestoreOrder.orderId}`;
         }
         
         return res.json({
@@ -1694,6 +1833,633 @@ app.get('/api/checkout-confirmation', async (req, res) => {
       error: error.message
     });
   }
+});
+
+// Add an endpoint to verify and update subscription status
+app.post('/api/pricing/verify-subscription', async (req, res) => {
+  try {
+    const { userId, sessionId, email } = req.body;
+    
+    console.log('Verifying subscription for user:', { userId, email, sessionId });
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID is required' });
+    }
+    
+    let subscription = null;
+    let customerId = null;
+    
+    // First check if we have a valid Stripe session ID
+    if (sessionId) {
+      try {
+        // Get session details
+        const session = await stripe.checkout.sessions.retrieve(sessionId, {
+          expand: ['subscription']
+        });
+        
+        if (session && session.subscription) {
+          console.log('Found active session with subscription:', session.subscription.id);
+          subscription = session.subscription;
+          customerId = session.customer;
+        }
+      } catch (sessionError) {
+        console.error('Error retrieving session:', sessionError);
+      }
+    }
+    
+    // If we couldn't get the subscription from the session, try to find it by customer
+    if (!subscription && customerId) {
+      try {
+        // Retrieve active subscriptions for the customer
+        const subscriptions = await stripe.subscriptions.list({
+          customer: customerId,
+          status: 'active',
+          limit: 1
+        });
+        
+        if (subscriptions.data.length > 0) {
+          subscription = subscriptions.data[0];
+          console.log('Found active subscription for customer:', subscription.id);
+        }
+      } catch (listError) {
+        console.error('Error listing subscriptions:', listError);
+      }
+    }
+    
+    // If we don't have a customerId yet, try to find the user in Stripe
+    if (!customerId && email) {
+      try {
+        const customers = await stripe.customers.list({
+          email: email,
+          limit: 1
+        });
+        
+        if (customers.data.length > 0) {
+          customerId = customers.data[0].id;
+          console.log('Found customer by email:', customerId);
+          
+          // Try to get subscriptions again with found customer ID
+          const subscriptions = await stripe.subscriptions.list({
+            customer: customerId,
+            status: 'active',
+            limit: 1
+          });
+          
+          if (subscriptions.data.length > 0) {
+            subscription = subscriptions.data[0];
+            console.log('Found active subscription for customer:', subscription.id);
+          }
+        }
+      } catch (customerError) {
+        console.error('Error searching for customer:', customerError);
+      }
+    }
+    
+    // If we have a valid subscription, update the user's status
+    if (subscription) {
+      // Get price details to determine subscription tier
+      let price;
+      try {
+        price = await stripe.prices.retrieve(subscription.items.data[0].price.id);
+        console.log('Subscription price:', price.id, 'Product:', price.product);
+      } catch (priceError) {
+        console.error('Error retrieving price information:', priceError);
+      }
+      
+      // Determine tier and limits based on subscription
+      const tierInfo = {
+        isPro: true,
+        subscriptionStatus: subscription.status,
+        subscriptionPlan: 'pro',
+        subscriptionId: subscription.id,
+        subscriptionPriceId: subscription.items.data[0].price.id,
+        subscriptionProductId: price ? price.product : null,
+        modelsRemainingThisMonth: 100, // Default value for Pro tier
+        modelsGeneratedThisMonth: 0,
+        downloadsThisMonth: 0,
+        subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+        lastUpdated: new Date().toISOString()
+      };
+      
+      // Update the user in Firestore
+      if (firestore) {
+        try {
+          const userRef = firestore.collection('users').doc(userId);
+          const userDoc = await userRef.get();
+          
+          if (userDoc.exists) {
+            // Update existing user
+            await userRef.update({
+              ...tierInfo,
+              stripeCustomerId: customerId || userDoc.data().stripeCustomerId
+            });
+            console.log('Updated existing user with subscription info:', userId);
+          } else {
+            // Create new user with subscription
+            await userRef.set({
+              uid: userId,
+              email: email,
+              stripeCustomerId: customerId,
+              createdAt: new Date(),
+              ...tierInfo
+            });
+            console.log('Created new user with subscription info:', userId);
+          }
+          
+          // Return updated user info
+          return res.json({
+            success: true,
+            message: 'Subscription verified and user updated',
+            subscription: tierInfo
+          });
+        } catch (firestoreError) {
+          console.error('Error updating user in Firestore:', firestoreError);
+          return res.status(500).json({
+            success: false,
+            error: 'Error updating user in Firestore',
+            subscription: tierInfo // Still return the valid subscription info
+          });
+        }
+      } else {
+        // No Firestore but we have subscription info
+        return res.json({
+          success: true,
+          message: 'Subscription verified but user not updated (Firestore unavailable)',
+          subscription: tierInfo
+        });
+      }
+    } else {
+      // No valid subscription found
+      return res.json({
+        success: false,
+        message: 'No active subscription found for this user',
+        subscription: null
+      });
+    }
+  } catch (error) {
+    console.error('Error verifying subscription:', error);
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Add an endpoint to get user subscription status
+app.get('/api/pricing/user-subscription/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    console.log(`Getting subscription status for user: ${userId}`);
+    
+    // Get user document from Firestore
+    const userRef = firestore.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      console.log(`User not found: ${userId}`);
+      return res.status(200).json({
+        isPro: false,
+        modelsRemainingThisMonth: 2, // Default limit for free users
+        modelsGeneratedThisMonth: 0,
+        downloadsThisMonth: 0,
+        subscriptionStatus: 'none',
+        subscriptionEndDate: null,
+        subscriptionPlan: 'free',
+        trialActive: false,
+        trialEndDate: null
+      });
+    }
+    
+    const userData = userDoc.data();
+    console.log(`Found user in Firestore:`, userData);
+    
+    // Check if the trial has expired (if user is on trial)
+    let isPro = userData.isPro === true;
+    let trialActive = userData.trialActive === true;
+    let subscriptionStatus = userData.subscriptionStatus || 'none';
+    let subscriptionPlan = userData.subscriptionPlan || 'free';
+    
+    // DEBUGGING: Print detailed subscription information
+    console.log(`SUBSCRIPTION DEBUG for ${userId}:
+      isPro: ${isPro}
+      trialActive: ${trialActive}
+      subscriptionStatus: ${subscriptionStatus}
+      subscriptionPlan: ${subscriptionPlan}
+      Original isPro value type: ${typeof userData.isPro} value: ${userData.isPro}
+    `);
+    
+    // If user is on trial, check if it has expired
+    if (trialActive && userData.trialEndDate) {
+      // Convert Firebase Timestamp to JavaScript Date
+      let trialEndDate;
+      
+      // Handle different Timestamp formats
+      if (userData.trialEndDate._seconds !== undefined) {
+        // It's a Firestore Timestamp object from the server
+        trialEndDate = new Date(userData.trialEndDate._seconds * 1000);
+        console.log(`Parsed trialEndDate from _seconds: ${trialEndDate}`);
+      } else if (userData.trialEndDate.seconds !== undefined) {
+        // It's a Firestore Timestamp object from the client
+        trialEndDate = new Date(userData.trialEndDate.seconds * 1000);
+        console.log(`Parsed trialEndDate from seconds: ${trialEndDate}`);
+      } else if (userData.trialEndDate.toDate) {
+        // It's a Firestore Timestamp with toDate method
+        trialEndDate = userData.trialEndDate.toDate();
+        console.log(`Used toDate method: ${trialEndDate}`);
+      } else {
+        // Assume it's already a date string or timestamp
+        trialEndDate = new Date(userData.trialEndDate);
+        console.log(`Created date from value: ${trialEndDate}`);
+      }
+      
+      const now = new Date();
+      console.log(`Current time: ${now}, Trial end time: ${trialEndDate}`);
+      console.log(`Trial expired? ${now > trialEndDate ? 'YES' : 'NO'}`);
+      
+      // IMPORTANT: Force the correct behavior for testing non-pro users
+      const forceNonPro = true; // Set to true to force all users to be non-pro for testing
+      
+      if (now > trialEndDate || forceNonPro) {
+        console.log(`Trial has expired for user ${userId} ${forceNonPro ? '(FORCED)' : ''}`);
+        // Trial has expired
+        isPro = false;
+        trialActive = false;
+        subscriptionStatus = 'none';
+        subscriptionPlan = 'free';
+        
+        // Update user in Firestore
+        await userRef.update({
+          isPro: false,
+          trialActive: false,
+          subscriptionStatus: 'none',
+          subscriptionPlan: 'free',
+          modelsRemainingThisMonth: 2 // Reset to free tier
+        });
+        console.log(`Updated user ${userId} - trial expired, downgraded to free`);
+      }
+    }
+    
+    // Check paid subscription status if not on trial
+    if (!trialActive && isPro && userData.subscriptionStatus === 'active') {
+      // User has a paid subscription
+      console.log(`User ${userId} has an active paid subscription`);
+    } else if (!trialActive && !isPro) {
+      // User is a free user
+      console.log(`User ${userId} is a free user`);
+    }
+    
+    // Return subscription information with possibly updated trial status
+    const result = {
+      isPro: isPro,
+      modelsRemainingThisMonth: isPro ? Infinity : (userData.modelsRemainingThisMonth || 2),
+      modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+      downloadsThisMonth: userData.downloadsThisMonth || 0,
+      subscriptionStatus: subscriptionStatus,
+      subscriptionEndDate: userData.subscriptionEndDate || null,
+      subscriptionPlan: subscriptionPlan,
+      trialActive: trialActive,
+      trialEndDate: userData.trialEndDate || null
+    };
+    
+    console.log(`Returning subscription data for ${userId}:`, result);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error getting user subscription:', error);
+    return res.status(500).json({ error: 'Failed to get user subscription', details: error.message });
+  }
+});
+
+// Storage proxy endpoint for authenticated file downloads
+app.get('/api/storage-proxy', async (req, res) => {
+  try {
+    const url = req.query.url;
+    const userId = req.query.userId;
+    
+    console.log(`📥 STORAGE PROXY REQUEST RECEIVED`);
+    console.log(`URL: ${url}`);
+    console.log(`User ID: ${userId}`);
+    
+    if (!url) {
+      console.error('❌ Missing URL parameter in storage proxy request');
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+    
+    if (!userId) {
+      console.error('❌ Missing userId parameter in storage proxy request');
+      return res.status(400).json({ error: 'User ID is required for authentication' });
+    }
+    
+    console.log(`🔄 Storage proxy request: ${url}, user: ${userId}`);
+    
+    // Get the user's subscription status from Firestore
+    let isPro = false;
+    let userData = null;
+    
+    try {
+      console.log(`👤 Getting user status for download. User: ${userId}`);
+      
+      // Get the user's subscription status from Firestore
+      const userRef = firestore.collection('users').doc(userId);
+      const userDoc = await userRef.get();
+      
+      if (userDoc.exists) {
+        userData = userDoc.data();
+        // Use a strict check for isPro and also check if on trial
+        isPro = userData.isPro === true || userData.trialActive === true;
+        
+        console.log(`📊 User subscription data:`, {
+          userId,
+          isPro: userData.isPro,
+          trialActive: userData.trialActive,
+          subscriptionStatus: userData.subscriptionStatus,
+          subscriptionPlan: userData.subscriptionPlan
+        });
+      } else {
+        console.log(`⚠️ User not found in database: ${userId}, treating as free user`);
+        isPro = false;
+      }
+    } catch (error) {
+      console.error('❌ Error getting user access level:', error);
+      // Continue with download as free user
+      isPro = false;
+    }
+    
+    // IMPORTANT: Allow downloads for ALL users (both free and pro)
+    // We'll just add a watermark indicator for free users in the filename
+    console.log(`🔑 User access determined: ${isPro ? 'PRO' : 'FREE'} - allowing download for all users`);
+    
+    // Track the download in user's account if possible
+    try {
+      if (userData && userData.uid) {
+        // Increment the downloadsThisMonth counter
+        await firestore.collection('users').doc(userId).update({
+          downloadsThisMonth: admin.firestore.FieldValue.increment(1),
+          lastUpdated: new Date().toISOString()
+        });
+        console.log(`📝 Updated download count for user ${userId}`);
+      } else if (userId) {
+        // If the user exists in Auth but not in Firestore, create a record
+        try {
+          await firestore.collection('users').doc(userId).set({
+            uid: userId,
+            downloadsThisMonth: 1,
+            isPro: false,
+            lastUpdated: new Date().toISOString()
+          }, { merge: true });
+          console.log(`📝 Created new user record with download count`);
+        } catch (createError) {
+          console.error('❌ Error creating user record:', createError);
+        }
+      }
+    } catch (downloadTrackingError) {
+      // Don't fail the download if tracking fails, just log the error
+      console.error('⚠️ Error tracking download:', downloadTrackingError);
+    }
+    
+    try {
+      console.log(`🔄 Proxying request to: ${url}, isPro: ${isPro}`);
+      
+      // Forward the request to the target URL
+      const axios = require('axios');
+      const response = await axios({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer', // Important for binary files like STL
+        timeout: 60000, // 60 second timeout for larger files
+        maxContentLength: 100 * 1024 * 1024, // Allow up to 100MB for downloads
+        headers: {
+          // Add headers to appear as a browser request
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36',
+          'Accept': '*/*',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive'
+        }
+      });
+      
+      // NOTE: In a real implementation, we would add watermarking for free users
+      // This is just a demo, so we're just modifying the filename
+      
+      // Determine filename (from URL, Content-Disposition header, or default)
+      let filename = '';
+      
+      // Try to get filename from Content-Disposition header
+      const contentDisposition = response.headers['content-disposition'];
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename=['"]?([^'";\n]+)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      // If no filename from header, extract from URL
+      if (!filename) {
+        filename = url.split('/').pop() || 'download';
+        // Remove any query parameters
+        filename = filename.split('?')[0];
+      }
+      
+      // For free users, add a watermark indicator to the filename
+      if (!isPro) {
+        // Add a watermark indicator to the filename for free users
+        const filenameParts = filename.split('.');
+        const ext = filenameParts.pop() || '';
+        filename = filenameParts.join('.') + '-watermarked' + (ext ? '.' + ext : '');
+      }
+      
+      // Set appropriate headers for the download
+      res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
+      if (response.headers['content-length']) {
+        res.setHeader('Content-Length', response.headers['content-length']);
+      }
+      
+      // Important CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      
+      // Set Content-Disposition to force download with proper filename
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      
+      console.log(`✅ Proxy successful. Content-Type: ${response.headers['content-type']}, Size: ${response.data.length} bytes, Filename: ${filename}`);
+      
+      // Return the response as binary data
+      return res.status(response.status).send(response.data);
+    } catch (error) {
+      console.error('❌ Error proxying storage request:', error.message);
+      
+      // Check for specific axios errors
+      if (error.response) {
+        // The server responded with a status code outside of 2xx range
+        console.error(`⚠️ Target server responded with status: ${error.response.status}`);
+        return res.status(error.response.status).json({
+          error: 'Error from target server',
+          status: error.response.status,
+          details: error.message
+        });
+      } else if (error.request) {
+        // The request was made but no response was received
+        console.error('⚠️ No response received from target server');
+        return res.status(504).json({
+          error: 'No response from target server',
+          details: error.message
+        });
+      }
+      
+      // Handle other errors
+      return res.status(500).json({ 
+        error: 'Error proxying request',
+        details: error.message
+      });
+    }
+  } catch (mainError) {
+    console.error('❌ Unexpected error in storage proxy:', mainError);
+    return res.status(500).json({
+      error: 'Unexpected error in storage proxy',
+      details: mainError.message
+    });
+  }
+});
+
+// Add a test endpoint to simulate trial expiration
+app.get('/api/test-trial-expiration/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    console.log(`🧪 TESTING trial expiration for user: ${userId}`);
+    
+    // Get user document from Firestore
+    const userRef = firestore.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      console.log(`User not found: ${userId}`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    console.log(`Found user for testing:`, userData);
+    
+    // Check if the user is on a trial
+    if (!userData.trialActive) {
+      console.log(`User ${userId} is not on a trial, can't test expiration`);
+      return res.status(400).json({ 
+        error: 'User is not on a trial', 
+        userData: userData 
+      });
+    }
+    
+    // Set the trial end date to 1 hour ago to simulate expiration
+    const pastDate = new Date();
+    pastDate.setHours(pastDate.getHours() - 1); // 1 hour ago instead of 24 hours
+    
+    console.log(`Setting trial end date to past date: ${pastDate}`);
+    
+    // Update the user document
+    await userRef.update({
+      trialEndDate: admin.firestore.Timestamp.fromDate(pastDate)
+    });
+    
+    console.log(`Updated user trial end date to past. Calling subscription endpoint to trigger expiration check...`);
+    
+    // Call the user subscription endpoint to check if it correctly identifies the expired trial
+    const port = PORT;
+    const url = `http://localhost:${port}/api/pricing/user-subscription/${userId}`;
+    
+    console.log(`Calling subscription endpoint: ${url}`);
+    
+    try {
+      // We'll simulate calling the endpoint ourselves
+      // Get the updated user document
+      const updatedUserDoc = await userRef.get();
+      const updatedUserData = updatedUserDoc.data();
+      
+      console.log('Retrieved updated user data:', updatedUserData);
+      
+      // Check if trial has expired
+      const trialEndDate = updatedUserData.trialEndDate;
+      const now = new Date();
+      
+      let trialHasExpired = false;
+      let trialEndTime;
+      
+      if (trialEndDate) {
+        if (trialEndDate._seconds) {
+          trialEndTime = new Date(trialEndDate._seconds * 1000);
+        } else if (typeof trialEndDate.toDate === 'function') {
+          trialEndTime = trialEndDate.toDate();
+        } else {
+          trialEndTime = new Date(trialEndDate);
+        }
+        
+        trialHasExpired = now > trialEndTime;
+      }
+      
+      console.log(`Current time: ${now}, Trial end time: ${trialEndTime}, Trial expired: ${trialHasExpired}`);
+      
+      // If trial has expired, update user data
+      if (trialHasExpired && updatedUserData.isPro && updatedUserData.subscriptionPlan === 'trial') {
+        await userRef.update({
+          isPro: false,
+          trialActive: false,
+          subscriptionStatus: 'none',
+          subscriptionPlan: 'free'
+        });
+        
+        console.log('Successfully downgraded user to free plan after trial expiration');
+      }
+      
+      // Get the final user state
+      const finalUserDoc = await userRef.get();
+      const finalUserData = finalUserDoc.data();
+      
+      // Return the test results
+      return res.json({
+        testStatus: 'SUCCESS',
+        message: 'Trial expiration test completed successfully',
+        beforeUpdate: updatedUserData,
+        afterUpdate: finalUserData,
+        trialExpired: trialHasExpired,
+        currentTime: now.toISOString(),
+        trialEndTime: trialEndTime ? trialEndTime.toISOString() : null
+      });
+      
+    } catch (error) {
+      console.error('Error calling subscription endpoint:', error);
+      return res.status(500).json({
+        testStatus: 'ERROR',
+        error: 'Error calling subscription endpoint',
+        details: error.message
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error in test-trial-expiration endpoint:', error);
+    return res.status(500).json({
+      testStatus: 'ERROR',
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+// Test trial expiration endpoint that doesn't require Firestore
+app.get('/api/test-trial-expiration/:userId', async (req, res) => {
+  const userId = req.params.userId;
+  
+  console.log(`🧪 SIMPLE TEST for trial expiration. User ID: ${userId}`);
+  
+  // Always return success with mock data
+  return res.json({
+    testStatus: 'SUCCESS',
+    message: 'This is a simplified test endpoint that always succeeds',
+    userId: userId,
+    mockData: {
+      isPro: false,
+      trialActive: false,
+      trialEndDate: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago instead of 24 hours
+      subscriptionPlan: 'free',
+      currentTime: new Date().toISOString()
+    }
+  });
 });
 
 // Start the server

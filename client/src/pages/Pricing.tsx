@@ -53,6 +53,12 @@ export default function PricingPage() {
     setIsLoading(true);
     
     try {
+      console.log('Creating checkout session with:', {
+        priceId,
+        userId: user.id,
+        email: user.email
+      });
+      
       // Create a checkout session
       const { url } = await createCheckoutSession(
         priceId, 
@@ -61,12 +67,36 @@ export default function PricingPage() {
       );
       
       // Redirect to checkout
-      window.location.href = url;
+      if (url) {
+        console.log('Redirecting to checkout URL:', url);
+        window.location.href = url;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
     } catch (error) {
       console.error('Error creating checkout session:', error);
+      
+      // More detailed error message
+      let errorMessage = 'There was a problem processing your subscription. Please try again.';
+      
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+        errorMessage += ` (${error.message})`;
+        
+        // Check for network errors
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          errorMessage = 'Network error: Could not connect to the payment server. Please check your internet connection and try again.';
+        }
+        
+        // Check for CORS errors
+        if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
+          errorMessage = 'CORS error: The browser blocked the request due to security restrictions. Please try again later.';
+        }
+      }
+      
       toast({
         title: 'Subscription error',
-        description: 'There was a problem processing your subscription. Please try again.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -153,7 +183,7 @@ export default function PricingPage() {
                     <ul className="mt-4 space-y-3">
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Try it out upon account creation</span>
+                        <span>24-hour Pro trial upon signup</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
@@ -195,7 +225,7 @@ export default function PricingPage() {
                     </TabsContent>
                     <TabsContent value="yearly" className="mt-0 p-0">
                       <div className="text-2xl font-bold">$192</div>
-                      <div className="text-sm text-muted-foreground">/year <span className="text-xs font-medium text-green-500">(save $48)</span></div>
+                      <div className="text-sm text-muted-foreground">/year <span className="text-xs font-medium text-green-500">(save 20%)</span></div>
                     </TabsContent>
                     
                     <ul className="mt-4 space-y-3">

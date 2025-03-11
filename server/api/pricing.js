@@ -6,12 +6,17 @@ const router = express.Router();
 // Constants
 const DOMAIN = process.env.DOMAIN || 'https://fishcad.com';
 const STRIPE_PRICES = {
-  MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
+  MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE',
   ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 
 // Create a checkout session
 router.post('/create-checkout-session', async (req, res) => {
+  // Handle OPTIONS request for CORS preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
   try {
     const { priceId, userId, email } = req.body;
     
@@ -119,6 +124,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
         // Keep track of the subscription plan
         subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
+        // Clear any trial status
+        trialActive: false
       });
       
       break;
@@ -145,6 +152,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           subscriptionEndDate: new Date(subscription.current_period_end * 1000),
           // Update plan if it changed
           subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
+          // Clear any trial status if they have a paid subscription
+          trialActive: false
         });
       }
       
@@ -259,6 +268,8 @@ router.get('/user-subscription/:userId', async (req, res) => {
       subscriptionStatus: userData.subscriptionStatus || 'none',
       subscriptionEndDate: userData.subscriptionEndDate || null,
       subscriptionPlan: userData.subscriptionPlan || 'free',
+      trialActive: userData.trialActive || false,
+      trialEndDate: userData.trialEndDate || null
     });
   } catch (error) {
     console.error('Error fetching user subscription:', error);

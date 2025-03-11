@@ -15,7 +15,9 @@ import {
   query, 
   where, 
   deleteDoc,
-  doc
+  doc,
+  getDoc,
+  setDoc
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
@@ -49,7 +51,45 @@ const googleProvider = new GoogleAuthProvider();
 export const signInWithGoogle = async () => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
+    const user = result.user;
+    
+    // Get a reference to the user document
+    const userDocRef = doc(db, 'users', user.uid);
+    
+    // Check if the user document exists
+    const userDoc = await getDoc(userDocRef);
+    
+    // If user document doesn't exist, this is a new user - create with trial
+    if (!userDoc.exists()) {
+      console.log("New user detected - setting up 1-hour Pro trial");
+      
+      // Calculate trial end date (1 hour from now instead of 24 hours)
+      const trialEndDate = new Date();
+      trialEndDate.setHours(trialEndDate.getHours() + 1);
+      
+      // Create user document with trial information
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        createdAt: new Date(),
+        isPro: true,
+        trialActive: true,
+        trialEndDate: trialEndDate,
+        subscriptionStatus: 'trialing',
+        subscriptionEndDate: trialEndDate,
+        subscriptionPlan: 'trial',
+        modelsRemainingThisMonth: Infinity, // Pro features during trial
+        lastResetDate: new Date().toISOString().substring(0, 7),
+      };
+      
+      // Use setDoc to create the document
+      await setDoc(userDocRef, userData);
+      console.log("Created new user with Pro trial:", user.uid);
+    }
+    
+    return result;
   } catch (error) {
     console.error("Error signing in with Google", error);
     throw error;

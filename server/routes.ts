@@ -688,9 +688,42 @@ export async function registerRoutes(app: Express, httpServer?: Server, socketIo
   // Proxy endpoint for Firebase Storage URLs
   app.get('/api/storage-proxy', async (req, res) => {
     const url = req.query.url as string;
+    const userId = req.query.userId as string;
     
     if (!url) {
       return res.status(400).json({ error: 'URL parameter is required' });
+    }
+    
+    // Check if this is a Taiyaki library download request
+    const isTaiyakiLibraryRequest = url.includes('library.taiyaki.ai') || url.includes('taiyaki-library');
+    
+    // If this is a Taiyaki library request, verify Pro access
+    if (isTaiyakiLibraryRequest && userId) {
+      try {
+        // Get the user's subscription status from Firestore
+        const userDoc = await firestore.collection('users').doc(userId).get();
+        
+        if (!userDoc.exists) {
+          console.error(`User not found: ${userId}`);
+          return res.status(403).json({ error: 'User not found' });
+        }
+        
+        const userData = userDoc.data();
+        
+        // Check if user has Pro access
+        if (!userData.isPro) {
+          console.error(`Pro access required for Taiyaki library downloads. User: ${userId}`);
+          return res.status(403).json({ 
+            error: 'Pro access required for Taiyaki library downloads',
+            requiresUpgrade: true
+          });
+        }
+        
+        console.log(`Pro user ${userId} accessing Taiyaki library asset: ${url}`);
+      } catch (error) {
+        console.error('Error verifying Pro access:', error);
+        return res.status(500).json({ error: 'Error verifying Pro access' });
+      }
     }
     
     try {

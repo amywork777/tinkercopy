@@ -47,7 +47,14 @@ const app = express();
 
 // Middleware
 app.use(morgan('dev'));
-app.use(cors());
+
+// Configure CORS with simpler options to allow all requests in development
+app.use(cors({
+  origin: '*', // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature'],
+  optionsSuccessStatus: 200 // Some legacy browsers (IE11) choke on 204
+}));
 
 // Special case for Stripe webhook to handle raw body
 app.use('/api/pricing/webhook', express.raw({ type: 'application/json' }));
@@ -154,10 +161,15 @@ const resetMonthlyLimits = async () => {
 // Check if one day has passed and reset is needed (daily check for new month)
 setInterval(async () => {
   const now = new Date();
+  
+  // Check for monthly reset on the first day of the month
   if (now.getDate() === 1 && now.getHours() === 0) {
     console.log('First day of month detected, resetting limits');
     await resetMonthlyLimits();
   }
+  
+  // Check for expired trials every hour
+  await checkExpiredTrials();
 }, 60 * 60 * 1000); // Check every hour
 
 // Add endpoint to decrement model count
@@ -212,6 +224,82 @@ app.post('/api/decrement-model-count', async (req, res) => {
   }
 });
 
+// Function to check for and downgrade expired trials
+const checkExpiredTrials = async () => {
+  if (!db) {
+    console.error('Firestore not initialized, cannot check expired trials');
+    return;
+  }
+  
+  try {
+    console.log('Checking for expired trials...');
+    
+    // Get current time
+    const now = new Date();
+    
+    // Get all users with active trials
+    const usersRef = db.collection('users');
+    const snapshot = await usersRef.where('trialActive', '==', true).get();
+    
+    if (snapshot.empty) {
+      console.log('No active trials found');
+      return;
+    }
+    
+    const batch = db.batch();
+    let expiredCount = 0;
+    
+    snapshot.forEach(doc => {
+      const userData = doc.data();
+      
+      // Check if trial has expired
+      if (userData.trialEndDate) {
+        const trialEnd = userData.trialEndDate.toDate ? userData.trialEndDate.toDate() : new Date(userData.trialEndDate);
+        
+        if (trialEnd < now) {
+          console.log(`Trial expired for user ${doc.id}`);
+          
+          // Downgrade user to free tier
+          batch.update(doc.ref, {
+            isPro: false,
+            trialActive: false,
+            subscriptionStatus: 'none',
+            subscriptionPlan: 'free',
+            modelsRemainingThisMonth: 0, // Free tier gets no model generations
+          });
+          
+          expiredCount++;
+        }
+      }
+    });
+    
+    if (expiredCount > 0) {
+      await batch.commit();
+      console.log(`Downgraded ${expiredCount} users with expired trials`);
+    } else {
+      console.log('No expired trials found');
+    }
+  } catch (error) {
+    console.error('Error checking expired trials:', error);
+  }
+};
+
+// Schedule monthly limit resets on the first of each month
+const scheduleMonthlyReset = () => {
+  // ... existing code ...
+};
+
+// Add an endpoint to manually check for expired trials (for testing)
+app.get('/api/check-expired-trials', async (req, res) => {
+  try {
+    await checkExpiredTrials();
+    res.json({ success: true, message: 'Trial expiration check completed' });
+  } catch (error) {
+    console.error('Error checking trials:', error);
+    res.status(500).json({ error: 'Failed to check trials' });
+  }
+});
+
 // Static files
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
@@ -221,7 +309,7 @@ app.get('*', (req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Firebase initialized: ${!!firebaseApp}`);

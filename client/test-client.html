@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #response {
+            border: 1px solid #ccc;
+            padding: 10px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            margin-top: 20px;
+            background-color: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <h1>API Test Client</h1>
+    
+    <h2>Test Endpoints</h2>
+    <div>
+        <button id="testServer">Test Server Root</button>
+        <button id="testEndpoint">Test /api/test-endpoint</button>
+        <button id="testTrialExpiration">Test /api/test-trial-expiration</button>
+    </div>
+    
+    <h2>Response:</h2>
+    <div id="response"></div>
+    
+    <script>
+        const responseEl = document.getElementById('response');
+        
+        // Display response in the UI
+        function showResponse(title, data) {
+            responseEl.innerHTML = `<strong>${title}</strong>\n${
+                typeof data === 'object' ? JSON.stringify(data, null, 2) : data
+            }`;
+        }
+        
+        // Handle API errors
+        function handleError(error) {
+            console.error('API Error:', error);
+            showResponse('Error', error.message || 'Unknown error occurred');
+        }
+        
+        // Test server root endpoint
+        document.getElementById('testServer').addEventListener('click', async () => {
+            try {
+                showResponse('Testing server root...', 'Making request...');
+                const response = await fetch('http://localhost:3002/');
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server returned ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                showResponse('Server Root Response', data);
+            } catch (error) {
+                handleError(error);
+            }
+        });
+        
+        // Test /api/test-endpoint
+        document.getElementById('testEndpoint').addEventListener('click', async () => {
+            try {
+                showResponse('Testing /api/test-endpoint...', 'Making request...');
+                const response = await fetch('http://localhost:3002/api/test-endpoint');
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server returned ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                showResponse('Test Endpoint Response', data);
+            } catch (error) {
+                handleError(error);
+            }
+        });
+        
+        // Test /api/test-trial-expiration
+        document.getElementById('testTrialExpiration').addEventListener('click', async () => {
+            try {
+                showResponse('Testing /api/test-trial-expiration...', 'Making request...');
+                
+                // Try both servers (port 3001 and 3002)
+                let success = false;
+                let data;
+                let error;
+                
+                try {
+                    // Try port 3001 first (main server)
+                    const response = await fetch('http://localhost:3001/api/test-trial-expiration/test-user-id');
+                    
+                    if (response.ok) {
+                        data = await response.json();
+                        success = true;
+                    } else {
+                        const errorText = await response.text();
+                        error = `Port 3001 returned ${response.status}: ${errorText}`;
+                    }
+                } catch (err) {
+                    error = `Port 3001 error: ${err.message}`;
+                }
+                
+                // If 3001 failed, try 3002
+                if (!success) {
+                    try {
+                        const response = await fetch('http://localhost:3002/api/test-trial-expiration/test-user-id');
+                        
+                        if (response.ok) {
+                            data = await response.json();
+                            success = true;
+                        } else {
+                            const errorText = await response.text();
+                            error += `\n\nPort 3002 returned ${response.status}: ${errorText}`;
+                        }
+                    } catch (err) {
+                        error += `\n\nPort 3002 error: ${err.message}`;
+                    }
+                }
+                
+                if (success) {
+                    showResponse('Trial Expiration Response', data);
+                } else {
+                    throw new Error(error);
+                }
+            } catch (error) {
+                handleError(error);
+            }
+        });
+    </script>
+</body>
+</html> 

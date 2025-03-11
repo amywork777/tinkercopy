@@ -137,8 +137,8 @@ export function AssetLibrary() {
 
   const handleLoadModel = async (asset: Asset) => {
     try {
-      // Use our proxy to load the STL file
-      const proxyUrl = `/api/storage-proxy?url=${encodeURIComponent(asset.downloadURL)}`;
+      // Use our proxy to load the STL file and include user ID for Pro access check
+      const proxyUrl = `/api/storage-proxy?url=${encodeURIComponent(asset.downloadURL)}&userId=${user?.id || ''}`;
       await loadSTL(proxyUrl, asset.name);
       
       toast({

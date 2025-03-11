@@ -6,6 +6,8 @@ import {
   onAuthStateChange 
 } from '@/lib/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
+import { getFirestore, doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface User {
   id: string;
@@ -80,7 +82,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       await signInWithGoogle();
-      // Auth state observer will update user state
       toast.success('Signed in successfully');
     } catch (error) {
       console.error('Login failed', error);

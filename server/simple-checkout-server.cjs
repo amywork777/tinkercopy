@@ -1307,7 +1307,7 @@ app.post('/api/webhook', async (req, res) => {
     const event = stripe.webhooks.constructEvent(
       req.body,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test'
+      process.env.STRIPE_WEBHOOK_SECRET || 'whsec_live_production_value_needed'
     );
     
     // Handle the event based on its type

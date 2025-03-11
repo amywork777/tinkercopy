@@ -6,9 +6,9 @@ const API_URL = isDevelopment
   ? 'http://localhost:3001/api' 
   : (import.meta.env.VITE_API_URL || 'https://fishcad.com/api');
 
-// Stripe price IDs from environment variables
+// Stripe price IDs from environment variables with production fallbacks
 export const STRIPE_PRICES = {
-  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE',
+  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
   ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 

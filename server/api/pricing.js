@@ -6,7 +6,7 @@ const router = express.Router();
 // Constants
 const DEFAULT_DOMAIN = process.env.DOMAIN || 'https://fishcad.com';
 const STRIPE_PRICES = {
-  MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE',
+  MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
   ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 

@@ -2,9 +2,14 @@ import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
   GoogleAuthProvider, 
-  signInWithPopup, 
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  onAuthStateChanged,
   signOut as firebaseSignOut,
-  onAuthStateChanged
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  setPersistence
 } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 import { 
@@ -38,21 +43,50 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+// Set persistence to session (survives page reloads but not browser close)
+// This makes authentication state more reliable
+setPersistence(auth, browserSessionPersistence).catch((error) => {
+  console.error("Error setting auth persistence:", error);
+});
+
 // Initialize Analytics (if in browser environment)
 let analytics;
 if (typeof window !== 'undefined') {
   analytics = getAnalytics(app);
 }
 
-// Google provider setup
-const googleProvider = new GoogleAuthProvider();
+// Flag for tracking if we should refresh after auth
+export const setAuthRefreshFlag = (value = true) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('fishcad_auth_refresh', value ? 'true' : 'false');
+  }
+};
 
-// Sign in with Google popup
-export const signInWithGoogle = async () => {
+// Check and consume refresh flag
+export const shouldRefreshAfterAuth = () => {
+  if (typeof window !== 'undefined') {
+    const shouldRefresh = localStorage.getItem('fishcad_auth_refresh') === 'true';
+    if (shouldRefresh) {
+      // Consume the flag
+      localStorage.removeItem('fishcad_auth_refresh');
+    }
+    return shouldRefresh;
+  }
+  return false;
+};
+
+// Google provider setup with custom parameters
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+// Flag to prevent duplicate sign-in attempts
+let isSigningIn = false;
+
+// Function to create or update user in Firestore
+const setupUserInFirestore = async (user) => {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
-    
     // Get a reference to the user document
     const userDocRef = doc(db, 'users', user.uid);
     
@@ -87,21 +121,148 @@ export const signInWithGoogle = async () => {
       // Use setDoc to create the document
       await setDoc(userDocRef, userData);
       console.log("Created new user with Pro trial:", user.uid);
+      return userData;
     }
     
-    return result;
+    return userDoc.data();
   } catch (error) {
-    console.error("Error signing in with Google", error);
+    console.error("Error setting up user in Firestore:", error);
     throw error;
   }
 };
 
-// Sign out
-export const signOut = async () => {
+// Schedule a page refresh after a delay
+export const scheduleRefresh = (delay = 1500) => {
+  console.log(`Scheduling page refresh in ${delay}ms`);
+  setTimeout(() => {
+    console.log('Executing scheduled page refresh');
+    window.location.reload();
+  }, delay);
+};
+
+// Check if we have redirect result on page load
+// This helps recover from failed popup attempts
+if (typeof window !== 'undefined') {
+  getRedirectResult(auth)
+    .then(async (result) => {
+      if (result && result.user) {
+        // User successfully signed in with redirect
+        console.log("Signed in via redirect:", result.user.uid);
+        
+        // Set up user in Firestore
+        await setupUserInFirestore(result.user);
+        
+        // If we have a refresh flag set, refresh the page after a short delay
+        if (shouldRefreshAfterAuth()) {
+          scheduleRefresh();
+        }
+      }
+    })
+    .catch((error) => {
+      console.error("Redirect sign-in error:", error);
+      
+      // If there was an error with redirect sign-in, refresh the page
+      // to put the app back in a clean state
+      scheduleRefresh(2000);
+    });
+}
+
+// Sign in with Google - tries popup first, falls back to redirect
+export const signInWithGoogle = async (withRefresh = false) => {
+  try {
+    // Set refresh flag if requested
+    if (withRefresh) {
+      setAuthRefreshFlag(true);
+    }
+    
+    // Prevent duplicate sign-in attempts
+    if (isSigningIn) {
+      console.log("Sign-in already in progress, ignoring duplicate attempt");
+      return null;
+    }
+    
+    isSigningIn = true;
+    
+    // First try popup (preferred)
+    try {
+      console.log("Attempting sign-in with popup...");
+      const result = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
+      const user = result.user;
+      
+      // Set up user in Firestore
+      await setupUserInFirestore(user);
+      
+      isSigningIn = false;
+      
+      // If refresh was requested, refresh the page
+      if (withRefresh) {
+        scheduleRefresh();
+      }
+      
+      return result;
+    } catch (popupError) {
+      // If popup fails (like popup blocked), log error and try redirect
+      console.warn("Popup sign-in failed, falling back to redirect:", popupError.message);
+      
+      // Check for popup blocked error
+      if (
+        popupError.code === 'auth/popup-blocked' || 
+        popupError.code === 'auth/popup-closed-by-user' ||
+        popupError.code === 'auth/cancelled-popup-request'
+      ) {
+        // Fall back to redirect method
+        // (redirect will always refresh the page after completion)
+        await signInWithRedirect(auth, googleProvider);
+        
+        // This page will reload, but we set the flag to false just in case
+        isSigningIn = false;
+        
+        // Return null since we're redirecting
+        return null;
+      }
+      
+      // For other errors, refresh the page to clear any bad state
+      if (typeof window !== 'undefined') {
+        console.log("Triggering page refresh after sign-in error");
+        scheduleRefresh(1000);
+      }
+      
+      // For other errors, rethrow
+      isSigningIn = false;
+      throw popupError;
+    }
+  } catch (error) {
+    console.error("Error signing in with Google", error);
+    isSigningIn = false;
+    
+    // If there's any error, it's good to refresh the page to clear bad state
+    if (typeof window !== 'undefined' && withRefresh) {
+      scheduleRefresh(1500);
+    }
+    
+    throw error;
+  }
+};
+
+// Sign out with optional page refresh
+export const signOut = async (withRefresh = false) => {
   try {
     await firebaseSignOut(auth);
+    
+    // Refresh page after successful sign out if requested
+    if (withRefresh && typeof window !== 'undefined') {
+      console.log("Refreshing page after sign out");
+      scheduleRefresh();
+    }
   } catch (error) {
     console.error("Error signing out", error);
+    
+    // Even if sign out fails, try refreshing to clear state
+    if (withRefresh && typeof window !== 'undefined') {
+      console.log("Refreshing page after sign out error");
+      scheduleRefresh(1500);
+    }
+    
     throw error;
   }
 };
@@ -112,12 +273,12 @@ export const getCurrentUser = () => {
 };
 
 // Auth state observer
-export const onAuthStateChange = (callback: (user: any) => void) => {
+export const onAuthStateChange = (callback) => {
   return onAuthStateChanged(auth, callback);
 };
 
 // User assets functions
-export const uploadAsset = async (userId: string, file: File, modelName: string) => {
+export const uploadAsset = async (userId, file, modelName) => {
   try {
     // Create a storage reference
     const storageRef = ref(storage, `user-assets/${userId}/${file.name}`);
@@ -146,7 +307,7 @@ export const uploadAsset = async (userId: string, file: File, modelName: string)
   }
 };
 
-export const getUserAssets = async (userId: string) => {
+export const getUserAssets = async (userId) => {
   try {
     const q = query(collection(db, 'user-assets'), where('userId', '==', userId));
     const querySnapshot = await getDocs(q);
@@ -163,7 +324,7 @@ export const getUserAssets = async (userId: string) => {
   }
 };
 
-export const deleteUserAsset = async (userId: string, assetId: string, fileName: string) => {
+export const deleteUserAsset = async (userId, assetId, fileName) => {
   try {
     // Delete from Firestore
     await deleteDoc(doc(db, 'user-assets', assetId));

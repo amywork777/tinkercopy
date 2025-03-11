@@ -5,7 +5,7 @@ import { TransformControls } from "@/components/TransformControls";
 import ToolBar from "@/components/ToolBar";
 import { RightSidebar } from "@/components/RightSidebar";
 import { Button } from "@/components/ui/button";
-import { Printer, PanelLeft, LogIn, LogOut, User, Share2, CrownIcon } from "lucide-react";
+import { Printer, PanelLeft, LogIn, LogOut, User, Share2, CrownIcon, Loader2, X, RefreshCw } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { initFishCadMessageListener } from "@/lib/iframeInterceptor";
@@ -30,6 +30,16 @@ import PendingImportDialog from "@/components/PendingImportDialog";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useNavigate, Link } from "react-router-dom";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Interface for pending import data stored in localStorage
 interface PendingImportData {
@@ -70,7 +80,8 @@ export default function Home() {
   const [useMobileVersion, setUseMobileVersion] = useState(false);
   const [skipMobileWarning, setSkipMobileWarning] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImportData | null>(null);
-  const { user, isAuthenticated, login, logout } = useAuth();
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const { user, isAuthenticated, login, logout, isSigningOut, isAuthenticating, resetAuthState } = useAuth();
   const { subscription } = useSubscription();
   const navigate = useNavigate();
   
@@ -136,6 +147,49 @@ export default function Home() {
     window.location.href = '/pricing';
   };
 
+  // Handle logout with confirmation
+  const handleLogout = () => {
+    setShowSignOutConfirm(true);
+  };
+  
+  // Confirm logout
+  const confirmLogout = () => {
+    logout();
+    setShowSignOutConfirm(false);
+  };
+  
+  // Cancel logout
+  const cancelLogout = () => {
+    setShowSignOutConfirm(false);
+  };
+
+  // Cancel the sign-in process
+  const handleCancelSignIn = () => {
+    resetAuthState();
+    // Consider refreshing the page if sign-in has been stuck for a while
+    if (isAuthenticating) {
+      // Only refresh if authentication has been ongoing for a while
+      const authStartTime = sessionStorage.getItem('auth_start_time');
+      if (authStartTime) {
+        const startTime = parseInt(authStartTime, 10);
+        const duration = Date.now() - startTime;
+        if (duration > 15000) { // 15 seconds or more
+          window.location.reload();
+          return;
+        }
+      }
+    }
+  };
+  
+  // Store authentication start time for tracking purposes
+  useEffect(() => {
+    if (isAuthenticating) {
+      sessionStorage.setItem('auth_start_time', Date.now().toString());
+    } else {
+      sessionStorage.removeItem('auth_start_time');
+    }
+  }, [isAuthenticating]);
+
   // If mobile version is active, render the simplified mobile view
   if (useMobileVersion) {
     return <MobileView />;
@@ -156,6 +210,33 @@ export default function Home() {
             fileName={pendingImport.fileName}
           />
         )}
+        
+        {/* Sign Out Confirmation Dialog */}
+        <AlertDialog open={showSignOutConfirm} onOpenChange={setShowSignOutConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Sign out of FishCAD?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You'll need to sign in again to access your account and saved models.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={cancelLogout}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={confirmLogout}
+                disabled={isSigningOut}
+                className={isSigningOut ? "opacity-70" : ""}
+              >
+                {isSigningOut ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Signing out...
+                  </>
+                ) : "Sign out"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         
         {/* Header bar */}
         <div className="w-full h-12 bg-background border-b border-border flex items-center justify-between px-4">
@@ -241,22 +322,61 @@ export default function Home() {
                       <span>Upgrade to Pro</span>
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onClick={logout}>
+                  <DropdownMenuItem 
+                    onClick={handleLogout}
+                  >
                     <LogOut className="h-4 w-4 mr-2" />
-                    <span>Log out</span>
+                    <span>Sign out</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={login}
-                data-auth-skip
-              >
-                <LogIn className="h-4 w-4 mr-2" />
-                <span>Sign in</span>
-              </Button>
+              isAuthenticating ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="relative"
+                      data-auth-skip
+                    >
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      <span>Signing in...</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      Sign-in taking too long?
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={handleCancelSignIn}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      <span>Cancel Sign-in</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => window.location.reload()}
+                      className="focus:text-primary"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      <span>Refresh Page</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={login}
+                  disabled={isAuthenticating}
+                  data-auth-skip
+                >
+                  <LogIn className="h-4 w-4 mr-2" />
+                  <span>Sign in</span>
+                </Button>
+              )
             )}
           </div>
         </div>

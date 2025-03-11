@@ -12,10 +12,13 @@ export function MagicFishAI() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const { toast } = useToast();
-  const { hasAccess, subscription, decrementModelCount, trackDownload } = useSubscription();
+  const { hasAccess, subscription, decrementModelCount, trackDownload, refreshSubscription } = useSubscription();
   const { user } = useAuth();
   const navigate = useNavigate();
   const overlayRef = useRef<HTMLDivElement>(null); // Reference for the overlay
+  const [showNotification, setShowNotification] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [overlayPosition, setOverlayPosition] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   
   // Calculate model limits and percentages
   const modelLimit = subscription.isPro ? 20 : 2;
@@ -289,6 +292,12 @@ export function MagicFishAI() {
     });
   };
 
+  // Function to handle upgrade button click
+  const handleUpgradeClick = () => {
+    console.log('Upgrade to Pro button clicked, navigating to pricing page');
+    navigate('/pricing');
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4">
       <Card className="flex-1 relative overflow-hidden">
@@ -382,8 +391,8 @@ export function MagicFishAI() {
                 <Button 
                   variant="outline" 
                   size="sm"
-                  className="text-xs"
-                  onClick={() => navigate('/pricing')}
+                  className="text-xs z-30"
+                  onClick={handleUpgradeClick}
                 >
                   <Crown className="h-3 w-3 mr-1" />
                   Upgrade to Pro

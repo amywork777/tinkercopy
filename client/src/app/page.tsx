@@ -29,6 +29,7 @@ import STLImporter from "@/components/STLImporter";
 import PendingImportDialog from "@/components/PendingImportDialog";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useNavigate, Link } from "react-router-dom";
 
 // Interface for pending import data stored in localStorage
 interface PendingImportData {
@@ -71,6 +72,7 @@ export default function Home() {
   const [pendingImport, setPendingImport] = useState<PendingImportData | null>(null);
   const { user, isAuthenticated, login, logout } = useAuth();
   const { subscription } = useSubscription();
+  const navigate = useNavigate();
   
   // Check if user is a Pro user
   const isProUser = subscription?.isPro;
@@ -130,7 +132,7 @@ export default function Home() {
 
   // Navigate to pricing page
   const navigateToPricing = () => {
-    window.location.href = "/pricing";
+    navigate('/pricing');
   };
 
   // If mobile version is active, render the simplified mobile view
@@ -178,13 +180,18 @@ export default function Home() {
                 {isProUser ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Badge className="bg-primary text-white flex items-center h-7 px-2 mr-1">
-                        <CrownIcon className="h-3 w-3 mr-1" />
-                        <span>Pro</span>
-                      </Badge>
+                      <button 
+                        onClick={navigateToPricing} 
+                        className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 rounded"
+                      >
+                        <Badge className="bg-primary text-white flex items-center h-7 px-2 mr-1">
+                          <CrownIcon className="h-3 w-3 mr-1" />
+                          <span>Pro</span>
+                        </Badge>
+                      </button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>You have a Pro subscription</p>
+                      <p>View your Pro subscription details</p>
                     </TooltipContent>
                   </Tooltip>
                 ) : (

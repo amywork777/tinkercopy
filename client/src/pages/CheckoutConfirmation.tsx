@@ -14,7 +14,24 @@ interface OrderDetails {
   quantity: number;
   finalPrice: number;
   paymentStatus: string;
+  stlFileName?: string;
   stlFileUrl?: string;
+  stlStoragePath?: string;
+  stlFileData?: string;
+  stlFile?: {
+    downloadUrl?: string;
+    downloadLink?: string;
+    fileName?: string;
+    fileSize?: string;
+    storagePath?: string;
+  };
+  orderDetails?: {
+    modelName?: string;
+    color?: string;
+    quantity?: number;
+    finalPrice?: number;
+  };
+  amountTotal?: number;
 }
 
 const CheckoutConfirmation = () => {
@@ -31,30 +48,65 @@ const CheckoutConfirmation = () => {
         return;
       }
 
-      try {
-        // Fetch order details from the backend
-        const response = await fetch(`/api/order-details?session_id=${sessionId}`);
-        const data = await response.json();
+      // Implement retry logic
+      const maxRetries = 3;
+      let attempt = 0;
+      let success = false;
 
-        if (data.success && data.order) {
-          setOrderDetails(data.order);
-        } else {
-          toast({
-            title: "Failed to load order details",
-            description: data.message || "Please contact customer support for assistance",
-            variant: "destructive"
-          });
+      while (attempt < maxRetries && !success) {
+        attempt++;
+        try {
+          console.log(`Attempt ${attempt} to fetch order details for session: ${sessionId}`);
+          
+          // Fetch order details from the backend
+          const response = await fetch(`/api/order-details?session_id=${sessionId}`);
+          const data = await response.json();
+
+          if (data.success && data.order) {
+            console.log(`Successfully retrieved order details on attempt ${attempt}:`, data.order);
+            setOrderDetails(data.order);
+            success = true;
+            
+            // Show confirmation toast
+            toast({
+              title: "Order confirmed",
+              description: "Your order has been placed successfully!",
+              variant: "default"
+            });
+          } else {
+            console.warn(`Failed to get order details on attempt ${attempt}:`, data.message);
+            
+            if (attempt === maxRetries) {
+              toast({
+                title: "Failed to load order details",
+                description: data.message || "Please try refreshing the page or contact support if this persists",
+                variant: "destructive"
+              });
+            } else {
+              // Wait longer between each retry
+              const delay = attempt * 1000; // 1s, 2s, 3s...
+              console.log(`Waiting ${delay}ms before retry...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching order details (attempt ${attempt}):`, error);
+          
+          if (attempt === maxRetries) {
+            toast({
+              title: "Error",
+              description: "Failed to load your order details. Please try refreshing the page.",
+              variant: "destructive"
+            });
+          } else {
+            // Wait longer between each retry
+            const delay = attempt * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
         }
-      } catch (error) {
-        console.error('Error fetching order details:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load your order details. Please try refreshing the page.",
-          variant: "destructive"
-        });
-      } finally {
-        setLoading(false);
       }
+      
+      setLoading(false);
     };
 
     fetchOrderDetails();
@@ -64,6 +116,16 @@ const CheckoutConfirmation = () => {
   const handleDownloadSTL = () => {
     if (orderDetails?.stlFileUrl) {
       window.open(orderDetails.stlFileUrl, '_blank');
+    } else if (orderDetails?.stlFile?.downloadUrl) {
+      window.open(orderDetails.stlFile.downloadUrl, '_blank');
+    } else if (orderDetails?.stlFile?.downloadLink) {
+      window.open(orderDetails.stlFile.downloadLink, '_blank');
+    } else {
+      toast({
+        title: "Download unavailable",
+        description: "STL file download link is not available",
+        variant: "destructive"
+      });
     }
   };
 
@@ -134,19 +196,33 @@ const CheckoutConfirmation = () => {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <p className="font-medium">{orderDetails.modelName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Color: {orderDetails.color} • Quantity: {orderDetails.quantity}
-                        </p>
                       </div>
                       <Badge variant="outline" className="bg-green-50">
                         {orderDetails.paymentStatus}
                       </Badge>
                     </div>
+                    
+                    <div className="mt-3 grid grid-cols-2 gap-x-2 gap-y-2">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground">Color</span>
+                        <span className="font-medium">
+                          {orderDetails.color || (orderDetails.orderDetails?.color) || 'Not specified'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground">Quantity</span>
+                        <span className="font-medium">
+                          {orderDetails.quantity || (orderDetails.orderDetails?.quantity) || 1}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   
                   <div className="flex justify-between font-medium text-lg">
                     <span>Total:</span>
-                    <span>${orderDetails.finalPrice.toFixed(2)}</span>
+                    <span>
+                      ${(orderDetails.finalPrice || orderDetails.orderDetails?.finalPrice || orderDetails.amountTotal || 0).toFixed(2)}
+                    </span>
                   </div>
                 </div>
                 
@@ -160,14 +236,14 @@ const CheckoutConfirmation = () => {
                     confirmation with all details, and we'll keep you updated on the printing progress.
                   </p>
                   
-                  {orderDetails.stlFileUrl && (
+                  {(orderDetails.stlFileUrl || orderDetails.stlFile?.downloadUrl || orderDetails.stlFile?.downloadLink) && (
                     <Button 
                       variant="outline" 
                       className="w-full"
                       onClick={handleDownloadSTL}
                     >
                       <Download className="mr-2 h-4 w-4" />
-                      Download Your STL File
+                      Download Your 3D Model
                     </Button>
                   )}
                 </div>

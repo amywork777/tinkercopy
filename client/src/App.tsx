@@ -7,6 +7,7 @@ import PricingSuccess from './pages/PricingSuccess';
 import ThingiverseCallback from './pages/ThingiverseCallback';
 import SuccessPage from './components/SuccessPage';
 import CheckoutConfirmation from './pages/CheckoutConfirmation';
+import OrderDetails from './components/OrderDetails';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/thingiverse-callback" element={<ThingiverseCallback />} />
         <Route path="/success" element={<SuccessPage />} />
         <Route path="/checkout-confirmation" element={<CheckoutConfirmation />} />
+        <Route path="/order/:orderId" element={<OrderDetails />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

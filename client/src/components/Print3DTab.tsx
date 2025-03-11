@@ -22,6 +22,8 @@ import {
 import { OrderSummary } from './OrderSummary';
 import { FormControl, FormLabel, FormHelperText, FormItem, SimpleForm } from "@/components/ui/form";
 import { loadStripe } from '@stripe/stripe-js';
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
+import { Object3D } from 'three';
 
 // Initialize with empty array, will be populated from API
 const EMPTY_FILAMENT_COLORS: FilamentColor[] = [];
@@ -744,168 +746,276 @@ const Print3DTab = () => {
 
   // Update the handleCheckout function
   const handleCheckout = async () => {
-    try {
-      // Validate required fields
-      if ((selectedModelIndex === null && !uploadedModelData) || !selectedFilament) {
-        toast({
-          title: "Missing required information",
-          description: "Please select a model and material before checkout.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      // Set loading state
-      setIsLoading(true);
-      
-      // Get the STL file data or reference
-      let stlFileName = "unknown.stl";
-      let stlDownloadUrl = null;
-      
-      if (selectedModelIndex !== null) {
-        // For pre-defined models, use the model reference
-        stlFileName = `${models[selectedModelIndex]?.name || 'Unnamed Model'}.stl`;
-        // We don't need to send the actual STL data for predefined models
-      } else if (uploadedModelData) {
-        // Extract metadata from uploaded model
-        if (typeof uploadedModelData === 'object' && 'fileName' in uploadedModelData) {
-          stlFileName = uploadedModelData.fileName;
-        } else {
-          stlFileName = "Uploaded Model.stl";
-        }
-        
-        // Important: Do NOT send the actual STL data in the checkout request
-        // Instead upload it first and use the URL reference
-        try {
-          toast({
-            title: "Uploading STL file...",
-            description: "Preparing your 3D model for checkout",
-          });
-          
-          // Create a smaller representation of the model data if it's too large
-          let rawStlData;
-          if (typeof uploadedModelData === 'object' && 'data' in uploadedModelData) {
-            // Extract just the beginning of the data to identify it
-            // Don't send the full data in the initial request
-            const dataStr = typeof uploadedModelData.data === 'string' 
-              ? uploadedModelData.data
-              : String(uploadedModelData.data);
-              
-            // Just send model metadata instead of full model data
-            rawStlData = {
-              fileName: stlFileName,
-              fileSize: dataStr.length,
-              fileType: 'stl'
-            };
-          } else {
-            // Legacy format, just send metadata
-            rawStlData = {
-              fileName: stlFileName,
-              fileSize: String(uploadedModelData).length,
-              fileType: 'stl'
-            };
-          }
-          
-          // Upload STL file separately rather than with checkout data
-          const uploadResponse = await fetch('/api/stl-files', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              stlData: typeof uploadedModelData === 'object' && 'data' in uploadedModelData
-                ? uploadedModelData.data
-                : uploadedModelData,
-              fileName: stlFileName
-            }),
-          });
-          
-          const uploadResult = await uploadResponse.json();
-          
-          if (uploadResult.success && uploadResult.url) {
-            stlDownloadUrl = uploadResult.url;
-            console.log('STL file uploaded successfully:', stlDownloadUrl);
-            
-            toast({
-              title: "STL file uploaded",
-              description: "Your model is ready for checkout",
-            });
-          } else {
-            console.error('Failed to upload STL file:', uploadResult);
-            toast({
-              title: "STL upload warning",
-              description: "We'll proceed with checkout but your model data may be limited",
-              variant: "destructive"
-            });
-          }
-        } catch (uploadError) {
-          console.error('Error uploading STL file:', uploadError);
-          toast({
-            title: "STL upload warning",
-            description: "We'll proceed with checkout without your model data",
-            variant: "destructive"
-          });
-        }
-      }
-      
-      // Get color name for display
-      const colorName = filamentColors.find(f => f.id === selectedFilament)?.name || selectedFilament;
-      
-      // Prepare checkout data - without full STL data to prevent request size issues
-      const checkoutData = {
-        modelName: selectedModelIndex !== null 
-          ? models[selectedModelIndex]?.name || 'Unnamed Model'
-          : (uploadedModelData && typeof uploadedModelData === 'object' && 'fileName' in uploadedModelData
-             ? uploadedModelData.fileName.replace(/\.stl$/i, '') 
-             : 'Uploaded Model'),
-        color: colorName,
-        quantity,
-        finalPrice,
-        stlFileName,  // Add STL file name
-        stlDownloadUrl // Add the permanent download URL if available
-      };
-      
-      console.log('Sending checkout data:', JSON.stringify(checkoutData));
-      
+    console.log("Checkout initiated");
+    
+    // Validate required fields
+    if (selectedModelIndex === null && !uploadedModelData) {
       toast({
-        title: "Creating checkout...",
-        description: "Preparing your order for payment",
-      });
-      
-      // Call the server endpoint to create a checkout session
-      const response = await fetch('/api/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(checkoutData),
-      });
-      
-      // Get the response body as text first to debug any issues
-      const responseText = await response.text();
-      
-      try {
-        // Try to parse the response as JSON
-        const result = JSON.parse(responseText);
-        
-        if (result.success && result.url) {
-          // Redirect directly to Stripe checkout
-          window.location.href = result.url;
-        } else {
-          throw new Error(result.message || 'Failed to create checkout session');
-        }
-      } catch (jsonError) {
-        console.error('Error parsing response:', responseText);
-        throw new Error('Invalid response from server. Please try again.');
-      }
-    } catch (error: any) {
-      console.error('Checkout error:', error);
-      toast({
-        title: "Checkout failed",
-        description: error.message || "There was an error processing your checkout",
+        title: "Please select a model",
+        description: "You need to select a model to proceed with checkout",
         variant: "destructive",
       });
-    } finally {
+      return;
+    }
+    
+    // Check if we have a selected model or an uploaded model
+    const hasSelectedPredefinedModel = selectedModelIndex !== null && selectedModelIndex !== -1;
+    const hasUploadedModel = uploadedModelData !== null;
+    
+    if (!hasSelectedPredefinedModel && !hasUploadedModel) {
+      toast({
+        title: "Model required",
+        description: "Please select a model or upload your own before checkout",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Check for required filament selection
+    if (!selectedFilament) {
+      toast({
+        title: "Filament required",
+        description: "Please select a filament color before checkout",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Set loading state
+    setIsLoading(true);
+    
+    // Define variables here to be accessible in the helper function
+    let modelName: string = "Unknown Model";
+    let stlFileName: string = "unknown_model.stl";
+    let stlFileData: string | null = null;
+    
+    // Helper function to continue with checkout after STL export
+    const continueCheckoutProcess = () => {
+      // Get the color name from the selected filament
+      const selectedColor = filamentColors.find(color => color.id === selectedFilament);
+      const colorName = selectedColor ? selectedColor.name : "Unknown Color";
+      
+      // Prepare the checkout data
+      const checkoutData = {
+        modelName,
+        color: colorName,
+        quantity: quantity,
+        finalPrice: finalPrice,
+        hasStlFileData: !!stlFileData,
+        stlFileDataType: typeof stlFileData,
+        stlFileDataLength: stlFileData ? stlFileData.length : 0,
+        stlFileName,
+        stlFileData // Send the STL data for the server to store in Firebase
+      };
+      
+      console.log("Sending checkout request with data:", {
+        modelName: checkoutData.modelName,
+        color: checkoutData.color,
+        quantity: checkoutData.quantity,
+        finalPrice: checkoutData.finalPrice,
+        hasStlFileData: checkoutData.hasStlFileData,
+        stlFileDataType: checkoutData.stlFileDataType,
+        stlFileDataLength: checkoutData.stlFileDataLength,
+        stlFileName: checkoutData.stlFileName
+      });
+      
+      // Send the data to our server
+      fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(checkoutData),
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.text().then(text => {
+            throw new Error(`Server error: ${response.status} - ${text}`);
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.success && data.url) {
+          // Redirect to Stripe Checkout
+          console.log("Redirecting to Stripe Checkout");
+          window.location.href = data.url;
+        } else {
+          console.error("Invalid response from server:", data);
+          toast({
+            title: "Checkout failed",
+            description: data.message || "Failed to create checkout session",
+            variant: "destructive",
+          });
+        }
+      })
+      .catch(fetchError => {
+        console.error("Checkout request failed:", fetchError);
+        toast({
+          title: "Checkout error",
+          description: fetchError?.message || "Failed to process your checkout request",
+          variant: "destructive",
+        });
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+    };
+    
+    try {
+      console.log("Preparing checkout data");
+      
+      if (hasSelectedPredefinedModel && models) {
+        // We're using a predefined model from the scene
+        const model = models[selectedModelIndex];
+        modelName = model.name;
+        stlFileName = `${model.name.toLowerCase().replace(/\s+/g, '_')}.stl`;
+        
+        console.log(`Selected predefined model: ${modelName}`);
+        
+        // For predefined models, we need to export the STL
+        try {
+          // Export the selected model to STL format (returns a Blob)
+          const stlBlob = exportSelectedModelAsSTL();
+          if (stlBlob && stlBlob instanceof Blob) {
+            // Create a FileReader to convert Blob to ArrayBuffer
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              if (event.target?.result) {
+                // Convert ArrayBuffer to base64 string for transmission
+                const arrayBuffer = event.target.result as ArrayBuffer;
+                const bytes = new Uint8Array(arrayBuffer);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) {
+                  binary += String.fromCharCode(bytes[i]);
+                }
+                const base64 = window.btoa(binary);
+                
+                // Set the STL file data as a base64 string
+                stlFileData = `data:application/octet-stream;base64,${base64}`;
+                
+                console.log(`Exported STL data for ${modelName}, base64 length: ${stlFileData.length} characters`);
+                
+                // Continue with checkout process
+                continueCheckoutProcess();
+              }
+            };
+            
+            // Start reading the blob as ArrayBuffer
+            reader.readAsArrayBuffer(stlBlob);
+            
+            // Return here - the checkout will continue asynchronously after the file is read
+            return;
+          } else {
+            console.warn("Exported STL data is null or not a Blob");
+            toast({
+              title: "Export failed",
+              description: "Could not generate STL data in the correct format",
+              variant: "destructive",
+            });
+            setIsLoading(false);
+            return;
+          }
+        } catch (exportError) {
+          console.error("Error exporting predefined model to STL:", exportError);
+          toast({
+            title: "Export failed",
+            description: "Failed to export the model to STL format",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        }
+      } else if (hasUploadedModel && uploadedModelData) {
+        // We're using a user-uploaded model
+        // Handle uploaded model data based on its type
+        if (typeof uploadedModelData === 'object' && 'fileName' in uploadedModelData) {
+          // It's an UploadedModelData object
+          const typedUploadedModelData = uploadedModelData as UploadedModelData;
+          modelName = typedUploadedModelData.fileName || "Custom Model";
+          stlFileName = typedUploadedModelData.fileName || "custom_model.stl";
+          
+          // If the uploaded data has string content, use it directly
+          if (typedUploadedModelData.data && typeof typedUploadedModelData.data === 'string') {
+            stlFileData = typedUploadedModelData.data;
+            console.log(`Using existing STL data from upload, length: ${stlFileData.length}`);
+          }
+        } else {
+          // It's some other format, use generic name
+          modelName = "Custom Model";
+          stlFileName = "custom_model.stl";
+        }
+        
+        console.log(`Using uploaded model: ${modelName}`);
+        
+        // Try to export the model to STL if we don't already have STL data
+        if (!stlFileData && uploadedModelData instanceof Object3D) {
+          try {
+            console.log("Exporting uploaded model to STL");
+            
+            // Use the STLExporter to convert the model to STL format
+            const exporter = new STLExporter();
+            
+            // Export as STL string
+            const stlString = exporter.parse(uploadedModelData, { binary: false });
+            
+            // Log a preview of the STL data
+            if (typeof stlString === 'string') {
+              const previewLength = Math.min(100, stlString.length);
+              console.log(`STL data exported successfully. Preview: ${stlString.substring(0, previewLength)}...`);
+              console.log(`STL data length: ${stlString.length} characters`);
+              stlFileData = stlString;
+              
+              // Continue with checkout process
+              continueCheckoutProcess();
+              return;
+            } else {
+              console.log(`STL data exported but is not a string:`, typeof stlString);
+              toast({
+                title: "Export failed",
+                description: "Failed to export STL data in the correct format",
+                variant: "destructive",
+              });
+              setIsLoading(false);
+              return;
+            }
+          } catch (exportError) {
+            console.error("Error exporting model to STL:", exportError);
+            toast({
+              title: "Export failed",
+              description: "Failed to export your model to STL format",
+              variant: "destructive",
+            });
+            setIsLoading(false);
+            return;
+          }
+        } else if (!stlFileData) {
+          console.warn("No STL data available for export");
+          toast({
+            title: "Model data missing",
+            description: "Could not find STL data to send with your order",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        } else {
+          // We already have STL data, continue with checkout
+          continueCheckoutProcess();
+          return;
+        }
+      } else {
+        // Fallback name if no model was properly selected
+        console.warn("No specific model was selected for checkout");
+        setIsLoading(false);
+        return;
+      }
+    } catch (error) {
+      console.error("Error in checkout process:", error);
+      toast({
+        title: "Checkout error",
+        description: "An unexpected error occurred during checkout",
+        variant: "destructive",
+      });
       setIsLoading(false);
     }
   };

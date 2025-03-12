@@ -1,54 +1,47 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables or use localhost in development
-// More comprehensive check for local development environments
-const hostname = window.location.hostname;
-const isDevelopment = hostname === 'localhost' || 
-                     hostname === '127.0.0.1' ||
-                     hostname.includes('.local') ||
-                     window.location.origin.includes('localhost') ||
-                     !hostname.includes('.');
 
-// Use the current origin (including www if present) for production to avoid CORS issues
-// This ensures we use the same domain as the page is loaded from
-const API_URL = isDevelopment 
-  ? 'http://localhost:3001/api' 
-  : `${window.location.origin}/api`;
+// Function to get the appropriate API URL based on the environment
+const getApiUrl = (): string => {
+  // Log hostname to debug
+  const hostname = window.location.hostname;
+  console.log(`Current hostname: ${hostname}`);
+  
+  // Check if development
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3001/api';
+  }
+  
+  // Production environments - fishcad.com
+  if (hostname.includes('fishcad.com')) {
+    console.log('Production environment detected - using api.fishcad.com');
+    // Always use dedicated API subdomain for production
+    return 'https://api.fishcad.com';
+  }
+  
+  // Fallback to environment variable or default
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  const fallback = envApiUrl || 'https://api.fishcad.com';
+  console.log(`Using fallback API URL: ${fallback}`);
+  return fallback;
+};
 
-// Explicitly specify whether we're in production mode based on hostname
-const isProduction = window.location.hostname.includes('fishcad.com') || 
-                     window.location.hostname.includes('taiyaki-test1.web.app');
-
-// Log the environment mode for debugging
-console.log(`Running in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
-console.log(`Using API URL: ${API_URL}`);
+// Get the API URL
+const API_URL = getApiUrl();
+console.log(`API URL configured as: ${API_URL}`);
 
 // PRODUCTION STRIPE KEYS
 const STRIPE_PROD_KEYS = {
   PUBLISHABLE_KEY: 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi',
-  MONTHLY_PRICE: 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ', // Pro Monthly
-  ANNUAL_PRICE: 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Pro Yearly
+  MONTHLY_PRICE: 'price_1R1jGiCLoBz9jXRlB1uLgvE9', // Pro Monthly
+  ANNUAL_PRICE: 'price_1R1jGgCLoBz9jXRluMN6PsNw'  // Pro Yearly
 };
 
-// TEST MODE STRIPE KEYS
-const STRIPE_TEST_KEYS = {
-  PUBLISHABLE_KEY: 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm',
-  MONTHLY_PRICE: 'price_1QzyJ4Jj6v6u5YGCJq4e5YQG',
-  ANNUAL_PRICE: 'price_1QzyJTUe3gfr8Gy6qP52J3Th'
-};
-
-// Use production or test keys based on environment
-// On fishcad.com, use production keys, otherwise use test keys
-export const STRIPE_KEYS = isProduction ? STRIPE_PROD_KEYS : STRIPE_TEST_KEYS;
-
-// Stripe price IDs based on environment
+// Export STRIPE_PRICES directly for consistent access
 export const STRIPE_PRICES = {
-  MONTHLY: STRIPE_KEYS.MONTHLY_PRICE,
-  ANNUAL: STRIPE_KEYS.ANNUAL_PRICE,
+  MONTHLY: STRIPE_PROD_KEYS.MONTHLY_PRICE,
+  ANNUAL: STRIPE_PROD_KEYS.ANNUAL_PRICE
 };
-
-// Log the Stripe Price IDs being used
-console.log('Using Stripe Price IDs:', STRIPE_PRICES);
-console.log('Using publishable key:', STRIPE_KEYS.PUBLISHABLE_KEY);
 
 // Helper to add cache-busting parameter
 const addCacheBuster = (url: string): string => {
@@ -56,15 +49,23 @@ const addCacheBuster = (url: string): string => {
   return `${url}${separator}_t=${Date.now()}`;
 };
 
-// Check if the server is responding properly
-export const checkServerStatus = async (): Promise<boolean> => {
+// Utility function to check API connectivity before performing operations
+export const checkApiConnectivity = async (): Promise<boolean> => {
   try {
-    const endpoint = addCacheBuster(`${API_URL}/status`);
+    // Try an OPTIONS request to the API base URL to check connectivity
+    const apiUrl = API_URL;
+    
+    // Add a timestamp to avoid caching
+    const endpoint = addCacheBuster(`${apiUrl}/health-check`);
+    
+    console.log(`Checking API connectivity at ${endpoint}`);
+    
+    // Use fetch with a timeout to check connectivity
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
     
     const response = await fetch(endpoint, {
-      method: 'GET',
+      method: 'OPTIONS',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
@@ -75,14 +76,11 @@ export const checkServerStatus = async (): Promise<boolean> => {
     
     clearTimeout(timeoutId);
     
-    if (!response.ok) {
-      return false;
-    }
-    
-    const data = await response.json();
-    return data.status === 'ok';
+    // If we get any response, consider it a success
+    console.log(`API connectivity check result: ${response.status}`);
+    return response.status < 500; // Consider it a success if not a server error
   } catch (error) {
-    console.error('Error checking server status:', error);
+    console.error('API connectivity check failed:', error);
     return false;
   }
 };
@@ -93,217 +91,121 @@ export const createCheckoutSession = async (
   userId: string,
   email: string
 ): Promise<{ url: string }> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-  try {
-    // Get current hostname for logging
-    const hostname = window.location.hostname;
-    const origin = window.location.origin;
-    
-    // More comprehensive check for local development environments
-    // This will catch localhost, 127.0.0.1, and any dev server ports
-    const isLocalDevelopment = hostname === 'localhost' || 
-                              hostname === '127.0.0.1' ||
-                              hostname.includes('.local') ||
-                              origin.includes('localhost') ||
-                              !hostname.includes('.');
-    
-    console.log(`Creating checkout session on domain ${hostname} for user ${userId} in ${isLocalDevelopment ? 'LOCAL' : 'PRODUCTION'} mode`);
-    
-    // Always use the current origin for API requests to avoid CORS issues
-    const endpoint = isLocalDevelopment
-      ? addCacheBuster(`http://localhost:3001/api/pricing/create-checkout-session`) 
-      : addCacheBuster(`${origin}/api/pricing/create-checkout-session`);
-    
-    console.log(`Making checkout request to ${endpoint}`);
-    
-    // Create headers with appropriate cache control
-    const headers = {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    };
-    
-    // Create request options - different for local dev vs production
-    const requestOptions: RequestInit = {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        priceId,
-        userId,
-        email,
-        domain: hostname,
-        origin: origin
-      }),
-      signal: controller.signal
-    };
-    
-    // CRITICAL: Only include credentials in production environment
-    // We must NEVER include credentials for localhost to avoid CORS issues
-    if (!isLocalDevelopment) {
-      requestOptions.credentials = 'include';
-    } else {
-      // Explicitly set credentials to 'omit' for localhost to ensure they're never sent
-      requestOptions.credentials = 'omit';
-      console.log('LOCAL DEVELOPMENT: Credentials explicitly set to "omit" to prevent CORS issues');
-    }
-    
-    console.log(`Attempt: Making checkout request to ${endpoint} ${isLocalDevelopment ? 'without' : 'with'} credentials`);
-    
-    // For localhost, retry without credentials if first attempt fails
-    let retryCount = 0;
-    const maxRetries = isLocalDevelopment ? 1 : 3; // Only retry once for localhost
-    
-    while (retryCount <= maxRetries) {
-      try {
-        retryCount++;
-        
-        // Log retry attempt if this isn't the first try
-        if (retryCount > 1) {
-          console.log(`Attempt ${retryCount}/${maxRetries + 1}: Making checkout request to ${endpoint}`);
-        }
-        
-        const response = await fetch(endpoint, requestOptions);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorData;
-          try {
-            errorData = JSON.parse(errorText);
-          } catch (e) {
-            errorData = { error: errorText || 'Unknown error' };
-          }
-          
-          console.error(`Attempt ${retryCount}: Checkout session creation failed:`, {
-            status: response.status,
-            statusText: response.statusText,
-            errorData
-          });
-          
-          // Special handling for 503 Service Unavailable errors
-          if (response.status === 503) {
-            console.log(`Attempt ${retryCount} failed with 503 Service Unavailable`);
-            if (retryCount <= maxRetries) {
-              // Wait before retrying
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              continue; // Retry the request
-            }
-          }
-          
-          throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
-        }
-        
-        const data = await response.json();
-        console.log('Checkout session created successfully:', data);
-        clearTimeout(timeoutId);
-        return data;
-      } catch (fetchError) {
-        // If this was our last retry, or it's a network error in development, throw the error
-        if (retryCount > maxRetries || (isLocalDevelopment && fetchError instanceof TypeError)) {
-          console.error(`Attempt ${retryCount} failed:`, fetchError);
-          throw fetchError;
-        }
-        
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    // If we get here without returning or throwing, something went wrong
-    throw new Error('Failed to create checkout session after multiple attempts');
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.error('Error creating checkout session:', error);
-    
-    // Provide more specific error messages
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Checkout request timed out. Please try again or contact support.');
-    }
-    
-    // Check for CORS errors specifically
-    if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 1000; // 1 second
+  
+  // Helper function to wait
+  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  
+  // Helper function for the fetch operation
+  const attemptFetch = async (attempt: number = 1): Promise<{ url: string }> => {
+    try {
       const hostname = window.location.hostname;
-      const isLocalDevelopment = hostname === 'localhost' || 
-                                hostname === '127.0.0.1' ||
-                                hostname.includes('.local') ||
-                                !hostname.includes('.');
+      const isProduction = hostname.includes('fishcad.com');
       
-      if (isLocalDevelopment) {
-        throw new Error('Local API server appears to be unavailable. Please ensure your server is running at http://localhost:3001 and has CORS configured correctly.');
+      console.log(`Checkout attempt ${attempt} - Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+      
+      // Use a specific production endpoint for fishcad.com
+      let endpoint;
+      if (isProduction) {
+        // In production, use the API subdomain with absolute endpoint
+        endpoint = 'https://api.fishcad.com/pricing/create-checkout-session';
+        console.log(`Using production endpoint: ${endpoint}`);
       } else {
-        throw new Error('Connection to checkout service failed. Please check your internet connection and try again.');
+        // For development, use the configured API URL
+        const endpointPath = API_URL.includes('/api') 
+          ? '/pricing/create-checkout-session' 
+          : '/api/pricing/create-checkout-session';
+        endpoint = `${API_URL}${endpointPath}`;
+        console.log(`Using development endpoint: ${endpoint}`);
       }
-    }
-    
-    // Check for specific CORS error with credentials
-    if (error instanceof Error && error.message.includes('CORS') && error.message.includes('credentials')) {
-      const hostname = window.location.hostname;
-      const isLocalDevelopment = hostname === 'localhost' || 
-                                hostname === '127.0.0.1' ||
-                                hostname.includes('.local') ||
-                                !hostname.includes('.');
       
-      if (isLocalDevelopment) {
-        throw new Error('CORS error with credentials: Your local API server at http://localhost:3001 needs to be configured to handle CORS properly with credentials.');
+      // Add cache buster
+      endpoint = addCacheBuster(endpoint);
+      
+      console.log(`Attempt ${attempt}: Making request to ${endpoint} with price ID: ${priceId}`);
+      
+      // In production, always use credentials include
+      const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        credentials,
+        body: JSON.stringify({
+          priceId,
+          userId,
+          email,
+          // Force new customer on production to avoid test/live mode conflicts
+          force_new_customer: isProduction
+        }),
+      });
+
+      // Handle non-OK responses
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // If not JSON, try getting the text
+          const text = await response.text();
+          errorData = { error: text || `HTTP error ${response.status}` };
+        }
+        
+        console.error(`Attempt ${attempt}: Checkout session creation failed:`, {
+          status: response.status,
+          statusText: response.statusText,
+          errorData
+        });
+        
+        // For specific error cases, we may want to retry
+        if (response.status >= 500 || response.status === 429) {
+          // Server error or rate limiting - retry
+          if (attempt < MAX_RETRIES) {
+            console.log(`Retrying in ${RETRY_DELAY}ms...`);
+            await wait(RETRY_DELAY);
+            return attemptFetch(attempt + 1);
+          }
+        }
+        
+        throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
       }
-    }
-    
-    // Handle 503 Service Unavailable errors
-    if (error instanceof Error && 
-        (error.message.includes('503') || 
-         error.message.includes('Service Unavailable'))) {
-      throw new Error('The checkout service is temporarily unavailable. Please try again in a few moments.');
-    }
-    
-    // Detect other connection issues
-    if (error instanceof Error && 
-        (error.message.includes('fetch failed') || 
-         error.message.includes('network') || 
-         error.message.includes('ERR_CONNECTION_') ||
-         error.message.includes('offline'))) {
-      throw new Error('Connection to checkout service failed. Please check your internet connection and try again.');
-    }
-    
-    throw error;
-  }
-};
-
-// Function to retry a fetch operation with exponential backoff
-const fetchWithRetry = async (
-  url: string, 
-  options: RequestInit, 
-  retries = 3, 
-  backoff = 300
-): Promise<Response> => {
-  try {
-    const response = await fetch(url, options);
-    return response;
-  } catch (error) {
-    // Don't retry if abort was requested (e.g., timeout)
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      console.log('Fetch aborted (timeout or manual cancel)');
+      
+      // Success case
+      const data = await response.json();
+      if (!data?.url) {
+        throw new Error("API response is missing the checkout URL");
+      }
+      
+      console.log(`Attempt ${attempt}: Successfully created checkout session - Redirecting to: ${data.url}`);
+      return data;
+    } catch (error: unknown) {
+      console.error(`Attempt ${attempt} failed:`, error);
+      
+      // Only retry for network errors or if explicitly marked as retryable
+      if (attempt < MAX_RETRIES && 
+          ((error instanceof TypeError) || // Network error
+           (error instanceof Error && error.message?.includes('failed to fetch')))) {
+        console.log(`Network error, retrying in ${RETRY_DELAY}ms...`);
+        await wait(RETRY_DELAY);
+        return attemptFetch(attempt + 1);
+      }
+      
       throw error;
     }
-    
-    if (retries <= 0) {
-      throw error;
-    }
-    
-    // Wait for the backoff period
-    await new Promise(resolve => setTimeout(resolve, backoff));
-    
-    // Retry with exponential backoff
-    return fetchWithRetry(url, options, retries - 1, backoff * 2);
-  }
+  };
+  
+  // Start the fetch attempt chain
+  return attemptFetch();
 };
 
-// Get user subscription status with retry and fallback logic
-export const getUserSubscription = async (
-  userId: string,
-  signal?: AbortSignal
-): Promise<{
+// Get user subscription status
+export const getUserSubscription = async (userId: string): Promise<{
   isPro: boolean;
   modelsRemainingThisMonth: number;
   modelsGeneratedThisMonth: number;
@@ -315,128 +217,42 @@ export const getUserSubscription = async (
   trialEndDate: string | null;
 }> => {
   try {
-    // First try the optimized endpoint which is much lighter on server resources
-    try {
-      const hostname = window.location.hostname;
-      const origin = window.location.origin;
-      
-      // More comprehensive check for local development environments
-      const isLocalDevelopment = hostname === 'localhost' || 
-                              hostname === '127.0.0.1' ||
-                              hostname.includes('.local') ||
-                              origin.includes('localhost') ||
-                              !hostname.includes('.');
-      
-      const optimizedEndpoint = isLocalDevelopment
-        ? addCacheBuster(`http://localhost:3001/api/pricing/optimize-subscription/${userId}`)
-        : addCacheBuster(`${origin}/api/pricing/optimize-subscription/${userId}`);
-      
-      console.log(`Trying optimized subscription endpoint for user: ${userId} at ${optimizedEndpoint}`);
-      
-      // Create options with signal if provided
-      const options: RequestInit = {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      };
-      
-      // Add signal if provided, otherwise use a default timeout
-      if (signal) {
-        options.signal = signal;
-      } else {
-        options.signal = AbortSignal.timeout(8000); // 8 second timeout by default
-      }
-      
-      // Only include credentials in production environment
-      if (!isLocalDevelopment) {
-        options.credentials = 'include';
-      } else {
-        options.credentials = 'omit';
-      }
-      
-      const response = await fetchWithRetry(
-        optimizedEndpoint,
-        options,
-        2, // Number of retries
-        500 // Initial backoff in ms
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Optimized subscription data received:', data);
-        
-        // Return a complete object with defaults for missing fields
-        return {
-          isPro: data.isPro === true,
-          modelsRemainingThisMonth: data.modelsRemainingThisMonth || 0,
-          modelsGeneratedThisMonth: data.modelsGeneratedThisMonth || 0,
-          downloadsThisMonth: data.downloadsThisMonth || 0,
-          subscriptionStatus: data.subscriptionStatus || 'none',
-          subscriptionEndDate: data.subscriptionEndDate || null,
-          subscriptionPlan: data.subscriptionPlan || 'free',
-          trialActive: data.trialActive === true,
-          trialEndDate: data.trialEndDate || null,
-        };
-      }
-      // If optimized endpoint fails, continue to legacy endpoint
-      console.log('Optimized endpoint failed, falling back to legacy endpoint');
-    } catch (optError) {
-      console.warn('Error with optimized subscription endpoint:', optError);
-      // Continue to legacy endpoint
+    const hostname = window.location.hostname;
+    const isProduction = hostname.includes('fishcad.com');
+    
+    // Use direct API URL for production
+    let endpoint;
+    if (isProduction) {
+      endpoint = `https://api.fishcad.com/pricing/user-subscription/${userId}`;
+      console.log(`Using production subscription endpoint: ${endpoint}`);
+    } else {
+      const endpointPath = API_URL.includes('/api') 
+        ? `/pricing/user-subscription/${userId}`
+        : `/api/pricing/user-subscription/${userId}`;
+      endpoint = `${API_URL}${endpointPath}`;
+      console.log(`Using development subscription endpoint: ${endpoint}`);
     }
     
-    // Try legacy endpoint as fallback
-    const hostname = window.location.hostname;
-    const origin = window.location.origin;
-    
-    // More comprehensive check for local development environments
-    const isLocalDevelopment = hostname === 'localhost' || 
-                               hostname === '127.0.0.1' ||
-                               hostname.includes('.local') ||
-                               origin.includes('localhost') ||
-                               !hostname.includes('.');
-    
-    const endpoint = isLocalDevelopment
-      ? addCacheBuster(`http://localhost:3001/api/pricing/user-subscription/${userId}`)
-      : addCacheBuster(`${origin}/api/pricing/user-subscription/${userId}`);
+    // Add cache buster
+    endpoint = addCacheBuster(endpoint);
     
     console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
     
-    // Create options with signal if provided
-    const options: RequestInit = {
+    // In production, always use credentials include
+    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
+    
+    const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
-      }
-    };
-    
-    // Add signal if provided, otherwise use a default timeout
-    if (signal) {
-      options.signal = signal;
-    } else {
-      options.signal = AbortSignal.timeout(10000); // 10 second timeout by default
-    }
-    
-    // Only include credentials in production environment
-    if (!isLocalDevelopment) {
-      options.credentials = 'include';
-    } else {
-      options.credentials = 'omit';
-    }
-    
-    const response = await fetchWithRetry(
-      endpoint,
-      options,
-      2, // Number of retries  
-      300 // Initial backoff in ms
-    );
+      },
+      credentials,
+      // Add a reasonable timeout
+      signal: AbortSignal.timeout(10000), // 10 second timeout
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -482,12 +298,28 @@ export const getUserSubscription = async (
 export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
   try {
     const hostname = window.location.hostname;
-    const origin = window.location.origin;
-    const isLocalhost = hostname === 'localhost';
+    const isProduction = hostname.includes('fishcad.com');
     
-    const endpoint = isLocalhost
-      ? addCacheBuster(`http://localhost:3001/api/pricing/cancel-subscription`)
-      : addCacheBuster(`${origin}/api/pricing/cancel-subscription`);
+    // Use direct API URL for production
+    let endpoint;
+    if (isProduction) {
+      endpoint = 'https://api.fishcad.com/pricing/cancel-subscription';
+      console.log(`Using production cancel endpoint: ${endpoint}`);
+    } else {
+      const endpointPath = API_URL.includes('/api') 
+        ? '/pricing/cancel-subscription' 
+        : '/api/pricing/cancel-subscription';
+      endpoint = `${API_URL}${endpointPath}`;
+      console.log(`Using development cancel endpoint: ${endpoint}`);
+    }
+    
+    // Add cache buster
+    endpoint = addCacheBuster(endpoint);
+    
+    console.log(`Cancelling subscription for user: ${userId}`);
+    
+    // In production, always use credentials include
+    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
     
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -497,17 +329,30 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
         'Pragma': 'no-cache',
         'Expires': '0'
       },
+      credentials,
       body: JSON.stringify({
         userId,
       }),
     });
 
+    // Handle non-OK responses properly
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to cancel subscription');
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        // If not JSON, try getting the text
+        const text = await response.text();
+        errorData = { error: text || `HTTP error ${response.status}` };
+      }
+      
+      throw new Error(errorData.error || `Failed to cancel subscription (HTTP ${response.status})`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log('Cancellation response:', data);
+    
+    return data;
   } catch (error) {
     console.error('Error canceling subscription:', error);
     throw error;
@@ -535,14 +380,29 @@ export const verifySubscription = async (
 }> => {
   try {
     const hostname = window.location.hostname;
-    const origin = window.location.origin;
-    const isLocalhost = hostname === 'localhost';
+    const isProduction = hostname.includes('fishcad.com');
     
-    const endpoint = isLocalhost
-      ? addCacheBuster(`http://localhost:3001/api/pricing/verify-subscription`)
-      : addCacheBuster(`${origin}/api/pricing/verify-subscription`);
+    // Use direct API URL for production
+    let endpoint;
+    if (isProduction) {
+      endpoint = 'https://api.fishcad.com/pricing/verify-subscription';
+      console.log(`Using production verify endpoint: ${endpoint}`);
+    } else {
+      const endpointPath = API_URL.includes('/api') 
+        ? '/pricing/verify-subscription' 
+        : '/api/pricing/verify-subscription';
+      endpoint = `${API_URL}${endpointPath}`;
+      console.log(`Using development verify endpoint: ${endpoint}`);
+    }
+    
+    // Add cache buster
+    endpoint = addCacheBuster(endpoint);
     
     console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'}`);
+    
+    // In production, always use credentials include
+    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
+    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -551,6 +411,7 @@ export const verifySubscription = async (
         'Pragma': 'no-cache',
         'Expires': '0'
       },
+      credentials,
       body: JSON.stringify({
         userId,
         email,
@@ -558,12 +419,23 @@ export const verifySubscription = async (
       }),
     });
 
-    const data = await response.json();
-    
+    // Handle non-OK responses properly
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to verify subscription');
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        // If not JSON, try getting the text
+        const text = await response.text();
+        errorData = { error: text || `HTTP error ${response.status}` };
+      }
+      
+      throw new Error(errorData.error || `Failed to verify subscription (HTTP ${response.status})`);
     }
 
+    const data = await response.json();
+    console.log('Verification response:', data);
+    
     return data;
   } catch (error) {
     console.error('Error verifying subscription:', error);

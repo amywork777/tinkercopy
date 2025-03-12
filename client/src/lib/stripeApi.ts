@@ -1,10 +1,12 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables or use localhost in development
 const isDevelopment = window.location.hostname === 'localhost';
-// Use fishcad.com domain explicitly for production to fix the checkout issue
+
+// Use the current origin (including www if present) for production to avoid CORS issues
+// This ensures we use the same domain as the page is loaded from
 const API_URL = isDevelopment 
   ? 'http://localhost:3001/api' 
-  : (import.meta.env.VITE_API_URL || 'https://fishcad.com/api');
+  : `${window.location.origin}/api`;
 
 // Explicitly specify whether we're in production mode based on hostname
 const isProduction = window.location.hostname.includes('fishcad.com') || 
@@ -92,22 +94,29 @@ export const createCheckoutSession = async (
     // Get current hostname for logging
     const hostname = window.location.hostname;
     const origin = window.location.origin;
+    const isLocalhost = hostname === 'localhost';
     
-    console.log(`Creating checkout session on domain ${hostname} for user ${userId}`);
+    console.log(`Creating checkout session on domain ${hostname} for user ${userId} in ${isLocalhost ? 'LOCAL' : 'PRODUCTION'} mode`);
     
-    // Use API_URL which is already configured correctly for different environments
-    // All other working endpoints use the /pricing/ path segment
-    const endpoint = addCacheBuster(`${API_URL}/pricing/create-checkout-session`);
+    // Always use the current origin for API requests to avoid CORS issues
+    const endpoint = isLocalhost
+      ? addCacheBuster(`http://localhost:3001/api/pricing/create-checkout-session`) 
+      : addCacheBuster(`${origin}/api/pricing/create-checkout-session`);
+    
     console.log(`Making checkout request to ${endpoint}`);
     
-    const response = await fetch(endpoint, {
+    // Create headers with appropriate cache control
+    const headers = {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    };
+    
+    // Create request options - different for local dev vs production
+    const requestOptions: RequestInit = {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      },
+      headers,
       body: JSON.stringify({
         priceId,
         userId,
@@ -115,32 +124,81 @@ export const createCheckoutSession = async (
         domain: hostname,
         origin: origin
       }),
-      signal: controller.signal,
-      credentials: 'include'
-    });
+      signal: controller.signal
+    };
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch (e) {
-        errorData = { error: errorText || 'Unknown error' };
-      }
-      
-      console.error(`Checkout session creation failed:`, {
-        status: response.status,
-        statusText: response.statusText,
-        errorData
-      });
-      
-      throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
+    // CRITICAL: Only include credentials in production environment
+    // We must NEVER include credentials for localhost to avoid CORS issues
+    if (!isLocalhost) {
+      requestOptions.credentials = 'include';
+    } else {
+      // Explicitly set credentials to 'omit' for localhost to ensure they're never sent
+      requestOptions.credentials = 'omit';
     }
-
-    const data = await response.json();
-    console.log('Checkout session created successfully:', data);
-    clearTimeout(timeoutId);
-    return data;
+    
+    console.log(`Attempt: Making checkout request to ${endpoint} ${isLocalhost ? 'without' : 'with'} credentials`);
+    
+    // For localhost, retry without credentials if first attempt fails
+    let retryCount = 0;
+    const maxRetries = isLocalhost ? 1 : 3; // Only retry once for localhost
+    
+    while (retryCount <= maxRetries) {
+      try {
+        retryCount++;
+        
+        // Log retry attempt if this isn't the first try
+        if (retryCount > 1) {
+          console.log(`Attempt ${retryCount}/${maxRetries + 1}: Making checkout request to ${endpoint}`);
+        }
+        
+        const response = await fetch(endpoint, requestOptions);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch (e) {
+            errorData = { error: errorText || 'Unknown error' };
+          }
+          
+          console.error(`Attempt ${retryCount}: Checkout session creation failed:`, {
+            status: response.status,
+            statusText: response.statusText,
+            errorData
+          });
+          
+          // Special handling for 503 Service Unavailable errors
+          if (response.status === 503) {
+            console.log(`Attempt ${retryCount} failed with 503 Service Unavailable`);
+            if (retryCount <= maxRetries) {
+              // Wait before retrying
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              continue; // Retry the request
+            }
+          }
+          
+          throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
+        }
+        
+        const data = await response.json();
+        console.log('Checkout session created successfully:', data);
+        clearTimeout(timeoutId);
+        return data;
+      } catch (fetchError) {
+        // If this was our last retry, or it's a network error in development, throw the error
+        if (retryCount > maxRetries || (isLocalhost && fetchError instanceof TypeError)) {
+          console.error(`Attempt ${retryCount} failed:`, fetchError);
+          throw fetchError;
+        }
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    // If we get here without returning or throwing, something went wrong
+    throw new Error('Failed to create checkout session after multiple attempts');
   } catch (error) {
     clearTimeout(timeoutId);
     console.error('Error creating checkout session:', error);
@@ -150,11 +208,28 @@ export const createCheckoutSession = async (
       throw new Error('Checkout request timed out. Please try again or contact support.');
     }
     
-    // Detect connection issues
+    // Check for CORS errors specifically
+    if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+      if (window.location.hostname === 'localhost') {
+        throw new Error('The API server appears to be unavailable. Please ensure your local API server is running at http://localhost:3001');
+      } else {
+        throw new Error('Connection to checkout service failed. Please check your internet connection and try again.');
+      }
+    }
+    
+    // Handle 503 Service Unavailable errors
+    if (error instanceof Error && 
+        (error.message.includes('503') || 
+         error.message.includes('Service Unavailable'))) {
+      throw new Error('The checkout service is temporarily unavailable. Please try again in a few moments.');
+    }
+    
+    // Detect other connection issues
     if (error instanceof Error && 
         (error.message.includes('fetch failed') || 
          error.message.includes('network') || 
-         error.message.includes('ERR_CONNECTION_'))) {
+         error.message.includes('ERR_CONNECTION_') ||
+         error.message.includes('offline'))) {
       throw new Error('Connection to checkout service failed. Please check your internet connection and try again.');
     }
     
@@ -209,8 +284,15 @@ export const getUserSubscription = async (
   try {
     // First try the optimized endpoint which is much lighter on server resources
     try {
-      const optimizedEndpoint = addCacheBuster(`${API_URL}/pricing/optimize-subscription/${userId}`);
-      console.log(`Trying optimized subscription endpoint for user: ${userId}`);
+      const hostname = window.location.hostname;
+      const origin = window.location.origin;
+      const isLocalhost = hostname === 'localhost';
+      
+      const optimizedEndpoint = isLocalhost
+        ? addCacheBuster(`http://localhost:3001/api/pricing/optimize-subscription/${userId}`)
+        : addCacheBuster(`${origin}/api/pricing/optimize-subscription/${userId}`);
+      
+      console.log(`Trying optimized subscription endpoint for user: ${userId} at ${optimizedEndpoint}`);
       
       // Create options with signal if provided
       const options: RequestInit = {
@@ -262,7 +344,14 @@ export const getUserSubscription = async (
     }
     
     // Try legacy endpoint as fallback
-    const endpoint = addCacheBuster(`${API_URL}/pricing/user-subscription/${userId}`);
+    const hostname = window.location.hostname;
+    const origin = window.location.origin;
+    const isLocalhost = hostname === 'localhost';
+    
+    const endpoint = isLocalhost
+      ? addCacheBuster(`http://localhost:3001/api/pricing/user-subscription/${userId}`)
+      : addCacheBuster(`${origin}/api/pricing/user-subscription/${userId}`);
+    
     console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
     
     // Create options with signal if provided
@@ -333,7 +422,14 @@ export const getUserSubscription = async (
 // Cancel subscription
 export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const endpoint = addCacheBuster(`${API_URL}/pricing/cancel-subscription`);
+    const hostname = window.location.hostname;
+    const origin = window.location.origin;
+    const isLocalhost = hostname === 'localhost';
+    
+    const endpoint = isLocalhost
+      ? addCacheBuster(`http://localhost:3001/api/pricing/cancel-subscription`)
+      : addCacheBuster(`${origin}/api/pricing/cancel-subscription`);
+    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -379,7 +475,14 @@ export const verifySubscription = async (
   message: string;
 }> => {
   try {
-    const endpoint = addCacheBuster(`${API_URL}/pricing/verify-subscription`);
+    const hostname = window.location.hostname;
+    const origin = window.location.origin;
+    const isLocalhost = hostname === 'localhost';
+    
+    const endpoint = isLocalhost
+      ? addCacheBuster(`http://localhost:3001/api/pricing/verify-subscription`)
+      : addCacheBuster(`${origin}/api/pricing/verify-subscription`);
+    
     console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'}`);
     const response = await fetch(endpoint, {
       method: 'POST',

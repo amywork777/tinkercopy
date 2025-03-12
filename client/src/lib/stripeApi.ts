@@ -37,6 +37,16 @@ const STRIPE_PROD_KEYS = {
   ANNUAL_PRICE: 'price_1R1jGgCLoBz9jXRluMN6PsNw'  // Pro Yearly
 };
 
+// Export the publishable key directly
+export const PUBLISHABLE_KEY = STRIPE_PROD_KEYS.PUBLISHABLE_KEY;
+
+// Export STRIPE_KEYS for backward compatibility with existing components
+export const STRIPE_KEYS = {
+  PUBLISHABLE_KEY: STRIPE_PROD_KEYS.PUBLISHABLE_KEY,
+  MONTHLY_PRICE: STRIPE_PROD_KEYS.MONTHLY_PRICE,
+  ANNUAL_PRICE: STRIPE_PROD_KEYS.ANNUAL_PRICE
+};
+
 // Export STRIPE_PRICES directly for consistent access
 export const STRIPE_PRICES = {
   MONTHLY: STRIPE_PROD_KEYS.MONTHLY_PRICE,

@@ -2661,7 +2661,7 @@ app.listen(PORT, () => {
   console.log(`Simple checkout server running at http://localhost:${PORT}`);
 }); 
 
-// *** MOVE THE SPECIAL HANDLER HERE, BEFORE THE CATCHALL ROUTE ***
+// MOVE THIS HANDLER HERE - BEFORE the catchall route and app.listen()
 // Special handler for the www domain path that was returning 405 errors
 app.get('/pricing/create-checkout-session', async (req, res) => {
   console.log('Received GET request to /pricing/create-checkout-session with query params:', req.query);
@@ -2739,4 +2739,75 @@ app.get('/pricing/create-checkout-session', async (req, res) => {
       details: error.message 
     });
   }
+}); 
+
+// POST handler for creating a checkout session
+app.post('/pricing/create-checkout-session', async (req, res) => {
+  try {
+    // ... existing code ...
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET handler for creating a checkout session - should be here, BEFORE app.listen
+app.get('/pricing/create-checkout-session', async (req, res) => {
+  try {
+    console.log('GET handler for checkout session called');
+    
+    // Get parameters from query string
+    const { priceId, userId, email } = req.query;
+    
+    if (!priceId) {
+      return res.status(400).json({ error: 'Missing required parameter: priceId' });
+    }
+    
+    // Create a checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${req.headers.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/pricing`,
+      client_reference_id: userId,
+      customer_email: email,
+    });
+    
+    // Return the checkout session URL
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('Error in GET create-checkout-session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancel subscription
+app.post('/pricing/cancel-subscription', async (req, res) => {
+  // ... existing code ...
+});
+
+// GET handler for user subscription
+app.get('/pricing/user-subscription', async (req, res) => {
+  // ... existing code ...
+});
+
+// Verify subscription
+app.post('/pricing/verify-subscription', async (req, res) => {
+  // ... existing code ...
+});
+
+// Handle any other routes
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 }); 

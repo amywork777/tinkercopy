@@ -24,6 +24,7 @@ import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { CrownIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { directStripeCheckout } from '../SimpleStripeCheckout';
 
 export default function PricingPage() {
   const { user } = useAuth();
@@ -51,148 +52,33 @@ export default function PricingPage() {
     };
   }, [location]);
 
-  const handleSubscribe = async (planType: string) => {
+  const handleSubscribe = async (plan: string) => {
     try {
       setIsLoading(true);
-      setErrorMessage('');
       
-      console.log('Checkout started on domain:', window.location.hostname);
+      // Log the plan type for debugging
+      console.log(`Subscribing to ${plan} plan...`);
       
-      // Validate we have the required data
-      if (!user || !user.uid || !user.email) {
-        setErrorMessage('Please log in to subscribe');
+      // Get user information if available
+      const userEmail = user?.email || '';
+      const userId = user?.uid || '';
+      
+      console.log(`User info - Email: ${userEmail}, ID: ${userId}`);
+      
+      // Call our super simple direct checkout function
+      directStripeCheckout(plan, userEmail, userId);
+      
+      // Keep loading state for a bit to show something is happening
+      setTimeout(() => {
         setIsLoading(false);
-        return;
-      }
+      }, 2000);
       
-      // Get the price ID based on the selected plan
-      const priceId = planType === 'monthly' 
-        ? STRIPE_PRICES.MONTHLY 
-        : STRIPE_PRICES.ANNUAL;
-      
-      console.log('Selected plan:', planType, 'using price ID:', priceId);
-      
-      // USING DIRECT STRIPE CHECKOUT FOR ALL DOMAINS FOR IMMEDIATE RELIABILITY
-      try {
-        console.log('Using direct Stripe checkout for maximum reliability...');
-        
-        // First try the most reliable approach - direct Stripe URL
-        try {
-          console.log('Attempting direct URL approach first...');
-          // Direct link to Stripe Checkout with parameters in URL
-          const params = new URLSearchParams({
-            'client_reference_id': user.uid,
-            'customer_email': user.email,
-            'mode': 'subscription',
-            'success_url': `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-            'cancel_url': `${window.location.origin}/pricing`,
-          });
-          
-          // For price, we need to add it separately
-          params.append('line_items[0][price]', priceId);
-          params.append('line_items[0][quantity]', '1');
-          
-          // Add API key
-          params.append('key', STRIPE_KEYS.PUBLISHABLE_KEY);
-          
-          // Construct the final URL
-          const url = `https://checkout.stripe.com/pay/${params.toString()}`;
-          console.log('Opening direct Stripe URL:', url);
-          
-          // Open in new tab AND directly from window.location for full reliability
-          window.open(url, '_blank');
-          window.location.href = url;
-          
-          // No need to proceed with other methods
-          return;
-        } catch (urlError) {
-          console.error('Direct URL approach failed, trying Stripe.js:', urlError);
-        }
-        
-        // Try the Stripe.js approach as a fallback
-        // Import dynamically to avoid circular dependencies
-        const { createDirectStripeCheckout } = await import('../lib/stripeApi');
-        
-        // Use the direct checkout method
-        await createDirectStripeCheckout(priceId, user.uid, user.email);
-        
-        // If we get here, the direct checkout was initiated successfully
-        console.log('Direct checkout initiated successfully');
-        setIsLoading(false);
-        return;
-      } catch (directError) {
-        console.error('All direct checkout methods failed, falling back to API method:', directError);
-        // Continue to try the API method below
-      }
-      
-      // Only try the normal API approach if all direct checkout methods failed
-      try {
-        // Try the normal checkout flow
-        const { url } = await createCheckoutSession(priceId, user.uid, user.email);
-        
-        // Check if we received a special value for direct checkout
-        if (url === 'direct_stripe_checkout_initiated' || url === 'form_submission_in_progress') {
-          // If this is a direct checkout, we don't need to redirect further
-          // The user should already be redirected
-          console.log('Direct checkout initiated, no further action needed');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Redirect to the checkout page
-        window.location.href = url;
-      } catch (error) {
-        console.error('Error creating checkout session:', error);
-        console.error('Error details:', error);
-        
-        // LAST RESORT: Create a direct form submission to Stripe
-        try {
-          console.log('Final fallback: Creating form submission directly to Stripe...');
-          // Create a hidden form and submit it
-          const form = document.createElement('form');
-          form.method = 'POST';
-          form.action = 'https://checkout.stripe.com/pay';
-          form.target = '_blank';
-          
-          // Add the necessary fields
-          const addField = (name: string, value: string) => {
-            const field = document.createElement('input');
-            field.type = 'hidden';
-            field.name = name;
-            field.value = value;
-            form.appendChild(field);
-          };
-          
-          // Add required fields
-          addField('key', STRIPE_KEYS.PUBLISHABLE_KEY);
-          addField('line_items[0][price]', priceId);
-          addField('line_items[0][quantity]', '1');
-          addField('mode', 'subscription');
-          addField('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
-          addField('cancel_url', `${window.location.origin}/pricing`);
-          
-          // Add customer email if provided
-          if (user.email) {
-            addField('customer_email', user.email);
-          }
-          
-          // Append the form to the body, submit it, and remove it
-          document.body.appendChild(form);
-          form.submit();
-          document.body.removeChild(form);
-          
-          console.log('Form submission completed');
-          setIsLoading(false);
-        } catch (formError) {
-          console.error('Form submission failed:', formError);
-          setErrorMessage('Could not create checkout session. Please try again later or contact support.');
-          setIsLoading(false);
-        }
-      }
     } catch (error) {
-      console.error('Error in subscription flow:', error);
-      setErrorMessage('Could not complete subscription. Please try again later.');
+      console.error('Error during subscription process:', error);
       setIsLoading(false);
+      toast('Error starting checkout. Please try again.', {
+        type: 'error',
+      });
     }
   };
 

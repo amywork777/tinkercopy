@@ -10,6 +10,15 @@ const STRIPE_PRICES = {
   ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 
+// Add CORS preflight handler for checkout endpoint
+router.options('/create-checkout-session', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Origin');
+  res.set('Access-Control-Max-Age', '86400'); // 24 hours
+  res.status(204).end();
+});
+
 // Create a checkout session
 router.post('/create-checkout-session', async (req, res) => {
   // Handle OPTIONS request for CORS preflight
@@ -17,16 +26,29 @@ router.post('/create-checkout-session', async (req, res) => {
     return res.status(200).end();
   }
   
+  // Add CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  
   try {
-    const { priceId, userId, email, domain } = req.body;
+    const { priceId, userId, email, domain, origin } = req.body;
     
     if (!priceId || !userId) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     
+    console.log(`Creating checkout session for user ${userId} with price ${priceId}`);
+    console.log(`Request from domain: ${domain}, origin: ${origin || 'none'}`);
+    
     // Determine the correct domain for success/cancel URLs
     let checkoutDomain = DEFAULT_DOMAIN;
-    if (domain) {
+    
+    // Special handling for fishcad.com
+    if (domain && domain.includes('fishcad.com')) {
+      checkoutDomain = 'https://fishcad.com';
+      console.log(`Using fishcad.com domain for checkout URLs: ${checkoutDomain}`);
+    } else if (domain) {
       // Ensure the domain has https://
       checkoutDomain = domain.startsWith('http') ? domain : `https://${domain}`;
       console.log(`Using customer-provided domain for checkout: ${checkoutDomain}`);
@@ -59,7 +81,7 @@ router.post('/create-checkout-session', async (req, res) => {
       });
     }
     
-    // Create the checkout session
+    // Create the checkout session with proper URLs
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       line_items: [
@@ -76,6 +98,8 @@ router.post('/create-checkout-session', async (req, res) => {
           userId: userId,
         },
       },
+      // Allow checkout sessions to be used up to 1 hour after creation
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 60,
     });
     
     console.log(`Created checkout session: ${session.id} with URL: ${session.url}`);
@@ -91,6 +115,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   const signature = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   
+  // Log webhook received
+  console.log('Stripe webhook received');
+  
   let event;
   
   try {
@@ -99,6 +126,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       signature,
       webhookSecret
     );
+    
+    console.log(`Webhook event received: ${event.type}`);
   } catch (error) {
     console.error('Webhook signature verification failed:', error.message);
     return res.status(400).send(`Webhook Error: ${error.message}`);
@@ -110,34 +139,74 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object;
-      const subscription = await stripe.subscriptions.retrieve(session.subscription);
-      const customerId = session.customer;
+      console.log('Checkout session completed:', session.id);
       
-      // Find the user by customer ID
-      const usersRef = db.collection('users');
-      const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
-      
-      if (snapshot.empty) {
-        console.error('No user found with customerId:', customerId);
-        return res.status(400).send('User not found');
+      try {
+        const subscription = await stripe.subscriptions.retrieve(session.subscription);
+        const customerId = session.customer;
+        
+        // Find the user by customer ID
+        const usersRef = db.collection('users');
+        const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
+        
+        if (snapshot.empty) {
+          console.error('No user found with customerId:', customerId);
+          
+          // If the customer has metadata with userId, try that as a fallback
+          const customer = await stripe.customers.retrieve(customerId);
+          if (customer && customer.metadata && customer.metadata.userId) {
+            const userId = customer.metadata.userId;
+            console.log(`Found userId ${userId} in customer metadata, using as fallback`);
+            
+            const userDoc = await db.collection('users').doc(userId).get();
+            if (userDoc.exists) {
+              // Update the user's subscription status
+              await db.collection('users').doc(userId).update({
+                isPro: true,
+                stripeCustomerId: customerId, // Make sure this is set
+                stripeSubscriptionId: subscription.id,
+                subscriptionStatus: subscription.status,
+                subscriptionEndDate: new Date(subscription.current_period_end * 1000),
+                modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
+                subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
+                lastUpdated: new Date(),
+                trialActive: false
+              });
+              
+              console.log(`Updated user ${userId} with checkout session data using metadata fallback`);
+              break;
+            }
+          }
+          
+          return res.status(400).send('User not found');
+        }
+        
+        // Get the first matching document
+        const userDoc = snapshot.docs[0];
+        const userId = userDoc.id;
+        
+        console.log(`Updating user ${userId} with subscription data from checkout session`);
+        
+        // Update the user's subscription status
+        await db.collection('users').doc(userId).update({
+          isPro: true,
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus: subscription.status,
+          subscriptionEndDate: new Date(subscription.current_period_end * 1000),
+          modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
+          // Keep track of the subscription plan
+          subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
+          // Clear any trial status
+          trialActive: false,
+          // Add timestamp for when this update occurred
+          lastUpdated: new Date()
+        });
+        
+        console.log(`Successfully updated user ${userId} subscription status to PRO`);
+      } catch (error) {
+        console.error('Error processing checkout.session.completed webhook:', error);
+        // Don't return error status to Stripe - we want to acknowledge receipt
       }
-      
-      // Get the first matching document
-      const userDoc = snapshot.docs[0];
-      const userId = userDoc.id;
-      
-      // Update the user's subscription status
-      await db.collection('users').doc(userId).update({
-        isPro: true,
-        stripeSubscriptionId: subscription.id,
-        subscriptionStatus: subscription.status,
-        subscriptionEndDate: new Date(subscription.current_period_end * 1000),
-        modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
-        // Keep track of the subscription plan
-        subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
-        // Clear any trial status
-        trialActive: false
-      });
       
       break;
     }

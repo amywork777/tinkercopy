@@ -56,11 +56,20 @@ export const createCheckoutSession = async (
   email: string
 ): Promise<{ url: string }> => {
   try {
-    // Use fishcad.com domain explicitly if we're on that domain
-    const isFishCad = window.location.hostname.includes('fishcad.com');
-    const endpoint = addCacheBuster(`${isFishCad ? 'https://fishcad.com/api' : API_URL}/pricing/create-checkout-session`);
+    // Always use the absolute fishcad.com URL when on that domain
+    const hostname = window.location.hostname;
+    const isFishCad = hostname.includes('fishcad.com');
+    const checkoutApiUrl = isFishCad 
+      ? 'https://fishcad.com/api' 
+      : API_URL;
     
-    console.log(`Making checkout request to ${endpoint} for user ${userId} with price ${priceId}`);
+    const endpoint = addCacheBuster(`${checkoutApiUrl}/pricing/create-checkout-session`);
+    
+    console.log(`Making checkout request to ${endpoint} for user ${userId} with price ${priceId} from domain ${hostname}`);
+    
+    // Use a longer timeout for checkout API calls
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
     
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -68,23 +77,42 @@ export const createCheckoutSession = async (
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Expires': '0',
+        'Origin': window.location.origin
       },
       body: JSON.stringify({
         priceId,
         userId,
         email,
-        domain: window.location.hostname // Send the current domain to ensure correct redirect URLs
+        domain: hostname,
+        origin: window.location.origin
       }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Checkout session creation failed:', errorData);
-      throw new Error(errorData.error || 'Failed to create checkout session');
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { error: errorText || 'Unknown error' };
+      }
+      
+      console.error('Checkout session creation failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData
+      });
+      
+      throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log('Checkout session created successfully:', data);
+    return data;
   } catch (error) {
     console.error('Error creating checkout session:', error);
     throw error;

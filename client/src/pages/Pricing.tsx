@@ -23,11 +23,12 @@ import { createCheckoutSession, STRIPE_PRICES } from '@/lib/stripeApi';
 import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { CrownIcon } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function PricingPage() {
   const { user } = useAuth();
   const { subscription } = useSubscription();
-  const { toast } = useToast();
+  const { toast: uiToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
@@ -58,12 +59,22 @@ export default function PricingPage() {
 
     setIsLoading(true);
     
+    // Show loading message
+    toast.loading('Preparing checkout...', { duration: 30000 });
+    
     try {
       console.log('Creating checkout session with:', {
         priceId,
         userId: user.id,
-        email: user.email
+        email: user.email,
+        hostname: window.location.hostname
       });
+      
+      // Special handling for fishcad.com
+      const isFishCad = window.location.hostname.includes('fishcad.com');
+      if (isFishCad) {
+        console.log('Using fishcad.com specific checkout flow');
+      }
       
       // Create a checkout session
       const { url } = await createCheckoutSession(
@@ -72,14 +83,27 @@ export default function PricingPage() {
         user.email || ''
       );
       
+      // Dismiss any existing toasts
+      toast.dismiss();
+      
       // Redirect to checkout
       if (url) {
         console.log('Redirecting to checkout URL:', url);
-        window.location.href = url;
+        
+        // Show success message before redirect
+        toast.success('Redirecting to secure checkout...', { duration: 3000 });
+        
+        // Short delay to show the message before redirect
+        setTimeout(() => {
+          window.location.href = url;
+        }, 1000);
       } else {
         throw new Error('No checkout URL returned');
       }
     } catch (error) {
+      // Dismiss any existing toasts
+      toast.dismiss();
+      
       console.error('Error creating checkout session:', error);
       
       // More detailed error message
@@ -87,25 +111,22 @@ export default function PricingPage() {
       
       if (error instanceof Error) {
         console.error('Error details:', error.message);
-        errorMessage += ` (${error.message})`;
         
-        // Check for network errors
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          errorMessage = 'Network error: Could not connect to the payment server. Please check your internet connection and try again.';
-        }
-        
-        // Check for CORS errors
-        if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
-          errorMessage = 'CORS error: The browser blocked the request due to security restrictions. Please try again later.';
+        // Check for specific error types
+        if (error.message.includes('network') || error.message.includes('timeout')) {
+          errorMessage = 'Network error: Could not connect to the checkout service. Please check your internet connection and try again.';
+        } else if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
+          errorMessage = 'Error connecting to payment service. Please try using a different browser or device.';
+        } else if (error.message.includes('404')) {
+          errorMessage = 'Checkout service not available. Please try again later or contact support.';
+        } else {
+          errorMessage += ` (${error.message})`;
         }
       }
       
-      toast({
-        title: 'Subscription error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-    } finally {
+      // Show error message
+      toast.error('Checkout Error', { description: errorMessage });
+      
       setIsLoading(false);
     }
   };

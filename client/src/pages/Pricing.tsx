@@ -134,11 +134,16 @@ export default function PricingPage() {
         console.log(`Redirecting to direct ${isAnnual ? 'annual' : 'monthly'} checkout with price ID: ${realPriceId}`);
         
         // Build the success/cancel URLs for redirecting back to the app
-        const successUrl = encodeURIComponent(`${window.location.origin}/pricing-success`);
-        const cancelUrl = encodeURIComponent(`${window.location.origin}/pricing`);
+        const successUrl = encodeURIComponent(`https://www.fishcad.com/pricing-success`);
+        const cancelUrl = encodeURIComponent(`https://www.fishcad.com/pricing`);
+
+        // Stripe publishable key for checkout - use live key for fishcad.com
+        const stripePublishableKey = 'pk_live_51QnZCfCLoBz9jXRl0XNJ06wKLsn8Gm2mPBnvGcf3iW1gJEGPaxNkCn6PRIoEaXW5jXRyMYR7nSTjrDUZBCnHGoBo00xW9eS8Xz';
+
+        // Create the direct Stripe checkout URL with all necessary parameters including publishable key
+        const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?key=${stripePublishableKey}&client_reference_id=${user.id}&prefilled_email=${encodeURIComponent(user?.email || '')}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
         
-        // Create the direct Stripe checkout URL with all necessary parameters
-        const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?client_reference_id=${user.id}&prefilled_email=${encodeURIComponent(user?.email || '')}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
+        console.log('Direct checkout URL:', directUrl);
         
         // Delay slightly then redirect
         setTimeout(() => {

@@ -120,10 +120,62 @@ if (!fs.existsSync(stlFilesDir)) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configure middleware
-app.use(cors());
+// Configure allowed origins for CORS
+const allowedOrigins = [
+  'http://localhost:5173',      // Local Vite dev server
+  'http://localhost:3000',      // Local Next.js dev server
+  'https://fishcad.com',        // Production domain
+  'https://www.fishcad.com',    // Production domain with www
+  'https://app.fishcad.com',    // App subdomain (if used)
+  process.env.DOMAIN            // Domain from env var (if set)
+].filter(Boolean); // Remove any undefined/null values
+
+console.log('Allowed CORS origins:', allowedOrigins);
+
+// Configure CORS middleware with specific options
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) {
+      console.log('Request with no origin allowed');
+      return callback(null, true);
+    }
+    
+    // Check if the origin is allowed
+    if (allowedOrigins.includes(origin) || 
+        origin.endsWith('fishcad.com') || 
+        origin.includes('localhost')) {
+      console.log(`CORS request from origin: ${origin} - allowed`);
+      return callback(null, true);
+    }
+    
+    console.error(`CORS request from origin: ${origin} - not allowed`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Add OPTIONS handler for preflight requests
+app.options('*', cors());
+
+// Add health check endpoint
+app.get('/api/health-check', (req, res) => {
+  console.log('Health check requested from:', req.headers.origin || 'unknown origin');
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'API is healthy',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Special case for Stripe webhook to handle raw body
 app.use('/api/webhook', express.raw({ type: 'application/json' }));

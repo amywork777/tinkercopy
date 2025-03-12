@@ -19,7 +19,7 @@ import { Check, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { createCheckoutSession, STRIPE_PRICES } from '@/lib/stripeApi';
+import { createCheckoutSession, STRIPE_PRICES, checkApiConnectivity } from '@/lib/stripeApi';
 import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { CrownIcon } from 'lucide-react';
@@ -59,10 +59,18 @@ export default function PricingPage() {
     setIsLoading(true);
     
     try {
+      // First check API connectivity
+      const isApiAccessible = await checkApiConnectivity();
+      
+      if (!isApiAccessible) {
+        throw new Error('Cannot connect to payment server. Please check your internet connection and try again.');
+      }
+    
       console.log('Creating checkout session with:', {
         priceId,
         userId: user.id,
-        email: user.email
+        email: user.email,
+        location: window.location.hostname
       });
       
       // Create a checkout session
@@ -87,16 +95,24 @@ export default function PricingPage() {
       
       if (error instanceof Error) {
         console.error('Error details:', error.message);
-        errorMessage += ` (${error.message})`;
         
         // Check for network errors
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        if (error.message.includes('Failed to fetch') || 
+            error.message.includes('NetworkError') ||
+            error.message.includes('Cannot connect to payment server')) {
           errorMessage = 'Network error: Could not connect to the payment server. Please check your internet connection and try again.';
         }
-        
         // Check for CORS errors
-        if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
+        else if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
           errorMessage = 'CORS error: The browser blocked the request due to security restrictions. Please try again later.';
+        }
+        // Check for 404 errors
+        else if (error.message.includes('404') || error.message.includes('not found')) {
+          errorMessage = 'Server error: The checkout endpoint could not be found. Please contact support.';
+        }
+        // For other errors, include the message
+        else {
+          errorMessage += ` (${error.message})`;
         }
       }
       

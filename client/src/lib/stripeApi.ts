@@ -96,7 +96,8 @@ export const createCheckoutSession = async (
     console.log(`Creating checkout session on domain ${hostname} for user ${userId}`);
     
     // Use the current origin to avoid CORS issues between www and non-www domains
-    const apiUrl = `${origin}/api/pricing/create-checkout-session`;
+    // Use the correct API path - removing the "pricing/" prefix
+    const apiUrl = `${origin}/api/create-checkout-session`;
     console.log(`Making checkout request to ${apiUrl}`);
     
     const response = await fetch(apiUrl, {

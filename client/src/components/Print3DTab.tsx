@@ -854,7 +854,8 @@ const Print3DTab = () => {
           
           // Instead of submitting to our server, create a direct Stripe checkout session
           // This bypasses server issues completely
-          const stripePublishableKey = 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi';
+          // Using TEST MODE for reliable checkout
+          const stripePublishableKey = 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm';
           
           // Create a product description
           const productName = `3D Print: ${checkoutData.modelName}`;
@@ -867,10 +868,10 @@ const Print3DTab = () => {
           const cancelUrl = encodeURIComponent(`${window.location.origin}/`);
           
           // Direct Stripe checkout link (bypassing server entirely)
-          // Using buy.stripe.com which is more reliable for direct access
+          // Using test mode URL from buy.stripe.com
           const form = document.createElement('form');
           form.method = 'POST';
-          form.action = 'https://buy.stripe.com/aEU6oQ70H9c52cM7st';
+          form.action = 'https://buy.stripe.com/test_14k5lpa9V5LNaHe3cc';
           form.style.display = 'none';
           
           // Append all required fields

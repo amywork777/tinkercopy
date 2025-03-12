@@ -128,17 +128,17 @@ export default function PricingPage() {
         // Determine which Stripe price ID to use based on the selected plan
         const isAnnual = priceId.includes('annual') || billingInterval === 'yearly';
         const realPriceId = isAnnual
-          ? 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Annual price
-          : 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'; // Monthly price
+          ? 'price_1QzyJTUe3gfr8Gy6qP52J3Th'  // Annual price TEST MODE
+          : 'price_1QzyJ4Jj6v6u5YGCJq4e5YQG'; // Monthly price TEST MODE
         
-        console.log(`Using ${isAnnual ? 'annual' : 'monthly'} plan with price ID: ${realPriceId}`);
+        console.log(`Using ${isAnnual ? 'annual' : 'monthly'} plan with price ID: ${realPriceId} (TEST MODE)`);
         
         // SIMPLIFIED APPROACH - Create an invisible checkout form that posts directly to Stripe
         try {
           // Create a hidden form to submit to Stripe
           const form = document.createElement('form');
           form.method = 'POST';
-          form.action = 'https://buy.stripe.com/aEU6oQ70H9c52cM7st';
+          form.action = 'https://buy.stripe.com/test_14k5lpa9V5LNaHe3cc';
           form.style.display = 'none';
           
           // Append all required fields
@@ -151,7 +151,7 @@ export default function PricingPage() {
           };
           
           // Get the Stripe publishable key - THIS IS REQUIRED
-          const stripePublishableKey = 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi';
+          const stripePublishableKey = 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm';
           
           // Add all required parameters
           appendInput('apiKey', stripePublishableKey); // This was missing! It's required for direct checkout

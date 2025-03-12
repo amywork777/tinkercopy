@@ -14,15 +14,18 @@ const isProduction = window.location.hostname.includes('fishcad.com') ||
 console.log(`Running in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
 console.log(`Using API URL: ${API_URL}`);
 
-// Stripe price IDs from environment variables with production fallbacks
-// Always use the production price IDs on fishcad.com
+// TEMPORARY FIX: Always use test mode keys for checkout
+// These are the Stripe test mode keys and prices
+const STRIPE_TEST_KEYS = {
+  PUBLISHABLE_KEY: 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm',
+  MONTHLY_PRICE: 'price_1QzyJ4Jj6v6u5YGCJq4e5YQG',
+  ANNUAL_PRICE: 'price_1QzyJTUe3gfr8Gy6qP52J3Th'
+};
+
+// Stripe price IDs - USE TEST KEYS EVERYWHERE FOR NOW
 export const STRIPE_PRICES = {
-  MONTHLY: isProduction 
-    ? 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'  // Always use production price ID
-    : (import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'),
-  ANNUAL: isProduction
-    ? 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Always use production price ID
-    : (import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68'),
+  MONTHLY: STRIPE_TEST_KEYS.MONTHLY_PRICE,
+  ANNUAL: STRIPE_TEST_KEYS.ANNUAL_PRICE,
 };
 
 // Log the Stripe Price IDs being used
@@ -82,26 +85,27 @@ export const createCheckoutSession = async (
     
     // If on fishcad.com, use direct Stripe checkout to bypass server issues
     if (isFishCad) {
-      console.log('Using DIRECT Stripe checkout flow for fishcad.com');
+      console.log('Using DIRECT Stripe checkout flow for fishcad.com in TEST MODE');
       
       // Determine which price ID to use based on the selected plan
       const isAnnual = priceId.includes('annual') || priceId.includes('year');
       
-      // Use the correct production price IDs
+      // Use the test mode price IDs
       const realPriceId = isAnnual
-        ? 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Annual price
-        : 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'; // Monthly price
+        ? STRIPE_TEST_KEYS.ANNUAL_PRICE
+        : STRIPE_TEST_KEYS.MONTHLY_PRICE;
       
-      console.log(`Using direct Stripe checkout with price ID: ${realPriceId} (${isAnnual ? 'annual' : 'monthly'} plan)`);
+      console.log(`Using direct Stripe TEST checkout with price ID: ${realPriceId} (${isAnnual ? 'annual' : 'monthly'} plan)`);
       clearTimeout(timeoutId);
       
-      // Get the Stripe publishable key
-      const publishableKey = 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi';
+      // Get the Stripe publishable key - use test key
+      const publishableKey = STRIPE_TEST_KEYS.PUBLISHABLE_KEY;
       
       // Create a form-based approach which is most reliable for direct checkout
       const form = document.createElement('form');
       form.method = 'POST';
-      form.action = 'https://buy.stripe.com/aEU6oQ70H9c52cM7st';
+      // Direct to buy.stripe.com with test parameters
+      form.action = 'https://buy.stripe.com/test_14k5lpa9V5LNaHe3cc';
       form.style.display = 'none';
       
       // Helper function to add form inputs

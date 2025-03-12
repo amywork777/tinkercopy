@@ -842,7 +842,60 @@ const Print3DTab = () => {
       checkoutData.domain = window.location.hostname;
       checkoutData.origin = window.location.origin;
       
-      // Send the data to our server
+      // PRODUCTION HANDLING - Use form submission approach for 3D printing checkout
+      if (isFishCad) {
+        try {
+          console.log('Using form post approach for reliable 3D print checkout on fishcad.com');
+          
+          // Create a hidden form to submit 3D print data
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = apiUrl;
+          form.style.display = 'none';
+          
+          // Add all data as hidden fields
+          Object.entries(checkoutData).forEach(([key, value]) => {
+            // Skip the STL data field for direct form posting - will be handled separately
+            if (key === 'stlFileData') return;
+            
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = String(value);
+            form.appendChild(input);
+          });
+          
+          // Handle the STL data field separately due to its large size
+          // We'll store it in localStorage temporarily
+          if (checkoutData.stlFileData) {
+            // Store the STL data in localStorage (temporarily)
+            const tempKey = `temp_stl_${Date.now()}`;
+            localStorage.setItem(tempKey, JSON.stringify({
+              stlFileData: checkoutData.stlFileData,
+              timestamp: Date.now()
+            }));
+            
+            // Add a reference to the stored data
+            const stlRefInput = document.createElement('input');
+            stlRefInput.type = 'hidden';
+            stlRefInput.name = 'stlDataReference';
+            stlRefInput.value = tempKey;
+            form.appendChild(stlRefInput);
+            
+            console.log(`STL data stored in localStorage with key: ${tempKey}`);
+          }
+          
+          // Add the form to the body and submit it
+          document.body.appendChild(form);
+          form.submit();
+          return;
+        } catch (formError) {
+          console.error('Form submission approach failed:', formError);
+          console.log('Falling back to fetch approach...');
+        }
+      }
+      
+      // Traditional fetch-based approach (fallback for non-production or if form approach fails)
       fetch(apiUrl, {
         method: "POST",
         headers: {

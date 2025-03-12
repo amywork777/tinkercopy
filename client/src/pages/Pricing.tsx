@@ -122,8 +122,8 @@ export default function PricingPage() {
       // If we're on fishcad.com and there was an error, try direct checkout as a last resort
       const isFishCad = window.location.hostname.includes('fishcad.com');
       if (isFishCad && error instanceof Error) {
-        console.log('API checkout failed, trying direct checkout as fallback');
-        toast.error('Initial checkout method failed, trying alternative checkout...', { duration: 3000 });
+        console.log('API checkout failed, trying simplified checkout approach');
+        toast.loading('Preparing secure checkout...', { duration: 5000 });
         
         // Determine which Stripe price ID to use based on the selected plan
         const isAnnual = priceId.includes('annual') || billingInterval === 'yearly';
@@ -133,83 +133,50 @@ export default function PricingPage() {
         
         console.log(`Using ${isAnnual ? 'annual' : 'monthly'} plan with price ID: ${realPriceId}`);
         
+        // SIMPLIFIED APPROACH - Create an invisible checkout form that posts directly to Stripe
         try {
-          // Load Stripe.js dynamically to avoid loading it on every page
-          // This is a client-only approach recommended by Stripe
-          const loadStripeScript = () => {
-            return new Promise<any>((resolve, reject) => {
-              if ((window as any).Stripe) {
-                resolve((window as any).Stripe);
-                return;
-              }
-              
-              console.log('Loading Stripe.js dynamically');
-              const script = document.createElement('script');
-              script.src = 'https://js.stripe.com/v3/';
-              script.async = true;
-              script.onload = () => resolve((window as any).Stripe);
-              script.onerror = (error) => reject(error);
-              document.head.appendChild(script);
-            });
+          // Create a hidden form to submit to Stripe
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = 'https://buy.stripe.com/session';
+          form.style.display = 'none';
+          
+          // Append all required fields
+          const appendInput = (name: string, value: string) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
           };
           
-          // Stripe publishable key for checkout - use live key for fishcad.com
-          const stripePublishableKey = 'pk_live_51QnZCfCLoBz9jXRl0XNJ06wKLsn8Gm2mPBnvGcf3iW1gJEGPaxNkCn6PRIoEaXW5jXRyMYR7nSTjrDUZBCnHGoBo00xW9eS8Xz';
+          // Add all required parameters
+          appendInput('price', realPriceId);
+          appendInput('quantity', '1');
+          appendInput('mode', 'subscription');
+          appendInput('success_url', 'https://www.fishcad.com/pricing-success');
+          appendInput('cancel_url', 'https://www.fishcad.com/pricing');
+          if (user?.id) appendInput('client_reference_id', user.id);
+          if (user?.email) appendInput('prefilled_email', user.email);
           
-          // Show loading toast
-          toast.loading('Preparing secure checkout...', { duration: 10000 });
+          // Add the form to the body and submit it
+          document.body.appendChild(form);
+          console.log('Submitting direct Stripe checkout form with:', {
+            price: realPriceId,
+            success_url: 'https://www.fishcad.com/pricing-success',
+            cancel_url: 'https://www.fishcad.com/pricing'
+          });
           
-          // Load Stripe.js and redirect to checkout
-          loadStripeScript()
-            .then((StripeJs: any) => {
-              console.log('Stripe.js loaded successfully');
-              const stripe = StripeJs(stripePublishableKey);
-              
-              // Redirect to Checkout page
-              console.log('Redirecting to Stripe Checkout with price:', realPriceId);
-              stripe.redirectToCheckout({
-                lineItems: [{price: realPriceId, quantity: 1}],
-                mode: 'subscription',
-                successUrl: 'https://www.fishcad.com/pricing-success',
-                cancelUrl: 'https://www.fishcad.com/pricing',
-                clientReferenceId: user.id,
-                customerEmail: user?.email || undefined
-              })
-              .then(function(result: any) {
-                if (result.error) {
-                  // If redirectToCheckout fails due to a browser or network
-                  // error, display the localized error message
-                  toast.dismiss();
-                  toast.error('Checkout Error', { description: result.error.message });
-                  console.error('Stripe checkout error:', result.error);
-                }
-              });
-            })
-            .catch((error) => {
-              toast.dismiss();
-              toast.error('Checkout Error', { description: 'Failed to initialize payment system' });
-              console.error('Error loading Stripe:', error);
-            });
-            
-          return; // Exit early since checkout is handled by Stripe.js
-        } catch (stripeError) {
-          // If the Stripe.js approach fails, try one more fallback approach
-          console.error('Stripe.js approach failed:', stripeError);
-          toast.error('Trying alternative checkout method...', { duration: 3000 });
-          
-          // Fallback to a simple redirect to Stripe Checkout
-          const successUrl = encodeURIComponent('https://www.fishcad.com/pricing-success');
-          const cancelUrl = encodeURIComponent('https://www.fishcad.com/pricing');
-          
-          // Use a different URL format as a last resort
-          const checkoutUrl = `https://buy.stripe.com/${realPriceId}?prefilled_email=${encodeURIComponent(user?.email || '')}&success_url=${successUrl}&cancel_url=${cancelUrl}&client_reference_id=${user.id}`;
-          
-          console.log('Fallback checkout URL:', checkoutUrl);
-          
-          // Redirect to Stripe Checkout
+          // Give a slight delay to ensure toast is shown
           setTimeout(() => {
-            window.location.href = checkoutUrl;
-          }, 2000);
+            form.submit();
+          }, 1000);
+          
+          return; // Exit early since checkout is handled by form submission
+        } catch (formError) {
+          console.error('Form submission failed:', formError);
+          toast.error('Payment system error. Please try again later or contact support.');
+          setIsLoading(false);
         }
       }
       

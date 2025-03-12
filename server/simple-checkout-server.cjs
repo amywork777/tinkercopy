@@ -138,24 +138,23 @@ if (!fs.existsSync(stlFilesDir)) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configure middleware
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow all origins in development, with logging
-    console.log(`CORS request from origin: ${origin || 'null'}`);
-    callback(null, true);
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'stripe-signature', 'Cache-Control', 'Pragma', 'Expires'],
-  credentials: true,
-  optionsSuccessStatus: 204
-}));
-
-// Add OPTIONS handler for all routes
-app.options('*', cors());
-
+// Configure middleware for request parsing
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Set up CORS to allow cross-origin requests, especially for fishcad.com
+app.use(cors({
+  origin: true, // Allow all origins
+  credentials: true, // Allow cookies
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
+}));
+
+// Middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${req.headers['content-type'] || 'no content-type'} - Origin: ${req.headers.origin || 'unknown'}`);
+  next();
+});
 
 // Special case for Stripe webhook to handle raw body
 app.use('/api/webhook', express.raw({ type: 'application/json' }));
@@ -195,6 +194,24 @@ app.options('/api/create-checkout-session', (req, res) => {
 // Create Express route for creating a checkout session
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
+    console.log('Received checkout request, content type:', req.headers['content-type']);
+    
+    // Handle both JSON and form data
+    let checkoutData;
+    if (req.headers['content-type']?.includes('application/json')) {
+      // If the request is JSON, use the body directly
+      checkoutData = req.body;
+    } else if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+      // If the request is form data, parse it
+      checkoutData = req.body;
+      console.log('Received form data for checkout', checkoutData);
+    } else {
+      // Unknown content type
+      console.log('Unknown content type, attempting to use body directly');
+      checkoutData = req.body;
+    }
+    
+    // Extract parameters from the request data
     const { 
       modelName, 
       color, 
@@ -205,8 +222,20 @@ app.post('/api/create-checkout-session', async (req, res) => {
       stlDownloadUrl,
       stlStoragePath,
       domain,
-      origin 
-    } = req.body;
+      origin,
+      stlDataReference
+    } = checkoutData;
+    
+    // Log receipt of the request data
+    console.log('Received checkout request with:', { 
+      modelName, 
+      color, 
+      quantity, 
+      finalPrice, 
+      hasStlFileData: !!stlFileData,
+      hasStlDataReference: !!stlDataReference,
+      stlFileName
+    });
     
     // Set CORS headers to allow requests from fishcad.com
     if (origin) {
@@ -219,19 +248,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
     // Check if coming from fishcad.com
     const isFishCad = domain && domain.includes('fishcad.com');
     
-    console.log('Received checkout request with:', { 
-      modelName, 
-      color, 
-      quantity, 
-      finalPrice, 
-      hasStlFileData: !!stlFileData,
-      stlFileDataType: stlFileData ? typeof stlFileData : 'none',
-      stlFileDataLength: stlFileData ? (typeof stlFileData === 'string' ? stlFileData.length : 0) : 0,
-      stlFileName,
-      stlDownloadUrl,
-      stlStoragePath
-    });
-    
+    // Validations
     if (!modelName || !color || !quantity || !finalPrice) {
       console.log('Missing required checkout information');
       return res.status(400).json({ 

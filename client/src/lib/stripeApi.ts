@@ -118,9 +118,10 @@ export const createCheckoutSession = async (
       // Use a specific production endpoint for fishcad.com
       let endpoint;
       if (isProduction) {
-        // In production, use the main domain with API path
-        endpoint = 'https://fishcad.com/api/pricing/create-checkout-session';
-        console.log(`Using production endpoint: ${endpoint}`);
+        // IMPORTANT: Try direct request to the main domain instead of API path
+        // This works around potential server configuration issues
+        endpoint = 'https://fishcad.com/pricing/create-checkout-session';
+        console.log(`Using simplified production endpoint: ${endpoint}`);
       } else {
         // For development, use the configured API URL
         const endpointPath = API_URL.includes('/api') 
@@ -135,18 +136,18 @@ export const createCheckoutSession = async (
       
       console.log(`Attempt ${attempt}: Making request to ${endpoint} with price ID: ${priceId}`);
       
-      // In production, always use credentials include
-      const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
-      
+      // Proper fetch configuration for cross-origin requests
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Cache-Control': 'no-cache',
           'Pragma': 'no-cache',
-          'Expires': '0'
+          'Accept': 'application/json',
+          'Origin': window.location.origin
         },
-        credentials,
+        credentials: 'include', // Always include credentials for both dev and prod
+        mode: 'cors', // Explicitly set CORS mode
         body: JSON.stringify({
           priceId,
           userId,
@@ -197,6 +198,10 @@ export const createCheckoutSession = async (
     } catch (error: unknown) {
       console.error(`Attempt ${attempt} failed:`, error);
       
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        console.error('Connection error - server may be rejecting the request or have CORS issues');
+      }
+      
       // Only retry for network errors or if explicitly marked as retryable
       if (attempt < MAX_RETRIES && 
           ((error instanceof TypeError) || // Network error
@@ -233,8 +238,9 @@ export const getUserSubscription = async (userId: string): Promise<{
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      endpoint = `https://fishcad.com/api/pricing/user-subscription/${userId}`;
-      console.log(`Using production subscription endpoint: ${endpoint}`);
+      // IMPORTANT: Try direct request to the main domain without the /api path
+      endpoint = `https://fishcad.com/pricing/user-subscription/${userId}`;
+      console.log(`Using simplified production subscription endpoint: ${endpoint}`);
     } else {
       const endpointPath = API_URL.includes('/api') 
         ? `/pricing/user-subscription/${userId}`
@@ -248,18 +254,17 @@ export const getUserSubscription = async (userId: string): Promise<{
     
     console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
     
-    // In production, always use credentials include
-    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
-    
     const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Accept': 'application/json',
+        'Origin': window.location.origin
       },
-      credentials,
+      credentials: 'include', // Always include credentials
+      mode: 'cors', // Explicitly set CORS mode
       // Add a reasonable timeout
       signal: AbortSignal.timeout(10000), // 10 second timeout
     });
@@ -313,8 +318,9 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      endpoint = 'https://fishcad.com/api/pricing/cancel-subscription';
-      console.log(`Using production cancel endpoint: ${endpoint}`);
+      // IMPORTANT: Try direct request to the main domain without the /api path
+      endpoint = 'https://fishcad.com/pricing/cancel-subscription';
+      console.log(`Using simplified production cancel endpoint: ${endpoint}`);
     } else {
       const endpointPath = API_URL.includes('/api') 
         ? '/pricing/cancel-subscription' 
@@ -328,18 +334,17 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
     
     console.log(`Cancelling subscription for user: ${userId}`);
     
-    // In production, always use credentials include
-    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
-    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Accept': 'application/json',
+        'Origin': window.location.origin
       },
-      credentials,
+      credentials: 'include', // Always include credentials
+      mode: 'cors', // Explicitly set CORS mode
       body: JSON.stringify({
         userId,
       }),
@@ -395,8 +400,9 @@ export const verifySubscription = async (
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      endpoint = 'https://fishcad.com/api/pricing/verify-subscription';
-      console.log(`Using production verify endpoint: ${endpoint}`);
+      // IMPORTANT: Try direct request to the main domain without the /api path
+      endpoint = 'https://fishcad.com/pricing/verify-subscription';
+      console.log(`Using simplified production verify endpoint: ${endpoint}`);
     } else {
       const endpointPath = API_URL.includes('/api') 
         ? '/pricing/verify-subscription' 
@@ -410,18 +416,17 @@ export const verifySubscription = async (
     
     console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'}`);
     
-    // In production, always use credentials include
-    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
-    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Accept': 'application/json',
+        'Origin': window.location.origin
       },
-      credentials,
+      credentials: 'include', // Always include credentials
+      mode: 'cors', // Explicitly set CORS mode
       body: JSON.stringify({
         userId,
         email,

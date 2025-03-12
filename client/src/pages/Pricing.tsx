@@ -19,7 +19,7 @@ import { Check, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { createCheckoutSession, STRIPE_PRICES } from '@/lib/stripeApi';
+import { createCheckoutSession, STRIPE_PRICES, STRIPE_KEYS } from '@/lib/stripeApi';
 import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { CrownIcon } from 'lucide-react';
@@ -72,29 +72,60 @@ export default function PricingPage() {
       
       console.log('Selected plan:', planType, 'using price ID:', priceId);
       
-      // For production fishcad.com, attempt direct Stripe checkout first
-      // This bypasses our server entirely for more reliability
-      if (window.location.hostname.includes('fishcad.com')) {
+      // USING DIRECT STRIPE CHECKOUT FOR ALL DOMAINS FOR IMMEDIATE RELIABILITY
+      try {
+        console.log('Using direct Stripe checkout for maximum reliability...');
+        
+        // First try the most reliable approach - direct Stripe URL
         try {
-          console.log('Using direct Stripe checkout for production...');
+          console.log('Attempting direct URL approach first...');
+          // Direct link to Stripe Checkout with parameters in URL
+          const params = new URLSearchParams({
+            'client_reference_id': user.uid,
+            'customer_email': user.email,
+            'mode': 'subscription',
+            'success_url': `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+            'cancel_url': `${window.location.origin}/pricing`,
+          });
           
-          // Import dynamically to avoid circular dependencies
-          const { createDirectStripeCheckout } = await import('../lib/stripeApi');
+          // For price, we need to add it separately
+          params.append('line_items[0][price]', priceId);
+          params.append('line_items[0][quantity]', '1');
           
-          // Use the direct checkout method
-          await createDirectStripeCheckout(priceId, user.uid, user.email);
+          // Add API key
+          params.append('key', STRIPE_KEYS.PUBLISHABLE_KEY);
           
-          // If we get here, the direct checkout was initiated successfully
-          console.log('Direct checkout initiated successfully');
-          setIsLoading(false);
+          // Construct the final URL
+          const url = `https://checkout.stripe.com/pay/${params.toString()}`;
+          console.log('Opening direct Stripe URL:', url);
+          
+          // Open in new tab AND directly from window.location for full reliability
+          window.open(url, '_blank');
+          window.location.href = url;
+          
+          // No need to proceed with other methods
           return;
-        } catch (directError) {
-          console.error('Direct checkout failed, falling back to API method:', directError);
-          // Continue to try the API method below
+        } catch (urlError) {
+          console.error('Direct URL approach failed, trying Stripe.js:', urlError);
         }
+        
+        // Try the Stripe.js approach as a fallback
+        // Import dynamically to avoid circular dependencies
+        const { createDirectStripeCheckout } = await import('../lib/stripeApi');
+        
+        // Use the direct checkout method
+        await createDirectStripeCheckout(priceId, user.uid, user.email);
+        
+        // If we get here, the direct checkout was initiated successfully
+        console.log('Direct checkout initiated successfully');
+        setIsLoading(false);
+        return;
+      } catch (directError) {
+        console.error('All direct checkout methods failed, falling back to API method:', directError);
+        // Continue to try the API method below
       }
       
-      // Only try the normal API approach if direct checkout failed or we're in dev
+      // Only try the normal API approach if all direct checkout methods failed
       try {
         // Try the normal checkout flow
         const { url } = await createCheckoutSession(priceId, user.uid, user.email);
@@ -114,8 +145,49 @@ export default function PricingPage() {
         console.error('Error creating checkout session:', error);
         console.error('Error details:', error);
         
-        setErrorMessage('Could not create checkout session. Please try again later.');
-        setIsLoading(false);
+        // LAST RESORT: Create a direct form submission to Stripe
+        try {
+          console.log('Final fallback: Creating form submission directly to Stripe...');
+          // Create a hidden form and submit it
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = 'https://checkout.stripe.com/pay';
+          form.target = '_blank';
+          
+          // Add the necessary fields
+          const addField = (name: string, value: string) => {
+            const field = document.createElement('input');
+            field.type = 'hidden';
+            field.name = name;
+            field.value = value;
+            form.appendChild(field);
+          };
+          
+          // Add required fields
+          addField('key', STRIPE_KEYS.PUBLISHABLE_KEY);
+          addField('line_items[0][price]', priceId);
+          addField('line_items[0][quantity]', '1');
+          addField('mode', 'subscription');
+          addField('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
+          addField('cancel_url', `${window.location.origin}/pricing`);
+          
+          // Add customer email if provided
+          if (user.email) {
+            addField('customer_email', user.email);
+          }
+          
+          // Append the form to the body, submit it, and remove it
+          document.body.appendChild(form);
+          form.submit();
+          document.body.removeChild(form);
+          
+          console.log('Form submission completed');
+          setIsLoading(false);
+        } catch (formError) {
+          console.error('Form submission failed:', formError);
+          setErrorMessage('Could not create checkout session. Please try again later or contact support.');
+          setIsLoading(false);
+        }
       }
     } catch (error) {
       console.error('Error in subscription flow:', error);

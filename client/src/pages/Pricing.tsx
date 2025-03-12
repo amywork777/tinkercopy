@@ -133,53 +133,52 @@ export default function PricingPage() {
         
         console.log(`Using ${isAnnual ? 'annual' : 'monthly'} plan with price ID: ${realPriceId} (TEST MODE)`);
         
-        // SIMPLIFIED APPROACH - Create an invisible checkout form that posts directly to Stripe
+        // STRIPE REDIRECT APPROACH - Use Stripe's redirectToCheckout method instead of form
         try {
-          // Create a hidden form to submit to Stripe
-          const form = document.createElement('form');
-          form.method = 'POST';
-          form.action = 'https://buy.stripe.com/test_14k5lpa9V5LNaHe3cc';
-          form.style.display = 'none';
-          
-          // Append all required fields
-          const appendInput = (name: string, value: string) => {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = name;
-            input.value = value;
-            form.appendChild(input);
-          };
-          
-          // Get the Stripe publishable key - THIS IS REQUIRED
+          // Get the Stripe publishable key
           const stripePublishableKey = 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm';
           
-          // Add all required parameters
-          appendInput('apiKey', stripePublishableKey); // This was missing! It's required for direct checkout
-          appendInput('price', realPriceId);
-          appendInput('quantity', '1');
-          appendInput('mode', 'subscription');
-          appendInput('success_url', 'https://www.fishcad.com/pricing-success');
-          appendInput('cancel_url', 'https://www.fishcad.com/pricing');
-          if (user?.id) appendInput('client_reference_id', user.id);
-          if (user?.email) appendInput('prefilled_email', user.email);
+          // Create an async function to handle the Stripe checkout
+          const initiateStripeCheckout = async () => {
+            // Load Stripe and create checkout session
+            const stripe = await import('@stripe/stripe-js');
+            const stripeInstance = await stripe.loadStripe(stripePublishableKey);
+            
+            if (!stripeInstance) {
+              throw new Error('Failed to initialize Stripe');
+            }
+            
+            // Redirect to Stripe Checkout page
+            const { error } = await stripeInstance.redirectToCheckout({
+              lineItems: [
+                {
+                  price: realPriceId,
+                  quantity: 1
+                }
+              ],
+              mode: 'subscription',
+              successUrl: `${window.location.origin}/pricing-success`,
+              cancelUrl: `${window.location.origin}/pricing`,
+              clientReferenceId: user?.id,
+              customerEmail: user?.email || undefined
+            });
+            
+            if (error) {
+              console.error('Stripe redirect error:', error);
+              throw error;
+            }
+          };
           
-          // Add the form to the body and submit it
-          document.body.appendChild(form);
-          console.log('Submitting direct Stripe checkout form with:', {
-            apiKey: stripePublishableKey,
-            price: realPriceId,
-            success_url: 'https://www.fishcad.com/pricing-success',
-            cancel_url: 'https://www.fishcad.com/pricing'
+          // Call the async function
+          initiateStripeCheckout().catch(stripeError => {
+            console.error('Stripe checkout failed:', stripeError);
+            toast.error('Payment system error. Please try again later or contact support.');
+            setIsLoading(false);
           });
           
-          // Give a slight delay to ensure toast is shown
-          setTimeout(() => {
-            form.submit();
-          }, 1000);
-          
-          return; // Exit early since checkout is handled by form submission
+          return; // Exit early since checkout is handled by Stripe redirect
         } catch (formError) {
-          console.error('Form submission failed:', formError);
+          console.error('Stripe checkout failed:', formError);
           toast.error('Payment system error. Please try again later or contact support.');
           setIsLoading(false);
         }

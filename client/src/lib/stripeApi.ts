@@ -79,13 +79,13 @@ export const createCheckoutSession = async (
 
   try {
     // SPECIAL HANDLING FOR FISHCAD.COM DOMAIN
-    // Check if we're on fishcad.com - if so, use direct Stripe method
+    // Check if we're on fishcad.com - if so, use Stripe redirect method
     const hostname = window.location.hostname;
     const isFishCad = hostname.includes('fishcad.com');
     
-    // If on fishcad.com, use direct Stripe checkout to bypass server issues
+    // If on fishcad.com, use Stripe redirect checkout instead of buy.stripe.com
     if (isFishCad) {
-      console.log('Using DIRECT Stripe checkout flow for fishcad.com in TEST MODE');
+      console.log('Using REDIRECT Stripe checkout flow for fishcad.com in TEST MODE');
       
       // Determine which price ID to use based on the selected plan
       const isAnnual = priceId.includes('annual') || priceId.includes('year');
@@ -95,51 +95,39 @@ export const createCheckoutSession = async (
         ? STRIPE_TEST_KEYS.ANNUAL_PRICE
         : STRIPE_TEST_KEYS.MONTHLY_PRICE;
       
-      console.log(`Using direct Stripe TEST checkout with price ID: ${realPriceId} (${isAnnual ? 'annual' : 'monthly'} plan)`);
+      console.log(`Using Stripe redirect checkout with price ID: ${realPriceId} (${isAnnual ? 'annual' : 'monthly'} plan)`);
       clearTimeout(timeoutId);
       
-      // Get the Stripe publishable key - use test key
-      const publishableKey = STRIPE_TEST_KEYS.PUBLISHABLE_KEY;
+      // Create a standard Stripe checkout session using the Stripe API directly
+      const stripe = await import('@stripe/stripe-js');
+      const stripeInstance = await stripe.loadStripe(STRIPE_TEST_KEYS.PUBLISHABLE_KEY);
       
-      // Create a form-based approach which is most reliable for direct checkout
-      const form = document.createElement('form');
-      form.method = 'POST';
-      // Direct to buy.stripe.com with test parameters
-      form.action = 'https://buy.stripe.com/test_14k5lpa9V5LNaHe3cc';
-      form.style.display = 'none';
+      if (!stripeInstance) {
+        throw new Error('Failed to initialize Stripe');
+      }
       
-      // Helper function to add form inputs
-      const appendInput = (name: string, value: string) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = name;
-        input.value = value;
-        form.appendChild(input);
-      };
-      
-      // Add required parameters - apiKey is crucial!
-      appendInput('apiKey', publishableKey);
-      appendInput('price', realPriceId);
-      appendInput('quantity', '1');
-      appendInput('mode', 'subscription');
-      appendInput('success_url', `${window.location.origin}/pricing-success`);
-      appendInput('cancel_url', `${window.location.origin}/pricing`);
-      appendInput('client_reference_id', userId);
-      if (email) appendInput('prefilled_email', email);
-      
-      // Add to body and submit
-      document.body.appendChild(form);
-      console.log('Submitting direct form to Stripe');
-      
-      // Return a promise that resolves when the form is submitted
-      return new Promise((resolve) => {
-        // Use a delay to ensure the app can capture the promise
-        setTimeout(() => {
-          form.submit();
-          // Resolve with a dummy URL (the form will redirect anyway)
-          resolve({ url: '#' });
-        }, 100);
+      // Redirect to Stripe Checkout page
+      const { error } = await stripeInstance.redirectToCheckout({
+        lineItems: [
+          {
+            price: realPriceId,
+            quantity: 1
+          }
+        ],
+        mode: 'subscription',
+        successUrl: `${window.location.origin}/pricing-success`,
+        cancelUrl: `${window.location.origin}/pricing`,
+        clientReferenceId: userId,
+        customerEmail: email || undefined
       });
+      
+      if (error) {
+        console.error('Stripe redirect error:', error);
+        throw error;
+      }
+      
+      // Return a dummy URL since the redirect already happened
+      return { url: '#' };
     }
     
     // For non-fishcad.com domains, continue with the regular checkout flow

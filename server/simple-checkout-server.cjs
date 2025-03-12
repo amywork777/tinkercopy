@@ -89,24 +89,6 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Log Stripe key mode
-const isProductionKey = process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
-console.log(`Simple Checkout Server using Stripe ${isProductionKey ? 'PRODUCTION' : 'TEST'} mode`);
-if (!isProductionKey) {
-  console.warn('WARNING: Not using production Stripe key. Checkout may not work correctly in production.');
-} else {
-  console.log('✓ Production Stripe key detected in simple-checkout-server');
-}
-
-// Constants for Stripe products
-const STRIPE_PRICES = {
-  MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
-  ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
-};
-
-// Log the price IDs being used
-console.log('Simple Checkout Server using Stripe Price IDs:', STRIPE_PRICES);
-
 // Validate Stripe key
 (async function validateStripeKey() {
   try {
@@ -138,99 +120,836 @@ if (!fs.existsSync(stlFilesDir)) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configure middleware for request parsing
+// Configure allowed origins for CORS
+const allowedOrigins = [
+  'http://localhost:5173',      // Local Vite dev server
+  'http://localhost:3000',      // Local Next.js dev server
+  'https://fishcad.com',        // Production domain
+  'https://www.fishcad.com',    // Production domain with www
+  'https://app.fishcad.com',    // App subdomain (if used)
+  process.env.DOMAIN            // Domain from env var (if set)
+].filter(Boolean); // Remove any undefined/null values
+
+console.log('Allowed CORS origins:', allowedOrigins);
+
+// Configure CORS middleware with specific options
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) {
+      console.log('Request with no origin allowed');
+      return callback(null, true);
+    }
+    
+    // Check if the origin is allowed
+    if (allowedOrigins.includes(origin) || 
+        origin.endsWith('fishcad.com') || 
+        origin.includes('localhost')) {
+      console.log(`CORS request from origin: ${origin} - allowed`);
+      return callback(null, true);
+    }
+    
+    console.error(`CORS request from origin: ${origin} - not allowed`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Add better middleware for parsing form data (specifically for 3D print checkout)
-const bodyParserMiddleware = express.urlencoded({ extended: true, limit: '50mb' });
+// Add OPTIONS handler for preflight requests
+app.options('*', cors());
 
-// Set up CORS to allow cross-origin requests, especially for fishcad.com
-app.use(cors({
-  origin: '*', // Allow all origins for maximum compatibility
-  credentials: true, // Allow cookies
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
-}));
-
-// Middleware to log all requests
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${req.headers['content-type'] || 'no content-type'} - Origin: ${req.headers.origin || 'unknown'}`);
-  next();
+// Add health check endpoint
+app.get('/api/health-check', (req, res) => {
+  console.log('Health check requested from:', req.headers.origin || 'unknown origin');
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'API is healthy',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Special case for Stripe webhook to handle raw body
 app.use('/api/webhook', express.raw({ type: 'application/json' }));
-app.use('/webhook', express.raw({ type: 'application/json' }));
 
 // Add pricing API endpoint for subscription checkout
 app.post('/api/pricing/create-checkout-session', async (req, res) => {
-  console.log('Received checkout request at /api/pricing/create-checkout-session');
-  console.log('Request headers:', req.headers);
-  handleCheckoutSession(req, res);
+  try {
+    const { priceId, userId, email, force_new_customer } = req.body;
+    
+    console.log('Received subscription checkout request:', { 
+      priceId, 
+      userId, 
+      email,
+      force_new_customer: !!force_new_customer
+    });
+    
+    if (!priceId || !userId || !email) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    let customerId = null;
+    
+    // Handle Stripe customer
+    if (firestore && !force_new_customer) {
+      try {
+        const userRef = firestore.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        
+        if (userDoc.exists && userDoc.data().stripeCustomerId) {
+          try {
+            // Verify that customer exists in live mode
+            await stripe.customers.retrieve(userDoc.data().stripeCustomerId);
+            customerId = userDoc.data().stripeCustomerId;
+            console.log(`Using existing Stripe customer ID: ${customerId}`);
+          } catch (stripeError) {
+            console.log(`Customer ID exists in Firestore but not in Stripe (likely test vs live mode). Creating new customer.`);
+            const customer = await stripe.customers.create({
+              email: email,
+              metadata: {
+                userId: userId,
+              },
+            });
+            customerId = customer.id;
+            
+            // Update Firestore with the new customer ID
+            await userRef.update({
+              stripeCustomerId: customerId,
+            });
+            console.log(`Created new Stripe customer: ${customerId} and updated Firestore`);
+          }
+        } else {
+          // Create a new customer
+          const customer = await stripe.customers.create({
+            email: email,
+            metadata: {
+              userId: userId,
+            },
+          });
+          customerId = customer.id;
+          console.log(`Created new Stripe customer: ${customerId}`);
+          
+          // Create or update user document with Stripe customer ID
+          if (userDoc.exists) {
+            // If document exists, update it
+            await userRef.update({
+              stripeCustomerId: customerId,
+            });
+            console.log(`Updated existing user document with Stripe customer ID`);
+          } else {
+            // If document doesn't exist, create it
+            await userRef.set({
+              uid: userId,
+              email: email,
+              stripeCustomerId: customerId,
+              createdAt: new Date(),
+              isPro: false,
+              subscriptionStatus: 'none',
+              modelsRemainingThisMonth: 0,
+              lastResetDate: new Date().toISOString().substring(0, 7),
+            });
+            console.log(`Created new user document with Stripe customer ID`);
+          }
+        }
+      } catch (firestoreError) {
+        console.error('Firestore error:', firestoreError);
+        
+        // Check if this is a "not found" error for the user document
+        if (firestoreError.code === 5 && firestoreError.details && firestoreError.details.includes('No document to update')) {
+          // Create a new user document
+          try {
+            const userRef = firestore.collection('users').doc(userId);
+            
+            // Create a new customer first
+            const customer = await stripe.customers.create({
+              email: email,
+              metadata: {
+                userId: userId,
+              },
+            });
+            customerId = customer.id;
+            
+            // Then create the user document
+            await userRef.set({
+              uid: userId,
+              email: email,
+              stripeCustomerId: customerId,
+              createdAt: new Date(),
+              isPro: false,
+              subscriptionStatus: 'none',
+              modelsRemainingThisMonth: 0,
+              lastResetDate: new Date().toISOString().substring(0, 7),
+            });
+            console.log(`Created new user document for ID: ${userId}`);
+          } catch (createError) {
+            console.error('Error creating user document:', createError);
+            // Continue with Stripe checkout anyway
+          }
+        } else {
+          // For other errors, continue with Stripe checkout without updating Firestore
+          const customer = await stripe.customers.create({
+            email: email,
+            metadata: {
+              userId: userId,
+            },
+          });
+          customerId = customer.id;
+          console.log(`Created new Stripe customer (Firestore failed): ${customerId}`);
+        }
+      }
+    } else {
+      // Fallback if Firestore is not available or force_new_customer is true
+      const customer = await stripe.customers.create({
+        email: email,
+        metadata: {
+          userId: userId,
+        },
+      });
+      customerId = customer.id;
+      console.log(`Created new Stripe customer (${force_new_customer ? 'forced new' : 'no Firestore'}): ${customerId}`);
+    }
+    
+    // Create the checkout session
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing`,
+      subscription_data: {
+        metadata: {
+          userId: userId,
+        },
+      },
+    });
+    
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Add a direct endpoint for simpler access from fishcad.com
-app.post('/pricing/create-checkout-session', async (req, res) => {
-  console.log('Received checkout request at /pricing/create-checkout-session');
-  console.log('Request headers:', req.headers);
-  handleCheckoutSession(req, res);
+// Endpoint to store an STL file temporarily
+app.post('/api/stl-files', (req, res) => {
+  try {
+    const { stlData, fileName } = req.body;
+    
+    console.log('Received STL file upload request:', { 
+      hasStlData: !!stlData, 
+      fileName,
+      dataType: typeof stlData,
+      dataLength: stlData ? (typeof stlData === 'string' ? stlData.length : 'non-string') : 0
+    });
+    
+    if (!stlData) {
+      console.error('STL file upload failed: No STL data provided');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No STL data provided' 
+      });
+    }
+    
+    // Generate a unique ID for the file
+    const fileId = `stl-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+    const safeName = fileName?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'model.stl';
+    const filePath = path.join(stlFilesDir, `${fileId}-${safeName}`);
+    
+    // Process the data if it's a data URL
+    let fileContent;
+    try {
+      if (typeof stlData === 'string' && stlData.startsWith('data:')) {
+        const matches = stlData.match(/^data:([^;]+);base64,(.+)$/);
+        if (matches && matches.length >= 3) {
+          fileContent = Buffer.from(matches[2], 'base64');
+          console.log(`Decoded base64 data URL, size: ${fileContent.length} bytes`);
+    } else {
+          console.log('Data URL format not recognized, treating as raw data');
+          fileContent = Buffer.from(stlData);
+        }
+      } else {
+        console.log('Not a data URL, treating as raw data');
+        fileContent = Buffer.from(stlData);
+      }
+      
+      if (!fileContent || fileContent.length === 0) {
+        throw new Error('Processed file content is empty');
+      }
+    } catch (dataProcessingError) {
+      console.error('STL data processing error:', dataProcessingError);
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to process STL data',
+        error: dataProcessingError.message
+      });
+    }
+    
+    // Write the file
+    try {
+      fs.writeFileSync(filePath, fileContent);
+      console.log(`Stored STL file at: ${filePath}, size: ${fileContent.length} bytes`);
+    } catch (fileWriteError) {
+      console.error('File write error:', fileWriteError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to write STL file to disk',
+        error: fileWriteError.message
+      });
+    }
+    
+    // Store the metadata in memory
+    stlFileStorage.set(fileId, {
+      filePath,
+      fileName: safeName,
+      createdAt: new Date().toISOString()
+    });
+    
+    // Generate the public URL
+    const publicUrl = `http://localhost:${process.env.PORT || 3001}/api/stl-files/${fileId}`;
+    console.log(`Created public URL for STL file: ${publicUrl}`);
+    
+    return res.status(200).json({
+      success: true,
+      fileId,
+      url: publicUrl,
+      storagePath: filePath
+    });
+  } catch (error) {
+    console.error('Unexpected error storing STL file:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to store STL file',
+      error: error.message
+    });
+  }
 });
 
-// Add another direct endpoint for maximum compatibility
-app.post('/create-checkout-session', async (req, res) => {
-  console.log('Received checkout request at /create-checkout-session');
-  console.log('Request headers:', req.headers);
-  handleCheckoutSession(req, res);
+// Endpoint to retrieve an STL file by ID
+app.get('/api/stl-files/:fileId', (req, res) => {
+  try {
+    const { fileId } = req.params;
+    
+    // Try to retrieve the file metadata
+    const fileData = stlFileStorage.get(fileId);
+    
+    if (!fileData) {
+      return res.status(404).json({
+        success: false,
+        message: 'STL file not found'
+      });
+    }
+    
+    // Set appropriate headers for file download
+    res.setHeader('Content-Disposition', `attachment; filename="${fileData.fileName}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    
+    // Send the file
+    return res.sendFile(fileData.filePath);
+  } catch (error) {
+    console.error('Error retrieving STL file:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve STL file'
+    });
+  }
 });
 
-// Handle GET requests to redirect to the appropriate page
-app.get('/create-checkout-session', (req, res) => {
-  console.log('Received GET request to /create-checkout-session, redirecting to pricing page');
-  res.redirect('/pricing');
-});
+/**
+ * Stores STL data in Firebase Storage
+ * @param {string|Buffer} stlData - The STL data to store, either as a base64 string or Buffer
+ * @param {string} fileName - The name of the STL file
+ * @returns {Promise<{downloadUrl: string, publicUrl: string, storagePath: string, fileName: string, fileSize: number}>}
+ */
+async function storeSTLInFirebase(stlData, fileName) {
+  console.log('Preparing to store STL file in Firebase Storage...');
+  
+  try {
+    // Ensure Firebase Storage is initialized
+    if (!admin || !admin.storage || typeof admin.storage !== 'function') {
+      console.error('Firebase Storage not initialized properly');
+      throw new Error('Firebase Storage not initialized');
+    }
+    
+    // Create a safe filename (replace spaces and special chars)
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+    
+    // Process the STL data
+    let stlBuffer;
+    console.log(`Processing ${typeof stlData === 'string' ? 'base64' : 'buffer'} STL data...`);
+    
+    if (typeof stlData === 'string') {
+      // If stlData is a base64 string, convert it to buffer
+      const base64Data = stlData.replace(/^data:.*?;base64,/, '');
+      stlBuffer = Buffer.from(base64Data, 'base64');
+    } else if (Buffer.isBuffer(stlData)) {
+      stlBuffer = stlData;
+    } else {
+      throw new Error(`Unsupported STL data format: ${typeof stlData}`);
+    }
+    
+    const fileSize = stlBuffer.length;
+    console.log(`STL file size: ${fileSize} bytes`);
+    
+    // Write to a temporary file
+    const timestamp = Date.now();
+    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const tempFilePath = path.join(os.tmpdir(), `${timestamp}-${uniqueId}-${safeFileName}`);
+    
+    console.log(`Writing STL data to temporary file: ${tempFilePath}`);
+    fs.writeFileSync(tempFilePath, stlBuffer);
+    console.log('Temporary STL file created successfully');
+    
+    // Create a path in Firebase Storage organized by date (YYYY/MM/DD)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    
+    const storagePath = `stl-files/${year}/${month}/${day}/${timestamp}-${uniqueId}-${safeFileName}`;
+    console.log(`Firebase Storage path: ${storagePath}`);
+    
+    // Upload the file to Firebase Storage
+    const bucket = admin.storage().bucket();
+    if (!bucket) {
+      throw new Error('Firebase Storage bucket not available');
+    }
+    
+    console.log('Uploading to Firebase Storage...');
+    
+    // Set metadata including content type
+    const metadata = {
+      contentType: 'application/sla',
+      cacheControl: 'public, max-age=31536000', // Cache for 1 year
+    };
+    
+    // Upload file with metadata
+    await bucket.upload(tempFilePath, {
+      destination: storagePath,
+      metadata: metadata
+    });
+    
+    console.log('STL file uploaded successfully to Firebase Storage');
+    
+    // Get URLs - don't try to set ACLs since uniform bucket-level access is enabled
+    const [signedUrl] = await bucket.file(storagePath).getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 315360000000, // 10 years in milliseconds
+    });
+    
+    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+    
+    console.log(`Generated public URL: ${publicUrl}`);
+    console.log(`Generated signed URL (expires in 10 years): ${signedUrl}`);
+    
+    // Clean up the temporary file
+    try {
+      fs.unlinkSync(tempFilePath);
+      console.log('Temporary file deleted');
+    } catch (cleanupError) {
+      console.error('Error deleting temporary file:', cleanupError);
+    }
+    
+    return {
+      downloadUrl: signedUrl,
+      publicUrl: publicUrl,
+      storagePath: storagePath,
+      fileName: safeFileName,
+      fileSize: fileSize
+    };
+    
+  } catch (error) {
+    // Clean up temporary file in case of error
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+        console.log('Temporary file deleted');
+      } catch (cleanupError) {
+        console.error('Error deleting temporary file:', cleanupError);
+      }
+    }
+    
+    console.error('STL storage error:', error);
+    throw new Error(`Firebase upload failed: ${error.message}`);
+  }
+}
 
-// Add CORS preflight handler for the 3D print checkout endpoint
-app.options('/api/create-checkout-session', (req, res) => {
-  // Set CORS headers
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept');
-  res.header('Access-Control-Max-Age', '86400'); // 24 hours
-  res.status(200).send();
-});
+// Add sendOrderConfirmationEmail function
+async function sendOrderConfirmationEmail(orderData) {
+  try {
+    console.log('Preparing order confirmation email for:', orderData.customerEmail);
+    
+    // Use Nodemailer if configured
+    if (process.env.EMAIL_USER && transporter) {
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: orderData.customerEmail,
+        subject: `Order Confirmation: ${orderData.orderId}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #4a5568;">Your 3D Print Order Confirmation</h2>
+            <p>Hello ${orderData.customerName},</p>
+            <p>Thank you for your order! We've received your payment and are processing your 3D print.</p>
+            
+            <div style="background-color: #f7fafc; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #4a5568;">Order Details</h3>
+              <p><strong>Order ID:</strong> ${orderData.orderId}</p>
+              <p><strong>Date:</strong> ${new Date(orderData.orderDate).toLocaleString()}</p>
+              <p><strong>Model:</strong> ${orderData.orderDetails.modelName}</p>
+              <p><strong>Color:</strong> ${orderData.orderDetails.color}</p>
+              <p><strong>Quantity:</strong> ${orderData.orderDetails.quantity}</p>
+              <p><strong>Total:</strong> $${orderData.amountTotal.toFixed(2)}</p>
+            </div>
+            
+            ${orderData.stlFile && (orderData.stlFile.downloadUrl || orderData.stlFile.publicUrl) ? `
+              <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <h3 style="margin-top: 0; color: #0366d6;">Your 3D Model File</h3>
+                <p>Your STL file "${orderData.stlFile.fileName}" has been securely stored and is available for download.</p>
+                <a href="${orderData.stlFile.downloadUrl || orderData.stlFile.publicUrl}" 
+                   style="display: inline-block; background-color: #0366d6; color: white; padding: 10px 20px; 
+                          text-decoration: none; border-radius: 4px; margin-top: 10px; font-weight: bold;">
+                  Download STL
+                </a>
+              </div>
+            ` : ''}
+            
+            <div style="margin-top: 30px;">
+              <p>If you have any questions about your order, please contact our support team.</p>
+              <p>Thank you for choosing our 3D printing service!</p>
+            </div>
+          </div>
+        `
+      };
+      
+      const info = await transporter.sendMail(mailOptions);
+      console.log('Order confirmation email sent with Nodemailer:', info.messageId);
+      return true;
+    } else {
+      console.log('Email configuration not available. Skipping order confirmation email.');
+      return false;
+    }
+  } catch (error) {
+    console.error('Failed to send order confirmation email:', error);
+    return false;
+  }
+}
 
-// Also add CORS preflight handler for the direct endpoint (without /api prefix)
-app.options('/create-checkout-session', (req, res) => {
-  // Set CORS headers
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept');
-  res.header('Access-Control-Max-Age', '86400'); // 24 hours
-  res.status(200).send();
-});
+// Function to handle successful payment
+async function handleSuccessfulPayment(session) {
+  try {
+    console.log('Processing successful payment', session.id);
+    
+    // Extract order details from session metadata
+    const { 
+      modelName, 
+      color, 
+      quantity, 
+      finalPrice, 
+      stlFileName, 
+      stlDownloadUrl,
+      stlPublicUrl,
+      stlStoragePath,
+      stlFileSize,
+      stlDataPreview
+    } = session.metadata;
+    
+    console.log('Order details from session metadata:', {
+      modelName, 
+      color, 
+      quantity, 
+      finalPrice, 
+      stlFileName,
+      hasStlDownloadUrl: !!stlDownloadUrl,
+      hasStlPublicUrl: !!stlPublicUrl,
+      hasStlStoragePath: !!stlStoragePath,
+      stlFileSize: stlFileSize || 'unknown'
+    });
+    
+    // Get user info from session or use default values
+    const customerEmail = session.customer_details?.email || 'No email provided';
+    const customerName = session.customer_details?.name || 'No name provided';
+    
+    // Get shipping details if available
+    let shippingAddress = 'No shipping address provided';
+    if (session.shipping) {
+      const address = session.shipping.address;
+      shippingAddress = `${address.line1}, ${address.city}, ${address.state}, ${address.postal_code}, ${address.country}`;
+      if (address.line2) {
+        shippingAddress = `${address.line1}, ${address.line2}, ${address.city}, ${address.state}, ${address.postal_code}, ${address.country}`;
+      }
+    }
+    
+    // Get STL data details - look at multiple sources for the download URL
+    let stlInfo = {
+      fileName: stlFileName || 'unknown.stl',
+      downloadUrl: stlDownloadUrl || '',
+      publicUrl: stlPublicUrl || '',
+      storagePath: stlStoragePath || '',
+      fileSize: parseInt(stlFileSize || '0', 10) || 0
+    };
+    
+    // Log STL info for debugging
+    console.log('STL file information:', {
+      fileName: stlInfo.fileName,
+      hasDownloadUrl: !!stlInfo.downloadUrl,
+      hasPublicUrl: !!stlInfo.publicUrl,
+      hasStoragePath: !!stlInfo.storagePath,
+      fileSize: stlInfo.fileSize
+    });
+    
+    // Create an order ID (could be random or based on session ID)
+    const orderId = `order-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    
+    // Store order in the database
+    try {
+      const orderData = {
+        orderId,
+        stripeSessionId: session.id,
+        customerEmail,
+        customerName,
+        shippingAddress,
+        paymentStatus: session.payment_status,
+        amountTotal: session.amount_total / 100, // Convert from cents to dollars
+        orderDetails: {
+          modelName,
+          color,
+          quantity: parseInt(quantity, 10) || 1,
+          finalPrice: parseFloat(finalPrice) || 0
+        },
+        stlFile: {
+          fileName: stlInfo.fileName,
+          downloadUrl: stlInfo.downloadUrl,
+          publicUrl: stlInfo.publicUrl,
+          storagePath: stlInfo.storagePath,
+          fileSize: stlInfo.fileSize,
+          dataPreview: stlDataPreview || ''
+        },
+        orderStatus: 'received',
+        orderDate: new Date(),
+        fulfillmentStatus: 'pending',
+        estimatedShippingDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 days from now
+      };
+      
+      let savedToFirestore = false;
+      
+      // First try to save to Firestore
+      try {
+        console.log('Saving order to Firestore:', orderId);
+        const db = admin.firestore();
+        await db.collection('orders').doc(orderId).set(orderData);
+        console.log('Order saved successfully to Firestore:', orderId);
+        savedToFirestore = true;
+      } catch (firestoreError) {
+        console.error('Error storing order in Firestore:', firestoreError);
+        // Fallback to memory storage
+        memoryOrderStore.push(orderData);
+        console.log(`Order ${orderId} stored in memory (Firestore failed)`);
+      }
+      
+      // Try to send confirmation email, but don't throw if it fails
+      try {
+        await sendOrderConfirmationEmail(orderData);
+        console.log(`Order confirmation email sent to ${customerEmail}`);
+      } catch (emailError) {
+        console.error('Failed to send order confirmation email:', emailError);
+        // Continue processing even if email fails
+      }
+      
+      return orderData;
+    } catch (dbError) {
+      console.error('Failed to save order to database:', dbError);
+      // Don't throw, just log the error and continue
+      return {
+        orderId,
+        error: `Error saving order: ${dbError.message}`
+      };
+    }
+  } catch (error) {
+    console.error('Error handling successful payment:', error);
+    throw new Error(`Failed to process payment: ${error.message}`);
+  }
+}
+
+// Send order notification email to the business
+async function sendOrderNotificationEmail(orderData) {
+  const businessEmail = process.env.BUSINESS_EMAIL;
+  
+  if (!businessEmail) {
+    console.error('No business email configured for notifications');
+    return false;
+  }
+  
+  // Format shipping address if available
+  let formattedAddress = 'No shipping address provided';
+  
+  if (orderData.shippingAddress) {
+    const address = orderData.shippingAddress;
+    formattedAddress = `
+      ${address.name || ''}<br>
+      ${address.line1 || ''}<br>
+      ${address.line2 ? address.line2 + '<br>' : ''}
+      ${address.city || ''}, ${address.state || ''} ${address.postal_code || ''}<br>
+      ${address.country || ''}
+    `;
+  }
+  
+  // Prepare email content
+  const subject = `New 3D Print Order: ${orderData.orderId}`;
+  
+  // Extract signed URL for easy copy-paste
+  const signedUrl = orderData.stlFile?.downloadUrl || '';
+  
+  const htmlContent = `
+    <h1>New 3D Print Order Received</h1>
+    
+    <h2>Order Details</h2>
+    <ul>
+      <li><strong>Order ID:</strong> ${orderData.orderId}</li>
+      <li><strong>Date:</strong> ${new Date().toLocaleDateString()}</li>
+      <li><strong>Model:</strong> ${orderData.modelName || 'Unknown'}</li>
+      <li><strong>Color:</strong> ${orderData.color || 'Unknown'}</li>
+      <li><strong>Quantity:</strong> ${orderData.quantity || 1}</li>
+      <li><strong>Price:</strong> $${orderData.finalPrice ? orderData.finalPrice.toFixed(2) : '0.00'}</li>
+    </ul>
+    
+    <h2>Customer Information</h2>
+    <ul>
+      <li><strong>Email:</strong> ${orderData.customerEmail || 'No email provided'}</li>
+    </ul>
+    
+    <h2>Payment Information</h2>
+    <ul>
+      <li><strong>Payment Status:</strong> ${orderData.paymentStatus || 'Unknown'}</li>
+      <li><strong>Payment ID:</strong> ${orderData.paymentId || 'Unknown'}</li>
+    </ul>
+    
+    <h2>Shipping Address</h2>
+    <div>${formattedAddress}</div>
+    
+    ${(orderData.stlFile && (orderData.stlFile.fileName || orderData.stlFileName)) ? `
+    <h2>STL File Information</h2>
+    <ul>
+      <li><strong>Filename:</strong> ${orderData.stlFile?.fileName || orderData.stlFileName || 'Unnamed File'}</li>
+      ${orderData.stlFile?.fileSize ? `<li><strong>File Size:</strong> ${(orderData.stlFile.fileSize / 1024 / 1024).toFixed(2)} MB</li>` : ''}
+      ${orderData.stlFile?.storagePath ? `<li><strong>Storage Path:</strong> ${orderData.stlFile.storagePath}</li>` : ''}
+    </ul>
+    
+    ${signedUrl ? `
+    <div style="margin: 20px 0; padding: 15px; border: 2px solid #4CAF50; background-color: #f8fff8; border-radius: 5px;">
+      <h3 style="margin-top: 0; color: #2E7D32;">⬇️ Direct STL Download Link (Valid for 10 Years)</h3>
+      <div style="margin-bottom: 10px;">
+        <a href="${signedUrl}" style="display: inline-block; padding: 12px 20px; background-color: #4CAF50; color: white; text-decoration: none; font-weight: bold; border-radius: 4px; font-size: 16px;">Download STL File</a>
+      </div>
+      <div style="margin-top: 10px; word-break: break-all; background-color: #f0f0f0; padding: 10px; border: 1px solid #ddd; border-radius: 3px; font-family: monospace; font-size: 12px;">
+        ${signedUrl}
+      </div>
+    </div>
+    `: ''}
+    
+    <h3>All Download Links</h3>
+    <ul>
+      ${orderData.stlFile?.downloadUrl ? `<li><strong>Signed URL:</strong> <a href="${orderData.stlFile.downloadUrl}">Download File</a></li>` : ''}
+      ${orderData.stlFile?.publicUrl ? `<li><strong>Public URL:</strong> <a href="${orderData.stlFile.publicUrl}">Download File</a></li>` : ''}
+      ${orderData.stlFile?.alternativeUrl ? `<li><strong>Alternative URL:</strong> <a href="${orderData.stlFile.alternativeUrl}">Download File</a></li>` : ''}
+    </ul>
+    ` : ''}
+    
+    <p>Please begin processing this order as soon as possible.</p>
+  `;
+  
+  try {
+    // Send email
+    const info = await transporter.sendMail({
+      from: `"3D Print Order System" <${process.env.EMAIL_USER}>`,
+      to: businessEmail,
+      subject: subject,
+      html: htmlContent,
+    });
+    
+    console.log('Order notification email sent with Nodemailer:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('Failed to send order notification email:', error);
+    return false;
+  }
+}
+
+// Send confirmation email to the customer
+async function sendCustomerConfirmationEmail(orderDetails) {
+  if (!orderDetails.customerEmail) {
+    console.error('No customer email provided for confirmation');
+    return false;
+  }
+  
+  // Prepare email content
+  const subject = `Your 3D Print Order Confirmation - ${orderDetails.orderId}`;
+  
+  const htmlContent = `
+    <h1>Your 3D Print Order Confirmation</h1>
+    <p>Thank you for your order! We've received your request and will begin processing it shortly.</p>
+    
+    <h2>Order Details</h2>
+    <ul>
+      <li><strong>Order ID:</strong> ${orderDetails.orderId}</li>
+      <li><strong>Date:</strong> ${new Date().toLocaleDateString()}</li>
+      <li><strong>Model:</strong> ${orderDetails.modelName || 'Unknown'}</li>
+      <li><strong>Color:</strong> ${orderDetails.color || 'Unknown'}</li>
+      <li><strong>Quantity:</strong> ${orderDetails.quantity || 1}</li>
+      <li><strong>Total:</strong> $${orderDetails.finalPrice ? orderDetails.finalPrice.toFixed(2) : '0.00'}</li>
+    </ul>
+    
+    ${orderDetails.stlFile && (orderDetails.stlFile.downloadUrl || orderDetails.stlFile.publicUrl) ? `
+    <div style="margin-top: 20px; margin-bottom: 20px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 5px; background-color: #f9f9f9;">
+      <h3 style="margin-top: 0; color: #333;">Your 3D Model File</h3>
+      <p>Your STL file is stored securely. You can download it using the button below:</p>
+      <a href="${orderDetails.stlFile.downloadUrl || orderDetails.stlFile.publicUrl}" 
+         style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">
+         Download STL
+      </a>
+    </div>
+    ` : ''}
+    
+    <p>We will ship your order to the address you provided.</p>
+    
+    <p>You will receive updates about your order status at this email address.</p>
+    
+    <p>If you have any questions, please contact our customer support.</p>
+    
+    <p>Thank you for choosing our 3D printing service!</p>
+  `;
+  
+  try {
+    // Send email
+    const info = await transporter.sendMail({
+      from: `"3D Print Orders" <${process.env.EMAIL_USER}>`,
+      to: orderDetails.customerEmail,
+      subject: subject,
+      html: htmlContent,
+    });
+    
+    console.log('Customer confirmation email sent with Nodemailer:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('Failed to send customer confirmation email:', error);
+    return false;
+  }
+}
 
 // Create Express route for creating a checkout session
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
-    console.log('Received checkout request, content type:', req.headers['content-type']);
-    
-    // Handle both JSON and form data
-    let checkoutData;
-    if (req.headers['content-type']?.includes('application/json')) {
-      // If the request is JSON, use the body directly
-      checkoutData = req.body;
-    } else if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
-      // If the request is form data, parse it
-      checkoutData = req.body;
-      console.log('Received form data for checkout', checkoutData);
-    } else {
-      // Unknown content type
-      console.log('Unknown content type, attempting to use body directly');
-      checkoutData = req.body;
-    }
-    
-    // Extract parameters from the request data
     const { 
       modelName, 
       color, 
@@ -239,35 +958,22 @@ app.post('/api/create-checkout-session', async (req, res) => {
       stlFileName, 
       stlFileData, 
       stlDownloadUrl,
-      stlStoragePath,
-      domain,
-      origin,
-      stlDataReference
-    } = checkoutData;
+      stlStoragePath 
+    } = req.body;
     
-    // Log receipt of the request data
     console.log('Received checkout request with:', { 
       modelName, 
       color, 
       quantity, 
       finalPrice, 
       hasStlFileData: !!stlFileData,
-      hasStlDataReference: !!stlDataReference,
-      stlFileName
+      stlFileDataType: stlFileData ? typeof stlFileData : 'none',
+      stlFileDataLength: stlFileData ? (typeof stlFileData === 'string' ? stlFileData.length : 0) : 0,
+      stlFileName,
+      stlDownloadUrl,
+      stlStoragePath
     });
     
-    // Set CORS headers to allow requests from fishcad.com
-    if (origin) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    }
-
-    // Check if coming from fishcad.com
-    const isFishCad = domain && domain.includes('fishcad.com');
-    
-    // Validations
     if (!modelName || !color || !quantity || !finalPrice) {
       console.log('Missing required checkout information');
       return res.status(400).json({ 
@@ -376,19 +1082,6 @@ app.post('/api/create-checkout-session', async (req, res) => {
     // Create the Stripe checkout session with STL file metadata
     console.log('Creating Stripe checkout session...');
     
-    // Customize redirect URLs based on domain
-    let successUrl = `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}`;
-    let cancelUrl = `${host}/`;
-    
-    // For fishcad.com production domain
-    if (isFishCad) {
-      console.log('Using production settings for fishcad.com domain');
-      successUrl = 'https://www.fishcad.com/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}';
-      cancelUrl = 'https://www.fishcad.com/';
-    }
-    
-    console.log(`Using redirect URLs: success=${successUrl}, cancel=${cancelUrl}`);
-    
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -398,8 +1091,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
         },
       ],
       mode: 'payment',
-      success_url: successUrl,
-      cancel_url: cancelUrl,
+      success_url: `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${host}/`,
       metadata: {
         modelName,
         color,
@@ -690,7 +1383,7 @@ app.post('/api/webhook', async (req, res) => {
     const event = stripe.webhooks.constructEvent(
       req.body,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET || 'whsec_live_production_value_needed'
+      process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test'
     );
     
     // Handle the event based on its type
@@ -1843,6 +2536,124 @@ app.get('/api/test-trial-expiration/:userId', async (req, res) => {
       currentTime: new Date().toISOString()
     }
   });
+});
+
+// Add generic checkout endpoint for maximum flexibility
+app.all('/api/checkout', async (req, res) => {
+  console.log(`Received ${req.method} request at /api/checkout`);
+  
+  // Handle OPTIONS requests for preflight
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return res.status(200).send();
+  }
+  
+  // Only proceed with POST
+  if (req.method !== 'POST') {
+    console.log(`Redirecting ${req.method} to POST handler`);
+    // Instead of returning 405, forward to the POST handler
+    req.method = 'POST';
+  }
+  
+  try {
+    const { priceId, userId, email, force_new_customer } = req.body;
+    
+    console.log('Received checkout request at simplified endpoint:', { 
+      priceId, 
+      userId, 
+      email,
+      force_new_customer: !!force_new_customer
+    });
+    
+    if (!priceId || !userId || !email) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // Rest of implementation is the same as other checkout endpoints
+    // ... proceed with the checkout process
+    let customerId = null;
+    
+    // Create a new customer every time in production for simplicity
+    try {
+      const customer = await stripe.customers.create({
+        email: email,
+        metadata: {
+          userId: userId,
+        },
+      });
+      customerId = customer.id;
+      console.log(`Created new Stripe customer: ${customerId}`);
+      
+      // Update Firestore if available
+      if (firestore) {
+        const userRef = firestore.collection('users').doc(userId);
+        await userRef.set({
+          stripeCustomerId: customerId,
+        }, { merge: true });
+        console.log('Updated Firestore with new customer ID');
+      }
+    } catch (stripeError) {
+      console.error('Error creating Stripe customer:', stripeError);
+      return res.status(500).json({ error: 'Failed to create Stripe customer', details: stripeError.message });
+    }
+    
+    // Create a checkout session with the customer
+    try {
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        success_url: `${req.headers.origin || 'https://fishcad.com'}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${req.headers.origin || 'https://fishcad.com'}/pricing`,
+        metadata: {
+          userId: userId,
+        },
+      });
+      
+      return res.json({ url: session.url });
+    } catch (stripeError) {
+      console.error('Error creating checkout session:', stripeError);
+      return res.status(500).json({ error: 'Failed to create checkout session', details: stripeError.message });
+    }
+  } catch (error) {
+    console.error('Error processing checkout request:', error);
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+// Add a catchall route that provides useful information
+app.all('*', (req, res) => {
+  const path = req.path;
+  const method = req.method;
+  
+  console.log(`Received ${method} request for unhandled path: ${path}`);
+  
+  // If the path contains "checkout" or "stripe", provide helpful debug info
+  if (path.includes('checkout') || path.includes('stripe')) {
+    return res.status(404).json({
+      error: 'Endpoint not found',
+      message: `The ${method} request to ${path} was not handled by the server.`,
+      availableEndpoints: [
+        '/api/checkout',
+        '/api/pricing/create-checkout-session',
+        '/pricing/create-checkout-session',
+        '/api/create-checkout-session',
+        '/create-checkout-session'
+      ],
+      suggestedEndpoint: '/api/checkout',
+      helpMessage: 'Try using the /api/checkout endpoint which handles all HTTP methods properly.'
+    });
+  }
+  
+  // Generic 404 for other routes
+  res.status(404).json({ error: 'Not found' });
 });
 
 // Start the server

@@ -150,7 +150,11 @@ export default function PricingPage() {
             form.appendChild(input);
           };
           
+          // Get the Stripe publishable key - THIS IS REQUIRED
+          const stripePublishableKey = 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi';
+          
           // Add all required parameters
+          appendInput('apiKey', stripePublishableKey); // This was missing! It's required for direct checkout
           appendInput('price', realPriceId);
           appendInput('quantity', '1');
           appendInput('mode', 'subscription');
@@ -162,6 +166,7 @@ export default function PricingPage() {
           // Add the form to the body and submit it
           document.body.appendChild(form);
           console.log('Submitting direct Stripe checkout form with:', {
+            apiKey: stripePublishableKey,
             price: realPriceId,
             success_url: 'https://www.fishcad.com/pricing-success',
             cancel_url: 'https://www.fishcad.com/pricing'

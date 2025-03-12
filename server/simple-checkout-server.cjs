@@ -142,9 +142,12 @@ const PORT = process.env.PORT || 3001;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Add better middleware for parsing form data (specifically for 3D print checkout)
+const bodyParserMiddleware = express.urlencoded({ extended: true, limit: '50mb' });
+
 // Set up CORS to allow cross-origin requests, especially for fishcad.com
 app.use(cors({
-  origin: true, // Allow all origins
+  origin: '*', // Allow all origins for maximum compatibility
   credentials: true, // Allow cookies
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
@@ -183,6 +186,16 @@ app.post('/create-checkout-session', async (req, res) => {
 
 // Add CORS preflight handler for the 3D print checkout endpoint
 app.options('/api/create-checkout-session', (req, res) => {
+  // Set CORS headers
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
+  res.status(200).send();
+});
+
+// Also add CORS preflight handler for the direct endpoint (without /api prefix)
+app.options('/create-checkout-session', (req, res) => {
   // Set CORS headers
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');

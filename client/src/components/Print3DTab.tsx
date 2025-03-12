@@ -325,7 +325,7 @@ const Print3DTab = () => {
             basePrice = 10 + ((volumeCubicCm - 200) / 800) * 20; // $10-$30
           } else if (volumeCubicCm < 5000) {
             basePrice = 30 + ((volumeCubicCm - 1000) / 4000) * 70; // $30-$100
-      } else {
+          } else {
             // For extremely large models, continue scaling (approximately $15 per 1000 cubic cm)
             basePrice = 100 + ((volumeCubicCm - 5000) / 1000) * 15;
           }
@@ -833,7 +833,12 @@ const Print3DTab = () => {
       
       // Check if we're in production (fishcad.com)
       const isFishCad = window.location.hostname.includes('fishcad.com');
-      const apiUrl = isFishCad ? 'https://www.fishcad.com/api/create-checkout-session' : '/api/create-checkout-session';
+      
+      // Important: For fishcad.com, we need to use /create-checkout-session without the /api prefix
+      // because the API might be at a different path in production
+      const apiUrl = isFishCad 
+        ? 'https://www.fishcad.com/create-checkout-session' 
+        : '/api/create-checkout-session';
       
       console.log(`Running in ${isFishCad ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
       console.log(`Using API URL: ${apiUrl}`);
@@ -852,6 +857,7 @@ const Print3DTab = () => {
           form.method = 'POST';
           form.action = apiUrl;
           form.style.display = 'none';
+          form.setAttribute('enctype', 'application/x-www-form-urlencoded');
           
           // Add all data as hidden fields
           Object.entries(checkoutData).forEach(([key, value]) => {
@@ -885,8 +891,15 @@ const Print3DTab = () => {
             console.log(`STL data stored in localStorage with key: ${tempKey}`);
           }
           
+          // Show loading toast
+          toast({
+            title: "Processing your order",
+            description: "Preparing your 3D print checkout...",
+          });
+          
           // Add the form to the body and submit it
           document.body.appendChild(form);
+          console.log('Submitting form to:', apiUrl);
           form.submit();
           return;
         } catch (formError) {

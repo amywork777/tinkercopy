@@ -131,26 +131,86 @@ export default function PricingPage() {
           ? 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Annual price
           : 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'; // Monthly price
         
-        console.log(`Redirecting to direct ${isAnnual ? 'annual' : 'monthly'} checkout with price ID: ${realPriceId}`);
+        console.log(`Using ${isAnnual ? 'annual' : 'monthly'} plan with price ID: ${realPriceId}`);
         
-        // Build the success/cancel URLs for redirecting back to the app
-        const successUrl = encodeURIComponent(`https://www.fishcad.com/pricing-success`);
-        const cancelUrl = encodeURIComponent(`https://www.fishcad.com/pricing`);
-
-        // Stripe publishable key for checkout - use live key for fishcad.com
-        const stripePublishableKey = 'pk_live_51QnZCfCLoBz9jXRl0XNJ06wKLsn8Gm2mPBnvGcf3iW1gJEGPaxNkCn6PRIoEaXW5jXRyMYR7nSTjrDUZBCnHGoBo00xW9eS8Xz';
-
-        // Create the direct Stripe checkout URL with all necessary parameters including publishable key
-        const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?key=${stripePublishableKey}&client_reference_id=${user.id}&prefilled_email=${encodeURIComponent(user?.email || '')}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
-        
-        console.log('Direct checkout URL:', directUrl);
-        
-        // Delay slightly then redirect
-        setTimeout(() => {
-          window.location.href = directUrl;
-        }, 2000);
-        
-        return;
+        try {
+          // Load Stripe.js dynamically to avoid loading it on every page
+          // This is a client-only approach recommended by Stripe
+          const loadStripeScript = () => {
+            return new Promise<any>((resolve, reject) => {
+              if ((window as any).Stripe) {
+                resolve((window as any).Stripe);
+                return;
+              }
+              
+              console.log('Loading Stripe.js dynamically');
+              const script = document.createElement('script');
+              script.src = 'https://js.stripe.com/v3/';
+              script.async = true;
+              script.onload = () => resolve((window as any).Stripe);
+              script.onerror = (error) => reject(error);
+              document.head.appendChild(script);
+            });
+          };
+          
+          // Stripe publishable key for checkout - use live key for fishcad.com
+          const stripePublishableKey = 'pk_live_51QnZCfCLoBz9jXRl0XNJ06wKLsn8Gm2mPBnvGcf3iW1gJEGPaxNkCn6PRIoEaXW5jXRyMYR7nSTjrDUZBCnHGoBo00xW9eS8Xz';
+          
+          // Show loading toast
+          toast.loading('Preparing secure checkout...', { duration: 10000 });
+          
+          // Load Stripe.js and redirect to checkout
+          loadStripeScript()
+            .then((StripeJs: any) => {
+              console.log('Stripe.js loaded successfully');
+              const stripe = StripeJs(stripePublishableKey);
+              
+              // Redirect to Checkout page
+              console.log('Redirecting to Stripe Checkout with price:', realPriceId);
+              stripe.redirectToCheckout({
+                lineItems: [{price: realPriceId, quantity: 1}],
+                mode: 'subscription',
+                successUrl: 'https://www.fishcad.com/pricing-success',
+                cancelUrl: 'https://www.fishcad.com/pricing',
+                clientReferenceId: user.id,
+                customerEmail: user?.email || undefined
+              })
+              .then(function(result: any) {
+                if (result.error) {
+                  // If redirectToCheckout fails due to a browser or network
+                  // error, display the localized error message
+                  toast.dismiss();
+                  toast.error('Checkout Error', { description: result.error.message });
+                  console.error('Stripe checkout error:', result.error);
+                }
+              });
+            })
+            .catch((error) => {
+              toast.dismiss();
+              toast.error('Checkout Error', { description: 'Failed to initialize payment system' });
+              console.error('Error loading Stripe:', error);
+            });
+            
+          return; // Exit early since checkout is handled by Stripe.js
+        } catch (stripeError) {
+          // If the Stripe.js approach fails, try one more fallback approach
+          console.error('Stripe.js approach failed:', stripeError);
+          toast.error('Trying alternative checkout method...', { duration: 3000 });
+          
+          // Fallback to a simple redirect to Stripe Checkout
+          const successUrl = encodeURIComponent('https://www.fishcad.com/pricing-success');
+          const cancelUrl = encodeURIComponent('https://www.fishcad.com/pricing');
+          
+          // Use a different URL format as a last resort
+          const checkoutUrl = `https://buy.stripe.com/${realPriceId}?prefilled_email=${encodeURIComponent(user?.email || '')}&success_url=${successUrl}&cancel_url=${cancelUrl}&client_reference_id=${user.id}`;
+          
+          console.log('Fallback checkout URL:', checkoutUrl);
+          
+          // Redirect to Stripe Checkout
+          setTimeout(() => {
+            window.location.href = checkoutUrl;
+          }, 2000);
+        }
       }
       
       console.error('Error creating checkout session:', error);

@@ -14,14 +14,14 @@ const getApiUrl = (): string => {
   
   // Production environments - fishcad.com
   if (hostname.includes('fishcad.com')) {
-    console.log('Production environment detected - using api.fishcad.com');
-    // Always use dedicated API subdomain for production
-    return 'https://api.fishcad.com';
+    console.log('Production environment detected - using fishcad.com');
+    // Use main domain for production
+    return 'https://fishcad.com/api';
   }
   
   // Fallback to environment variable or default
   const envApiUrl = import.meta.env.VITE_API_URL;
-  const fallback = envApiUrl || 'https://api.fishcad.com';
+  const fallback = envApiUrl || 'https://fishcad.com/api';
   console.log(`Using fallback API URL: ${fallback}`);
   return fallback;
 };
@@ -118,8 +118,8 @@ export const createCheckoutSession = async (
       // Use a specific production endpoint for fishcad.com
       let endpoint;
       if (isProduction) {
-        // In production, use the API subdomain with absolute endpoint
-        endpoint = 'https://api.fishcad.com/pricing/create-checkout-session';
+        // In production, use the main domain with API path
+        endpoint = 'https://fishcad.com/api/pricing/create-checkout-session';
         console.log(`Using production endpoint: ${endpoint}`);
       } else {
         // For development, use the configured API URL
@@ -233,7 +233,7 @@ export const getUserSubscription = async (userId: string): Promise<{
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      endpoint = `https://api.fishcad.com/pricing/user-subscription/${userId}`;
+      endpoint = `https://fishcad.com/api/pricing/user-subscription/${userId}`;
       console.log(`Using production subscription endpoint: ${endpoint}`);
     } else {
       const endpointPath = API_URL.includes('/api') 
@@ -313,7 +313,7 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      endpoint = 'https://api.fishcad.com/pricing/cancel-subscription';
+      endpoint = 'https://fishcad.com/api/pricing/cancel-subscription';
       console.log(`Using production cancel endpoint: ${endpoint}`);
     } else {
       const endpointPath = API_URL.includes('/api') 
@@ -395,7 +395,7 @@ export const verifySubscription = async (
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      endpoint = 'https://api.fishcad.com/pricing/verify-subscription';
+      endpoint = 'https://fishcad.com/api/pricing/verify-subscription';
       console.log(`Using production verify endpoint: ${endpoint}`);
     } else {
       const endpointPath = API_URL.includes('/api') 

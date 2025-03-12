@@ -131,9 +131,14 @@ app.use('/api/webhook', express.raw({ type: 'application/json' }));
 // Add pricing API endpoint for subscription checkout
 app.post('/api/pricing/create-checkout-session', async (req, res) => {
   try {
-    const { priceId, userId, email } = req.body;
+    const { priceId, userId, email, force_new_customer } = req.body;
     
-    console.log('Received subscription checkout request:', { priceId, userId, email });
+    console.log('Received subscription checkout request:', { 
+      priceId, 
+      userId, 
+      email,
+      force_new_customer: !!force_new_customer
+    });
     
     if (!priceId || !userId || !email) {
       return res.status(400).json({ error: 'Missing required parameters' });
@@ -142,14 +147,33 @@ app.post('/api/pricing/create-checkout-session', async (req, res) => {
     let customerId = null;
     
     // Handle Stripe customer
-    if (firestore) {
+    if (firestore && !force_new_customer) {
       try {
         const userRef = firestore.collection('users').doc(userId);
         const userDoc = await userRef.get();
         
         if (userDoc.exists && userDoc.data().stripeCustomerId) {
-          customerId = userDoc.data().stripeCustomerId;
-          console.log(`Using existing Stripe customer ID: ${customerId}`);
+          try {
+            // Verify that customer exists in live mode
+            await stripe.customers.retrieve(userDoc.data().stripeCustomerId);
+            customerId = userDoc.data().stripeCustomerId;
+            console.log(`Using existing Stripe customer ID: ${customerId}`);
+          } catch (stripeError) {
+            console.log(`Customer ID exists in Firestore but not in Stripe (likely test vs live mode). Creating new customer.`);
+            const customer = await stripe.customers.create({
+              email: email,
+              metadata: {
+                userId: userId,
+              },
+            });
+            customerId = customer.id;
+            
+            // Update Firestore with the new customer ID
+            await userRef.update({
+              stripeCustomerId: customerId,
+            });
+            console.log(`Created new Stripe customer: ${customerId} and updated Firestore`);
+          }
         } else {
           // Create a new customer
           const customer = await stripe.customers.create({
@@ -230,7 +254,7 @@ app.post('/api/pricing/create-checkout-session', async (req, res) => {
         }
       }
     } else {
-      // Fallback if Firestore is not available
+      // Fallback if Firestore is not available or force_new_customer is true
       const customer = await stripe.customers.create({
         email: email,
         metadata: {
@@ -238,7 +262,7 @@ app.post('/api/pricing/create-checkout-session', async (req, res) => {
         },
       });
       customerId = customer.id;
-      console.log(`Created new Stripe customer (no Firestore): ${customerId}`);
+      console.log(`Created new Stripe customer (${force_new_customer ? 'forced new' : 'no Firestore'}): ${customerId}`);
     }
     
     // Create the checkout session

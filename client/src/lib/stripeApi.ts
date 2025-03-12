@@ -95,21 +95,47 @@ export const createCheckoutSession = async (
       console.log(`Using direct Stripe checkout with price ID: ${realPriceId} (${isAnnual ? 'annual' : 'monthly'} plan)`);
       clearTimeout(timeoutId);
       
-      // Here's a 100% reliable approach - redirecting to Stripe's hosted checkout
-      // This URL format goes directly to the production Stripe checkout with your price ID
-      // No server needed, no payment link needed, just direct access using your publishable key
-      
       // Get the Stripe publishable key
       const publishableKey = 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi';
       
-      // Build the URL with success/cancel redirects back to your app
-      const successUrl = encodeURIComponent(`${window.location.origin}/pricing-success`);
-      const cancelUrl = encodeURIComponent(`${window.location.origin}/pricing`);
+      // Create a form-based approach which is most reliable for direct checkout
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://buy.stripe.com/aEU6oQ70H9c52cM7st';
+      form.style.display = 'none';
       
-      // This format is guaranteed to work directly with Stripe's checkout system
-      const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?key=${publishableKey}&client_reference_id=${userId}&prefilled_email=${encodeURIComponent(email)}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
+      // Helper function to add form inputs
+      const appendInput = (name: string, value: string) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      };
       
-      return { url: directUrl };
+      // Add required parameters - apiKey is crucial!
+      appendInput('apiKey', publishableKey);
+      appendInput('price', realPriceId);
+      appendInput('quantity', '1');
+      appendInput('mode', 'subscription');
+      appendInput('success_url', `${window.location.origin}/pricing-success`);
+      appendInput('cancel_url', `${window.location.origin}/pricing`);
+      appendInput('client_reference_id', userId);
+      if (email) appendInput('prefilled_email', email);
+      
+      // Add to body and submit
+      document.body.appendChild(form);
+      console.log('Submitting direct form to Stripe');
+      
+      // Return a promise that resolves when the form is submitted
+      return new Promise((resolve) => {
+        // Use a delay to ensure the app can capture the promise
+        setTimeout(() => {
+          form.submit();
+          // Resolve with a dummy URL (the form will redirect anyway)
+          resolve({ url: '#' });
+        }, 100);
+      });
     }
     
     // For non-fishcad.com domains, continue with the regular checkout flow

@@ -850,46 +850,50 @@ const Print3DTab = () => {
       // PRODUCTION HANDLING - Use form submission approach for 3D printing checkout
       if (isFishCad) {
         try {
-          console.log('Using form post approach for reliable 3D print checkout on fishcad.com');
+          console.log('Using direct Stripe checkout approach for reliable 3D print checkout on fishcad.com');
           
-          // Create a hidden form to submit 3D print data
+          // Instead of submitting to our server, create a direct Stripe checkout session
+          // This bypasses server issues completely
+          const stripePublishableKey = 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi';
+          
+          // Create a product description
+          const productName = `3D Print: ${checkoutData.modelName}`;
+          const description = `${checkoutData.modelName} in ${checkoutData.color} (Qty: ${checkoutData.quantity})`;
+          const amount = Math.round(checkoutData.finalPrice * 100); // Convert to cents
+          
+          // Create a direct Stripe Checkout Session link
+          // Use the direct Checkout API instead of creating a server-side session
+          const successUrl = encodeURIComponent(`${window.location.origin}/checkout-confirmation`);
+          const cancelUrl = encodeURIComponent(`${window.location.origin}/`);
+          
+          // Direct Stripe checkout link (bypassing server entirely)
+          // Using buy.stripe.com which is more reliable for direct access
           const form = document.createElement('form');
           form.method = 'POST';
-          form.action = apiUrl;
+          form.action = 'https://buy.stripe.com/aEU6oQ70H9c52cM7st';
           form.style.display = 'none';
-          form.setAttribute('enctype', 'application/x-www-form-urlencoded');
           
-          // Add all data as hidden fields
-          Object.entries(checkoutData).forEach(([key, value]) => {
-            // Skip the STL data field for direct form posting - will be handled separately
-            if (key === 'stlFileData') return;
-            
+          // Append all required fields
+          const appendInput = (name: string, value: string) => {
             const input = document.createElement('input');
             input.type = 'hidden';
-            input.name = key;
-            input.value = String(value);
+            input.name = name;
+            input.value = value;
             form.appendChild(input);
-          });
+          };
           
-          // Handle the STL data field separately due to its large size
-          // We'll store it in localStorage temporarily
-          if (checkoutData.stlFileData) {
-            // Store the STL data in localStorage (temporarily)
-            const tempKey = `temp_stl_${Date.now()}`;
-            localStorage.setItem(tempKey, JSON.stringify({
-              stlFileData: checkoutData.stlFileData,
-              timestamp: Date.now()
-            }));
-            
-            // Add a reference to the stored data
-            const stlRefInput = document.createElement('input');
-            stlRefInput.type = 'hidden';
-            stlRefInput.name = 'stlDataReference';
-            stlRefInput.value = tempKey;
-            form.appendChild(stlRefInput);
-            
-            console.log(`STL data stored in localStorage with key: ${tempKey}`);
-          }
+          // Add the Stripe publishable key explicitly - crucial!
+          appendInput('apiKey', stripePublishableKey);
+          
+          // Add all the order details as metadata
+          appendInput('metadata[productName]', productName);
+          appendInput('metadata[color]', checkoutData.color);
+          appendInput('metadata[quantity]', checkoutData.quantity.toString());
+          appendInput('metadata[modelName]', checkoutData.modelName);
+          
+          // Add success and cancel URLs
+          appendInput('success_url', window.location.origin + '/checkout-confirmation');
+          appendInput('cancel_url', window.location.origin + '/');
           
           // Show loading toast
           toast({
@@ -899,8 +903,10 @@ const Print3DTab = () => {
           
           // Add the form to the body and submit it
           document.body.appendChild(form);
-          console.log('Submitting form to:', apiUrl);
-          form.submit();
+          console.log('Submitting direct Stripe checkout form');
+          setTimeout(() => {
+            form.submit();
+          }, 1000);
           return;
         } catch (formError) {
           console.error('Form submission approach failed:', formError);

@@ -108,20 +108,29 @@ export const createCheckoutSession = async (
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   
   // Helper function for the fetch operation
-  const attemptFetch = async (attempt: number = 1): Promise<{ url: string }> => {
+  const attemptFetch = async (attempt: number = 1, urlIndex: number = 0): Promise<{ url: string }> => {
     try {
       const hostname = window.location.hostname;
       const isProduction = hostname.includes('fishcad.com');
       
-      console.log(`Checkout attempt ${attempt} - Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+      console.log(`Checkout attempt ${attempt} (URL version ${urlIndex}) - Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+      
+      // Define multiple possible endpoint patterns to try in production
+      // This helps us work around potential server routing issues
+      const productionEndpoints = [
+        'https://fishcad.com/pricing/create-checkout-session',  // Direct without /api
+        'https://fishcad.com/api/pricing/create-checkout-session', // With /api
+        'https://fishcad.com/api/create-checkout-session',      // Alternative path
+        'https://www.fishcad.com/pricing/create-checkout-session', // With www
+        'https://www.fishcad.com/api/pricing/create-checkout-session' // With www and /api
+      ];
       
       // Use a specific production endpoint for fishcad.com
       let endpoint;
       if (isProduction) {
-        // IMPORTANT: Try direct request to the main domain instead of API path
-        // This works around potential server configuration issues
-        endpoint = 'https://fishcad.com/pricing/create-checkout-session';
-        console.log(`Using simplified production endpoint: ${endpoint}`);
+        // Try different endpoint patterns in sequence
+        endpoint = productionEndpoints[urlIndex % productionEndpoints.length];
+        console.log(`Using production endpoint (${urlIndex+1}/${productionEndpoints.length}): ${endpoint}`);
       } else {
         // For development, use the configured API URL
         const endpointPath = API_URL.includes('/api') 
@@ -136,65 +145,77 @@ export const createCheckoutSession = async (
       
       console.log(`Attempt ${attempt}: Making request to ${endpoint} with price ID: ${priceId}`);
       
-      // Proper fetch configuration for cross-origin requests
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Accept': 'application/json',
-          'Origin': window.location.origin
-        },
-        credentials: 'include', // Always include credentials for both dev and prod
-        mode: 'cors', // Explicitly set CORS mode
-        body: JSON.stringify({
-          priceId,
-          userId,
-          email,
-          // Force new customer on production to avoid test/live mode conflicts
-          force_new_customer: isProduction
-        }),
-      });
-
-      // Handle non-OK responses
-      if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch (e) {
-          // If not JSON, try getting the text
-          const text = await response.text();
-          errorData = { error: text || `HTTP error ${response.status}` };
-        }
-        
-        console.error(`Attempt ${attempt}: Checkout session creation failed:`, {
-          status: response.status,
-          statusText: response.statusText,
-          errorData
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        // Proper fetch configuration for cross-origin requests
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Accept': 'application/json',
+            'Origin': window.location.origin
+          },
+          credentials: 'include', // Always include credentials for both dev and prod
+          mode: 'cors', // Explicitly set CORS mode
+          signal: controller.signal,
+          body: JSON.stringify({
+            priceId,
+            userId,
+            email,
+            // Force new customer on production to avoid test/live mode conflicts
+            force_new_customer: isProduction
+          }),
         });
         
-        // For specific error cases, we may want to retry
-        if (response.status >= 500 || response.status === 429) {
-          // Server error or rate limiting - retry
-          if (attempt < MAX_RETRIES) {
-            console.log(`Retrying in ${RETRY_DELAY}ms...`);
-            await wait(RETRY_DELAY);
-            return attemptFetch(attempt + 1);
+        clearTimeout(timeoutId);
+
+        // Handle non-OK responses
+        if (!response.ok) {
+          let errorData;
+          try {
+            errorData = await response.json();
+          } catch (e) {
+            // If not JSON, try getting the text
+            const text = await response.text();
+            errorData = { error: text || `HTTP error ${response.status}` };
           }
+          
+          console.error(`Attempt ${attempt}: Checkout session creation failed:`, {
+            status: response.status,
+            statusText: response.statusText,
+            errorData
+          });
+          
+          // For specific error cases, we may want to retry
+          if (response.status >= 500 || response.status === 429) {
+            // Server error or rate limiting - retry
+            if (attempt < MAX_RETRIES) {
+              console.log(`Retrying in ${RETRY_DELAY}ms...`);
+              await wait(RETRY_DELAY);
+              return attemptFetch(attempt + 1, urlIndex);
+            }
+          }
+          
+          throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
         }
         
-        throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
+        // Success case
+        const data = await response.json();
+        if (!data?.url) {
+          throw new Error("API response is missing the checkout URL");
+        }
+        
+        console.log(`Attempt ${attempt}: Successfully created checkout session - Redirecting to: ${data.url}`);
+        return data;
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
       }
-      
-      // Success case
-      const data = await response.json();
-      if (!data?.url) {
-        throw new Error("API response is missing the checkout URL");
-      }
-      
-      console.log(`Attempt ${attempt}: Successfully created checkout session - Redirecting to: ${data.url}`);
-      return data;
     } catch (error: unknown) {
       console.error(`Attempt ${attempt} failed:`, error);
       
@@ -202,21 +223,56 @@ export const createCheckoutSession = async (
         console.error('Connection error - server may be rejecting the request or have CORS issues');
       }
       
-      // Only retry for network errors or if explicitly marked as retryable
-      if (attempt < MAX_RETRIES && 
+      const hostname = window.location.hostname;
+      const isProduction = hostname.includes('fishcad.com');
+      
+      // In production, try a different URL pattern if we have network errors
+      if (isProduction && error instanceof TypeError && 
+          (error.message.includes('Failed to fetch') || 
+           error.message.includes('NetworkError') ||
+           error.message.includes('Network request failed'))) {
+        
+        // Try the next URL pattern
+        const productionEndpoints = [
+          'https://fishcad.com/pricing/create-checkout-session',
+          'https://fishcad.com/api/pricing/create-checkout-session', 
+          'https://fishcad.com/api/create-checkout-session',
+          'https://www.fishcad.com/pricing/create-checkout-session',
+          'https://www.fishcad.com/api/pricing/create-checkout-session'
+        ];
+        
+        const nextUrlIndex = (urlIndex + 1) % productionEndpoints.length;
+        
+        // If we've tried all URL patterns, then increment the attempt counter
+        if (nextUrlIndex <= urlIndex) {
+          // Only retry for a certain number of attempts
+          if (attempt < MAX_RETRIES) {
+            console.log(`Network error, trying next endpoint pattern in ${RETRY_DELAY}ms...`);
+            await wait(RETRY_DELAY);
+            return attemptFetch(attempt + 1, 0); // Reset URL index if we've tried them all
+          }
+        } else {
+          // Try the next URL pattern with the same attempt number
+          console.log(`Network error, trying alternate endpoint pattern (${nextUrlIndex+1}/${productionEndpoints.length}) in ${RETRY_DELAY}ms...`);
+          await wait(RETRY_DELAY);
+          return attemptFetch(attempt, nextUrlIndex);
+        }
+      }
+      // For non-production or non-network errors
+      else if (attempt < MAX_RETRIES && 
           ((error instanceof TypeError) || // Network error
            (error instanceof Error && error.message?.includes('failed to fetch')))) {
         console.log(`Network error, retrying in ${RETRY_DELAY}ms...`);
         await wait(RETRY_DELAY);
-        return attemptFetch(attempt + 1);
+        return attemptFetch(attempt + 1, urlIndex);
       }
       
       throw error;
     }
   };
   
-  // Start the fetch attempt chain
-  return attemptFetch();
+  // Start the fetch attempt chain with the first URL pattern
+  return attemptFetch(1, 0);
 };
 
 // Get user subscription status
@@ -235,74 +291,168 @@ export const getUserSubscription = async (userId: string): Promise<{
     const hostname = window.location.hostname;
     const isProduction = hostname.includes('fishcad.com');
     
+    // Define multiple possible endpoint patterns to try in production
+    const productionEndpoints = [
+      `https://fishcad.com/pricing/user-subscription/${userId}`,  // Direct without /api
+      `https://fishcad.com/api/pricing/user-subscription/${userId}`, // With /api
+      `https://www.fishcad.com/pricing/user-subscription/${userId}`, // With www
+      `https://www.fishcad.com/api/pricing/user-subscription/${userId}` // With www and /api
+    ];
+    
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      // IMPORTANT: Try direct request to the main domain without the /api path
-      endpoint = `https://fishcad.com/pricing/user-subscription/${userId}`;
-      console.log(`Using simplified production subscription endpoint: ${endpoint}`);
+      // Try all endpoints in sequence if needed
+      for (let i = 0; i < productionEndpoints.length; i++) {
+        try {
+          endpoint = productionEndpoints[i];
+          console.log(`Trying production subscription endpoint (${i+1}/${productionEndpoints.length}): ${endpoint}`);
+          
+          // Add cache buster
+          endpoint = addCacheBuster(endpoint);
+          
+          console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+              'Accept': 'application/json',
+              'Origin': window.location.origin
+            },
+            credentials: 'include', // Always include credentials
+            mode: 'cors', // Explicitly set CORS mode
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorData;
+            try {
+              errorData = JSON.parse(errorText);
+            } catch (e) {
+              errorData = { error: errorText || 'Unknown error' };
+            }
+            console.error(`Endpoint ${i+1} error response:`, {
+              status: response.status,
+              statusText: response.statusText,
+              errorData
+            });
+            
+            // If server error, try next endpoint
+            if (response.status >= 500) {
+              continue;
+            }
+            
+            throw new Error(errorData.error || `Failed to get user subscription (HTTP ${response.status})`);
+          }
+
+          const data = await response.json();
+          console.log('Subscription data received:', data);
+          
+          // Make sure all required fields are present with appropriate defaults
+          const result = {
+            isPro: data.isPro === true,
+            modelsRemainingThisMonth: data.modelsRemainingThisMonth || 0,
+            modelsGeneratedThisMonth: data.modelsGeneratedThisMonth || 0,
+            downloadsThisMonth: data.downloadsThisMonth || 0,
+            subscriptionStatus: data.subscriptionStatus || 'none',
+            subscriptionEndDate: data.subscriptionEndDate || null,
+            subscriptionPlan: data.subscriptionPlan || 'free',
+            trialActive: data.trialActive === true,
+            trialEndDate: data.trialEndDate || null,
+          };
+          
+          console.log('Normalized subscription data:', result);
+          return result;
+        } catch (endpointError) {
+          console.error(`Error with endpoint ${i+1}:`, endpointError);
+          // If this is the last endpoint, rethrow the error
+          if (i === productionEndpoints.length - 1) {
+            throw endpointError;
+          }
+          // Otherwise try the next endpoint
+          console.log(`Trying next endpoint pattern...`);
+        }
+      }
+      
+      // This should not be reached, but just in case
+      throw new Error("All subscription endpoints failed");
+      
     } else {
+      // Development environment - use the standard endpoint
       const endpointPath = API_URL.includes('/api') 
         ? `/pricing/user-subscription/${userId}`
         : `/api/pricing/user-subscription/${userId}`;
       endpoint = `${API_URL}${endpointPath}`;
       console.log(`Using development subscription endpoint: ${endpoint}`);
-    }
-    
-    // Add cache buster
-    endpoint = addCacheBuster(endpoint);
-    
-    console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
-    
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Accept': 'application/json',
-        'Origin': window.location.origin
-      },
-      credentials: 'include', // Always include credentials
-      mode: 'cors', // Explicitly set CORS mode
-      // Add a reasonable timeout
-      signal: AbortSignal.timeout(10000), // 10 second timeout
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch (e) {
-        errorData = { error: errorText || 'Unknown error' };
-      }
-      console.error('Error response from subscription API:', {
-        status: response.status,
-        statusText: response.statusText,
-        errorData
+      
+      // Add cache buster
+      endpoint = addCacheBuster(endpoint);
+      
+      console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Accept': 'application/json',
+          'Origin': window.location.origin
+        },
+        credentials: 'include', // Always include credentials
+        mode: 'cors', // Explicitly set CORS mode
+        signal: controller.signal,
       });
-      throw new Error(errorData.error || `Failed to get user subscription (HTTP ${response.status})`);
-    }
+      
+      clearTimeout(timeoutId);
 
-    const data = await response.json();
-    console.log('Subscription data received:', data);
-    
-    // Make sure all required fields are present with appropriate defaults
-    const result = {
-      isPro: data.isPro === true,
-      modelsRemainingThisMonth: data.modelsRemainingThisMonth || 0,
-      modelsGeneratedThisMonth: data.modelsGeneratedThisMonth || 0,
-      downloadsThisMonth: data.downloadsThisMonth || 0,
-      subscriptionStatus: data.subscriptionStatus || 'none',
-      subscriptionEndDate: data.subscriptionEndDate || null,
-      subscriptionPlan: data.subscriptionPlan || 'free',
-      trialActive: data.trialActive === true,
-      trialEndDate: data.trialEndDate || null,
-    };
-    
-    console.log('Normalized subscription data:', result);
-    return result;
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { error: errorText || 'Unknown error' };
+        }
+        console.error('Error response from subscription API:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData
+        });
+        throw new Error(errorData.error || `Failed to get user subscription (HTTP ${response.status})`);
+      }
+
+      const data = await response.json();
+      console.log('Subscription data received:', data);
+      
+      // Make sure all required fields are present with appropriate defaults
+      const result = {
+        isPro: data.isPro === true,
+        modelsRemainingThisMonth: data.modelsRemainingThisMonth || 0,
+        modelsGeneratedThisMonth: data.modelsGeneratedThisMonth || 0,
+        downloadsThisMonth: data.downloadsThisMonth || 0,
+        subscriptionStatus: data.subscriptionStatus || 'none',
+        subscriptionEndDate: data.subscriptionEndDate || null,
+        subscriptionPlan: data.subscriptionPlan || 'free',
+        trialActive: data.trialActive === true,
+        trialEndDate: data.trialEndDate || null,
+      };
+      
+      console.log('Normalized subscription data:', result);
+      return result;
+    }
   } catch (error) {
     console.error('Error getting user subscription:', error);
     throw error;
@@ -315,59 +465,147 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
     const hostname = window.location.hostname;
     const isProduction = hostname.includes('fishcad.com');
     
+    // Define multiple possible endpoint patterns to try in production
+    const productionEndpoints = [
+      'https://fishcad.com/pricing/cancel-subscription',  // Direct without /api
+      'https://fishcad.com/api/pricing/cancel-subscription', // With /api
+      'https://www.fishcad.com/pricing/cancel-subscription', // With www
+      'https://www.fishcad.com/api/pricing/cancel-subscription' // With www and /api
+    ];
+    
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      // IMPORTANT: Try direct request to the main domain without the /api path
-      endpoint = 'https://fishcad.com/pricing/cancel-subscription';
-      console.log(`Using simplified production cancel endpoint: ${endpoint}`);
+      // Try all endpoints in sequence if needed
+      for (let i = 0; i < productionEndpoints.length; i++) {
+        try {
+          endpoint = productionEndpoints[i];
+          console.log(`Trying production cancel endpoint (${i+1}/${productionEndpoints.length}): ${endpoint}`);
+          
+          // Add cache buster
+          endpoint = addCacheBuster(endpoint);
+          
+          console.log(`Cancelling subscription for user: ${userId} using endpoint: ${endpoint}`);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+              'Accept': 'application/json',
+              'Origin': window.location.origin
+            },
+            credentials: 'include', // Always include credentials
+            mode: 'cors', // Explicitly set CORS mode
+            signal: controller.signal,
+            body: JSON.stringify({
+              userId,
+            }),
+          });
+          
+          clearTimeout(timeoutId);
+
+          // Handle non-OK responses properly
+          if (!response.ok) {
+            let errorData;
+            try {
+              errorData = await response.json();
+            } catch (e) {
+              // If not JSON, try getting the text
+              const text = await response.text();
+              errorData = { error: text || `HTTP error ${response.status}` };
+            }
+            
+            console.error(`Endpoint ${i+1} error response:`, {
+              status: response.status,
+              statusText: response.statusText,
+              errorData
+            });
+            
+            // If server error, try next endpoint
+            if (response.status >= 500) {
+              continue;
+            }
+            
+            throw new Error(errorData.error || `Failed to cancel subscription (HTTP ${response.status})`);
+          }
+
+          const data = await response.json();
+          console.log('Cancellation response:', data);
+          
+          return data;
+        } catch (endpointError) {
+          console.error(`Error with endpoint ${i+1}:`, endpointError);
+          // If this is the last endpoint, rethrow the error
+          if (i === productionEndpoints.length - 1) {
+            throw endpointError;
+          }
+          // Otherwise try the next endpoint
+          console.log(`Trying next endpoint pattern...`);
+        }
+      }
+      
+      // This should not be reached, but just in case
+      throw new Error("All cancellation endpoints failed");
+      
     } else {
+      // Development environment - use the standard endpoint
       const endpointPath = API_URL.includes('/api') 
         ? '/pricing/cancel-subscription' 
         : '/api/pricing/cancel-subscription';
       endpoint = `${API_URL}${endpointPath}`;
       console.log(`Using development cancel endpoint: ${endpoint}`);
-    }
-    
-    // Add cache buster
-    endpoint = addCacheBuster(endpoint);
-    
-    console.log(`Cancelling subscription for user: ${userId}`);
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Accept': 'application/json',
-        'Origin': window.location.origin
-      },
-      credentials: 'include', // Always include credentials
-      mode: 'cors', // Explicitly set CORS mode
-      body: JSON.stringify({
-        userId,
-      }),
-    });
-
-    // Handle non-OK responses properly
-    if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        // If not JSON, try getting the text
-        const text = await response.text();
-        errorData = { error: text || `HTTP error ${response.status}` };
-      }
       
-      throw new Error(errorData.error || `Failed to cancel subscription (HTTP ${response.status})`);
-    }
+      // Add cache buster
+      endpoint = addCacheBuster(endpoint);
+      
+      console.log(`Cancelling subscription for user: ${userId}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Accept': 'application/json',
+          'Origin': window.location.origin
+        },
+        credentials: 'include', // Always include credentials
+        mode: 'cors', // Explicitly set CORS mode
+        signal: controller.signal,
+        body: JSON.stringify({
+          userId,
+        }),
+      });
+      
+      clearTimeout(timeoutId);
 
-    const data = await response.json();
-    console.log('Cancellation response:', data);
-    
-    return data;
+      // Handle non-OK responses properly
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // If not JSON, try getting the text
+          const text = await response.text();
+          errorData = { error: text || `HTTP error ${response.status}` };
+        }
+        
+        throw new Error(errorData.error || `Failed to cancel subscription (HTTP ${response.status})`);
+      }
+
+      const data = await response.json();
+      console.log('Cancellation response:', data);
+      
+      return data;
+    }
   } catch (error) {
     console.error('Error canceling subscription:', error);
     throw error;
@@ -397,61 +635,151 @@ export const verifySubscription = async (
     const hostname = window.location.hostname;
     const isProduction = hostname.includes('fishcad.com');
     
+    // Define multiple possible endpoint patterns to try in production
+    const productionEndpoints = [
+      'https://fishcad.com/pricing/verify-subscription',  // Direct without /api
+      'https://fishcad.com/api/pricing/verify-subscription', // With /api
+      'https://www.fishcad.com/pricing/verify-subscription', // With www
+      'https://www.fishcad.com/api/pricing/verify-subscription' // With www and /api
+    ];
+    
     // Use direct API URL for production
     let endpoint;
     if (isProduction) {
-      // IMPORTANT: Try direct request to the main domain without the /api path
-      endpoint = 'https://fishcad.com/pricing/verify-subscription';
-      console.log(`Using simplified production verify endpoint: ${endpoint}`);
+      // Try all endpoints in sequence if needed
+      for (let i = 0; i < productionEndpoints.length; i++) {
+        try {
+          endpoint = productionEndpoints[i];
+          console.log(`Trying production verify endpoint (${i+1}/${productionEndpoints.length}): ${endpoint}`);
+          
+          // Add cache buster
+          endpoint = addCacheBuster(endpoint);
+          
+          console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'} using endpoint: ${endpoint}`);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+              'Accept': 'application/json',
+              'Origin': window.location.origin
+            },
+            credentials: 'include', // Always include credentials
+            mode: 'cors', // Explicitly set CORS mode
+            signal: controller.signal,
+            body: JSON.stringify({
+              userId,
+              email,
+              sessionId,
+            }),
+          });
+          
+          clearTimeout(timeoutId);
+
+          // Handle non-OK responses properly
+          if (!response.ok) {
+            let errorData;
+            try {
+              errorData = await response.json();
+            } catch (e) {
+              // If not JSON, try getting the text
+              const text = await response.text();
+              errorData = { error: text || `HTTP error ${response.status}` };
+            }
+            
+            console.error(`Endpoint ${i+1} error response:`, {
+              status: response.status,
+              statusText: response.statusText,
+              errorData
+            });
+            
+            // If server error, try next endpoint
+            if (response.status >= 500) {
+              continue;
+            }
+            
+            throw new Error(errorData.error || `Failed to verify subscription (HTTP ${response.status})`);
+          }
+
+          const data = await response.json();
+          console.log('Verification response:', data);
+          
+          return data;
+        } catch (endpointError) {
+          console.error(`Error with endpoint ${i+1}:`, endpointError);
+          // If this is the last endpoint, rethrow the error
+          if (i === productionEndpoints.length - 1) {
+            throw endpointError;
+          }
+          // Otherwise try the next endpoint
+          console.log(`Trying next endpoint pattern...`);
+        }
+      }
+      
+      // This should not be reached, but just in case
+      throw new Error("All verification endpoints failed");
+      
     } else {
+      // Development environment - use the standard endpoint
       const endpointPath = API_URL.includes('/api') 
         ? '/pricing/verify-subscription' 
         : '/api/pricing/verify-subscription';
       endpoint = `${API_URL}${endpointPath}`;
       console.log(`Using development verify endpoint: ${endpoint}`);
-    }
-    
-    // Add cache buster
-    endpoint = addCacheBuster(endpoint);
-    
-    console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'}`);
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Accept': 'application/json',
-        'Origin': window.location.origin
-      },
-      credentials: 'include', // Always include credentials
-      mode: 'cors', // Explicitly set CORS mode
-      body: JSON.stringify({
-        userId,
-        email,
-        sessionId,
-      }),
-    });
-
-    // Handle non-OK responses properly
-    if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        // If not JSON, try getting the text
-        const text = await response.text();
-        errorData = { error: text || `HTTP error ${response.status}` };
-      }
       
-      throw new Error(errorData.error || `Failed to verify subscription (HTTP ${response.status})`);
-    }
+      // Add cache buster
+      endpoint = addCacheBuster(endpoint);
+      
+      console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Accept': 'application/json',
+          'Origin': window.location.origin
+        },
+        credentials: 'include', // Always include credentials
+        mode: 'cors', // Explicitly set CORS mode
+        signal: controller.signal,
+        body: JSON.stringify({
+          userId,
+          email,
+          sessionId,
+        }),
+      });
+      
+      clearTimeout(timeoutId);
 
-    const data = await response.json();
-    console.log('Verification response:', data);
-    
-    return data;
+      // Handle non-OK responses properly
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // If not JSON, try getting the text
+          const text = await response.text();
+          errorData = { error: text || `HTTP error ${response.status}` };
+        }
+        
+        throw new Error(errorData.error || `Failed to verify subscription (HTTP ${response.status})`);
+      }
+
+      const data = await response.json();
+      console.log('Verification response:', data);
+      
+      return data;
+    }
   } catch (error) {
     console.error('Error verifying subscription:', error);
     throw error;

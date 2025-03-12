@@ -1,6 +1,20 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables or use localhost in development
 
+// Add TypeScript definitions
+declare global {
+  interface Window {
+    Stripe?: any;
+  }
+  
+  interface ImportMeta {
+    env: {
+      VITE_API_URL?: string;
+      [key: string]: any;
+    }
+  }
+}
+
 // Function to get the appropriate API URL based on the environment
 const getApiUrl = (): string => {
   // Log hostname to debug
@@ -390,8 +404,17 @@ export const createCheckoutSession = async (
         if (nextUrlIndex <= urlIndex) {
           // If we've tried everything and we're at the last attempt, fall back to direct Stripe form submission
           if (attempt >= MAX_RETRIES) {
-            console.log('All endpoints failed. Falling back to direct Stripe form submission...');
-            return createFormSubmission();
+            console.log('All endpoints failed. Trying direct Stripe checkout...');
+            try {
+              await createDirectStripeCheckout(priceId, userId, email);
+              // If the redirect works, we'll return a placeholder
+              return { url: 'direct_stripe_checkout_initiated' };
+            } catch (directError) {
+              console.error('Direct Stripe checkout failed:', directError);
+              // Now try form submission as the absolute last resort
+              console.log('Falling back to form submission method...');
+              return createFormSubmission();
+            }
           }
           
           // Only retry for a certain number of attempts
@@ -418,8 +441,17 @@ export const createCheckoutSession = async (
       
       // If we've exhausted all retries and still failed, try the direct form submission as a last resort
       if (isProduction && attempt >= MAX_RETRIES) {
-        console.log('All API approaches failed. Falling back to direct Stripe form submission...');
-        return createFormSubmission();
+        console.log('All API approaches failed. Trying direct Stripe checkout...');
+        try {
+          await createDirectStripeCheckout(priceId, userId, email);
+          // If the redirect works, we'll return a placeholder
+          return { url: 'direct_stripe_checkout_initiated' };
+        } catch (directError) {
+          console.error('Direct Stripe checkout failed:', directError);
+          // Now try form submission as the absolute last resort
+          console.log('Falling back to form submission method...');
+          return createFormSubmission();
+        }
       }
       
       throw error;
@@ -939,4 +971,95 @@ export const verifySubscription = async (
     console.error('Error verifying subscription:', error);
     throw error;
   }
+};
+
+// Add a function to create a direct Stripe checkout
+// This uses Stripe's hosted checkout page directly without our server
+export const createDirectStripeCheckout = async (
+  priceId: string,
+  userId: string,
+  email: string
+): Promise<void> => {
+  console.log('Creating direct Stripe checkout for:', { priceId, userId, email });
+  
+  // Load the Stripe.js library dynamically
+  const loadStripe = async (): Promise<any> => {
+    if (window.Stripe) {
+      return window.Stripe;
+    }
+    
+    return new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://js.stripe.com/v3/';
+      script.onload = () => {
+        resolve(window.Stripe);
+      };
+      document.head.appendChild(script);
+    });
+  };
+  
+  try {
+    // Load Stripe
+    const StripeConstructor = await loadStripe();
+    const stripe = StripeConstructor(STRIPE_PROD_KEYS.PUBLISHABLE_KEY);
+    
+    console.log('Stripe loaded successfully, redirecting to checkout...');
+    
+    // Create simple checkout parameters
+    const checkoutParams = {
+      lineItems: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      successUrl: `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${window.location.origin}/pricing`,
+      customerEmail: email,
+      clientReferenceId: userId,
+    };
+    
+    // Redirect to Stripe's hosted checkout page
+    const result = await stripe.redirectToCheckout(checkoutParams);
+    
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+  } catch (error) {
+    console.error('Error creating direct Stripe checkout:', error);
+    // As a last resort, try the form submission method
+    return createFormSubmission();
+  }
+};
+
+// As a last resort, create a form submit to the Stripe checkout
+const createFormSubmission = () => {
+  console.log('Attempting fallback form submission method');
+  
+  // Create a hidden form and submit it
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = 'https://checkout.stripe.com/create-checkout-session';
+  form.target = '_blank';
+  
+  // Add the necessary fields
+  const addField = (name: string, value: string) => {
+    const field = document.createElement('input');
+    field.type = 'hidden';
+    field.name = name;
+    field.value = value;
+    form.appendChild(field);
+  };
+  
+  // Add required fields
+  addField('api_key', STRIPE_PROD_KEYS.PUBLISHABLE_KEY);
+  addField('price_id', STRIPE_PRICES.MONTHLY); // Default to monthly
+  addField('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
+  addField('cancel_url', `${window.location.origin}/pricing`);
+  
+  // Append the form to the body, submit it, and remove it
+  document.body.appendChild(form);
+  form.submit();
+  document.body.removeChild(form);
 }; 

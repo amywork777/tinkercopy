@@ -2663,7 +2663,10 @@ app.listen(PORT, () => {
 
 // Special handler for the www domain path that was returning 405 errors
 app.get('/pricing/create-checkout-session', async (req, res) => {
-  console.log('Received GET request to /pricing/create-checkout-session - will process as POST');
+  console.log('Received GET request to /pricing/create-checkout-session with query params:', req.query);
+  
+  // Set headers explicitly to ensure JSON response
+  res.setHeader('Content-Type', 'application/json');
   
   // If this is a query string format, extract parameters
   const priceId = req.query.priceId;
@@ -2671,13 +2674,15 @@ app.get('/pricing/create-checkout-session', async (req, res) => {
   const email = req.query.email;
   
   if (!priceId || !userId || !email) {
+    console.log('Missing required parameters in GET request:', req.query);
     return res.status(400).json({ 
       error: 'Missing required parameters', 
-      message: 'This endpoint requires priceId, userId, and email parameters'
+      message: 'This endpoint requires priceId, userId, and email parameters',
+      received: req.query
     });
   }
   
-  console.log('Processing as checkout with parameters:', { priceId, userId, email });
+  console.log('Processing checkout with parameters:', { priceId, userId, email });
   
   try {
     // Always create a new customer for simplicity
@@ -2722,8 +2727,13 @@ app.get('/pricing/create-checkout-session', async (req, res) => {
       },
     });
     
-    // Return the session URL
-    return res.json({ url: session.url });
+    console.log('Checkout session created with URL:', session.url);
+    
+    // Return the session URL as JSON
+    const jsonResponse = JSON.stringify({ url: session.url });
+    console.log('Sending JSON response:', jsonResponse);
+    
+    return res.status(200).send(jsonResponse);
   } catch (error) {
     console.error('Error creating checkout session:', error);
     return res.status(500).json({ 

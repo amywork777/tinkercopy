@@ -89,18 +89,18 @@ export const createCheckoutSession = async (
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
   try {
-    // Get current hostname and origin - important for avoiding CORS issues
+    // Get current hostname for logging
     const hostname = window.location.hostname;
-    const origin = window.location.origin; // This includes protocol, hostname, and port
+    const origin = window.location.origin;
     
     console.log(`Creating checkout session on domain ${hostname} for user ${userId}`);
     
-    // Use the current origin to avoid CORS issues between www and non-www domains
-    // Use the correct API path - removing the "pricing/" prefix
-    const apiUrl = `${origin}/api/create-checkout-session`;
-    console.log(`Making checkout request to ${apiUrl}`);
+    // Use API_URL which is already configured correctly for different environments
+    // All other working endpoints use the /pricing/ path segment
+    const endpoint = addCacheBuster(`${API_URL}/pricing/create-checkout-session`);
+    console.log(`Making checkout request to ${endpoint}`);
     
-    const response = await fetch(apiUrl, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -141,7 +141,6 @@ export const createCheckoutSession = async (
     console.log('Checkout session created successfully:', data);
     clearTimeout(timeoutId);
     return data;
-    
   } catch (error) {
     clearTimeout(timeoutId);
     console.error('Error creating checkout session:', error);

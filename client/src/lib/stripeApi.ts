@@ -14,22 +14,33 @@ const isProduction = window.location.hostname.includes('fishcad.com') ||
 console.log(`Running in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
 console.log(`Using API URL: ${API_URL}`);
 
-// TEMPORARY FIX: Always use test mode keys for checkout
-// These are the Stripe test mode keys and prices
+// PRODUCTION STRIPE KEYS
+const STRIPE_PROD_KEYS = {
+  PUBLISHABLE_KEY: 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi',
+  MONTHLY_PRICE: 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ', // Pro Monthly
+  ANNUAL_PRICE: 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Pro Yearly
+};
+
+// TEST MODE STRIPE KEYS
 const STRIPE_TEST_KEYS = {
   PUBLISHABLE_KEY: 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm',
   MONTHLY_PRICE: 'price_1QzyJ4Jj6v6u5YGCJq4e5YQG',
   ANNUAL_PRICE: 'price_1QzyJTUe3gfr8Gy6qP52J3Th'
 };
 
-// Stripe price IDs - USE TEST KEYS EVERYWHERE FOR NOW
+// Use production or test keys based on environment
+// On fishcad.com, use production keys, otherwise use test keys
+export const STRIPE_KEYS = isProduction ? STRIPE_PROD_KEYS : STRIPE_TEST_KEYS;
+
+// Stripe price IDs based on environment
 export const STRIPE_PRICES = {
-  MONTHLY: STRIPE_TEST_KEYS.MONTHLY_PRICE,
-  ANNUAL: STRIPE_TEST_KEYS.ANNUAL_PRICE,
+  MONTHLY: STRIPE_KEYS.MONTHLY_PRICE,
+  ANNUAL: STRIPE_KEYS.ANNUAL_PRICE,
 };
 
 // Log the Stripe Price IDs being used
 console.log('Using Stripe Price IDs:', STRIPE_PRICES);
+console.log('Using publishable key:', STRIPE_KEYS.PUBLISHABLE_KEY);
 
 // Helper to add cache-busting parameter
 const addCacheBuster = (url: string): string => {

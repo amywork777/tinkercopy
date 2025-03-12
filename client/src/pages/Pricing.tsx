@@ -65,34 +65,15 @@ export default function PricingPage() {
     try {
       // Check if we're on fishcad.com to ensure production mode
       const isFishCad = window.location.hostname.includes('fishcad.com');
-      const isProduction = isFishCad || window.location.hostname.includes('taiyaki-test1.web.app');
+      console.log(`Checkout started on domain: ${window.location.hostname}`);
       
-      // Log environment for debugging
-      console.log(`Checkout started in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
-      
-      // For fishcad.com, add special logging
-      if (isFishCad) {
-        console.log('Using DIRECT checkout on fishcad.com - bypassing API server');
-        
-        // Get the appropriate price ID based on billing interval
-        const finalPriceId = billingInterval === 'yearly' 
-          ? STRIPE_PRICES.ANNUAL
-          : STRIPE_PRICES.MONTHLY;
-        
-        console.log(`Selected plan: ${billingInterval}, using price ID: ${finalPriceId}`);
-      }
-      
-      console.log('Creating checkout session with:', {
-        priceId,
-        userId: user.id,
-        email: user.email,
-        hostname: window.location.hostname,
-        isProduction
-      });
+      // Get the appropriate price ID based on billing interval
+      const finalPriceId = priceId;
+      console.log(`Selected plan: ${billingInterval}, using price ID: ${finalPriceId}`);
       
       // Create a checkout session
       const { url } = await createCheckoutSession(
-        priceId, 
+        finalPriceId, 
         user.id, 
         user.email || ''
       );
@@ -117,66 +98,6 @@ export default function PricingPage() {
     } catch (error) {
       // Dismiss any existing toasts
       toast.dismiss();
-      
-      // DIRECT CHECKOUT FALLBACK FOR FISHCAD.COM
-      // If we're on fishcad.com and there was an error, try direct checkout as a last resort
-      const isFishCad = window.location.hostname.includes('fishcad.com');
-      if (isFishCad && error instanceof Error) {
-        console.log('API checkout failed, trying server API approach again');
-        toast.loading('Preparing secure checkout...', { duration: 5000 });
-        
-        // Determine which Stripe price ID to use based on the selected plan
-        const isAnnual = priceId.includes('annual') || billingInterval === 'yearly';
-        const realPriceId = isAnnual
-          ? 'price_1QzyJTUe3gfr8Gy6qP52J3Th'  // Annual price TEST MODE
-          : 'price_1QzyJ4Jj6v6u5YGCJq4e5YQG'; // Monthly price TEST MODE
-        
-        console.log(`Using ${isAnnual ? 'annual' : 'monthly'} plan with price ID: ${realPriceId} (TEST MODE)`);
-        
-        // Try one more time with the server API
-        try {
-          // Direct API call to create checkout session
-          const checkoutApiUrl = 'https://fishcad.com/api';
-          const endpoint = `${checkoutApiUrl}/pricing/create-checkout-session?_t=${Date.now()}`;
-          
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-              'Expires': '0',
-              'Origin': window.location.origin
-            },
-            body: JSON.stringify({
-              priceId: realPriceId,
-              userId: user?.id,
-              email: user?.email || '',
-              domain: window.location.hostname,
-              origin: window.location.origin
-            }),
-            credentials: 'include'
-          });
-          
-          if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-          }
-          
-          const data = await response.json();
-          
-          if (data.url) {
-            console.log('Redirecting to checkout URL:', data.url);
-            window.location.href = data.url;
-            return;
-          } else {
-            throw new Error('No checkout URL returned from server');
-          }
-        } catch (finalError) {
-          console.error('Final API attempt failed:', finalError);
-          toast.error('Payment system error. Please try again later or contact support.');
-          setIsLoading(false);
-        }
-      }
       
       console.error('Error creating checkout session:', error);
       

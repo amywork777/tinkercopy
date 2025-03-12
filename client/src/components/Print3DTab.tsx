@@ -24,6 +24,7 @@ import { FormControl, FormLabel, FormHelperText, FormItem, SimpleForm } from "@/
 import { loadStripe } from '@stripe/stripe-js';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
 import { Object3D } from 'three';
+import { STRIPE_KEYS } from '@/lib/stripeApi';
 
 // Initialize with empty array, will be populated from API
 const EMPTY_FILAMENT_COLORS: FilamentColor[] = [];
@@ -55,7 +56,7 @@ interface UploadedModelData {
 // Load Stripe outside of a component's render to avoid recreating the Stripe object on every render
 const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY 
   ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
-  : loadStripe('pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi'); // Fallback key
+  : loadStripe(STRIPE_KEYS.PUBLISHABLE_KEY); // Use key from stripeApi.ts
 
 const Print3DTab = () => {
   const { models, selectedModelIndex, exportSelectedModelAsSTL, selectModel } = useScene();

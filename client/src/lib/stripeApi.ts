@@ -251,9 +251,61 @@ export const createCheckoutSession = async (
             }
           }
           
-          // For 405 Method Not Allowed, try a different endpoint
+          // For 405 Method Not Allowed, try a GET request approach
           if (response.status === 405) {
-            console.log('Server does not allow POST to this endpoint, trying a different URL pattern...');
+            console.log('Server does not allow POST to this endpoint, trying a GET request approach...');
+            
+            // If we're on the www domain, try a GET approach with query params
+            if (endpoint.includes('www.fishcad.com')) {
+              try {
+                console.log('Attempting GET request approach for www domain...');
+                
+                // Create a new URL with query parameters
+                const url = new URL(endpoint);
+                url.searchParams.append('priceId', priceId);
+                url.searchParams.append('userId', userId);
+                url.searchParams.append('email', email);
+                url.searchParams.append('_t', Date.now().toString()); // Cache buster
+                
+                console.log(`Making GET request to: ${url.toString()}`);
+                
+                // Create a new controller for this request
+                const getController = new AbortController();
+                const getTimeoutId = setTimeout(() => getController.abort(), 10000);
+                
+                const getResponse = await fetch(url.toString(), {
+                  method: 'GET',
+                  headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Origin': window.location.origin
+                  },
+                  credentials: 'include',
+                  mode: 'cors',
+                  signal: getController.signal
+                });
+                
+                clearTimeout(getTimeoutId);
+                
+                if (!getResponse.ok) {
+                  console.error(`GET request approach failed: ${getResponse.status} ${getResponse.statusText}`);
+                  throw new Error(`GET request failed with status ${getResponse.status}`);
+                }
+                
+                const getResponseData = await getResponse.json();
+                
+                if (!getResponseData?.url) {
+                  throw new Error("API response from GET request is missing the checkout URL");
+                }
+                
+                console.log(`GET request approach succeeded - Redirecting to: ${getResponseData.url}`);
+                return getResponseData;
+              } catch (getError) {
+                console.error('GET request approach failed:', getError);
+                // Continue with normal flow - try next endpoint
+              }
+            }
+            
             const nextUrlIndex = (urlIndex + 1) % productionEndpoints.length;
             if (nextUrlIndex !== urlIndex) {
               await wait(RETRY_DELAY);

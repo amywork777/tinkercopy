@@ -2660,3 +2660,75 @@ app.all('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Simple checkout server running at http://localhost:${PORT}`);
 }); 
+
+// Special handler for the www domain path that was returning 405 errors
+app.get('/pricing/create-checkout-session', async (req, res) => {
+  console.log('Received GET request to /pricing/create-checkout-session - will process as POST');
+  
+  // If this is a query string format, extract parameters
+  const priceId = req.query.priceId;
+  const userId = req.query.userId;
+  const email = req.query.email;
+  
+  if (!priceId || !userId || !email) {
+    return res.status(400).json({ 
+      error: 'Missing required parameters', 
+      message: 'This endpoint requires priceId, userId, and email parameters'
+    });
+  }
+  
+  console.log('Processing as checkout with parameters:', { priceId, userId, email });
+  
+  try {
+    // Always create a new customer for simplicity
+    const customer = await stripe.customers.create({
+      email: email,
+      metadata: {
+        userId: userId,
+      },
+    });
+    const customerId = customer.id;
+    console.log(`Created new Stripe customer: ${customerId}`);
+    
+    // Update Firestore if available
+    if (firestore) {
+      try {
+        const userRef = firestore.collection('users').doc(userId);
+        await userRef.set({
+          stripeCustomerId: customerId,
+        }, { merge: true });
+        console.log('Updated Firestore with new customer ID');
+      } catch (firestoreError) {
+        console.error('Error updating Firestore:', firestoreError);
+        // Continue anyway
+      }
+    }
+    
+    // Create a checkout session with the customer
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${req.headers.origin || 'https://www.fishcad.com'}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin || 'https://www.fishcad.com'}/pricing`,
+      metadata: {
+        userId: userId,
+      },
+    });
+    
+    // Return the session URL
+    return res.json({ url: session.url });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    return res.status(500).json({ 
+      error: 'Failed to create checkout session', 
+      details: error.message 
+    });
+  }
+}); 

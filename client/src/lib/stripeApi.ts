@@ -89,109 +89,57 @@ export const createCheckoutSession = async (
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
   try {
-    // SPECIAL HANDLING FOR FISHCAD.COM DOMAIN
-    // Check if we're on fishcad.com - use appropriate approach
+    // Get current hostname and origin - important for avoiding CORS issues
     const hostname = window.location.hostname;
-    const isFishCad = hostname.includes('fishcad.com');
-    
-    // For non-fishcad.com domains, continue with the regular checkout flow
-    // Set up endpoints - try with and without subdirectories
-    let checkoutApiUrl: string;
-    let currentAttempt = 1;
-    let maxAttempts = 3;
-    let lastError: Error | null = null;
+    const origin = window.location.origin; // This includes protocol, hostname, and port
     
     console.log(`Creating checkout session on domain ${hostname} for user ${userId}`);
     
-    // Try different API endpoints until one works or we run out of attempts
-    while (currentAttempt <= maxAttempts) {
-      try {
-        // Different endpoints to try
-        if (currentAttempt === 1) {
-          // First try the standard endpoint
-          checkoutApiUrl = isFishCad 
-            ? 'https://fishcad.com/api' 
-            : API_URL;
-        } else if (currentAttempt === 2) {
-          // Second attempt: try the www subdomain for fishcad
-          checkoutApiUrl = isFishCad 
-            ? 'https://www.fishcad.com/api' 
-            : API_URL;
-        } else {
-          // Last attempt: try a direct checkout server endpoint
-          checkoutApiUrl = isFishCad 
-            ? 'https://fishcad.com' 
-            : API_URL;
-        }
-        
-        const endpoint = addCacheBuster(`${checkoutApiUrl}/pricing/create-checkout-session`);
-        
-        console.log(`Attempt ${currentAttempt}/${maxAttempts}: Making checkout request to ${endpoint}`);
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-            'Origin': window.location.origin
-          },
-          body: JSON.stringify({
-            priceId,
-            userId,
-            email,
-            domain: hostname,
-            origin: window.location.origin
-          }),
-          signal: controller.signal,
-          // Add credentials to ensure cookies are sent
-          credentials: 'include'
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorData;
-          try {
-            errorData = JSON.parse(errorText);
-          } catch (e) {
-            errorData = { error: errorText || 'Unknown error' };
-          }
-          
-          console.error(`Attempt ${currentAttempt}: Checkout session creation failed:`, {
-            status: response.status,
-            statusText: response.statusText,
-            errorData
-          });
-          
-          throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
-        }
-
-        const data = await response.json();
-        console.log('Checkout session created successfully:', data);
-        clearTimeout(timeoutId);
-        return data;
-        
-      } catch (error) {
-        console.error(`Attempt ${currentAttempt} failed:`, error);
-        lastError = error instanceof Error ? error : new Error(String(error));
-        currentAttempt++;
-        
-        // Don't retry on abort/timeout
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          throw new Error('Checkout request timed out. Please try again.');
-        }
-        
-        // Wait before retry (only if not the last attempt)
-        if (currentAttempt <= maxAttempts) {
-          console.log(`Waiting before retry attempt ${currentAttempt}...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-    }
+    // Use the current origin to avoid CORS issues between www and non-www domains
+    const apiUrl = `${origin}/api/pricing/create-checkout-session`;
+    console.log(`Making checkout request to ${apiUrl}`);
     
-    // If we get here, all attempts failed
-    throw lastError || new Error('Failed to create checkout session after multiple attempts');
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      },
+      body: JSON.stringify({
+        priceId,
+        userId,
+        email,
+        domain: hostname,
+        origin: origin
+      }),
+      signal: controller.signal,
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { error: errorText || 'Unknown error' };
+      }
+      
+      console.error(`Checkout session creation failed:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorData
+      });
+      
+      throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
+    }
+
+    const data = await response.json();
+    console.log('Checkout session created successfully:', data);
+    clearTimeout(timeoutId);
+    return data;
     
   } catch (error) {
     clearTimeout(timeoutId);

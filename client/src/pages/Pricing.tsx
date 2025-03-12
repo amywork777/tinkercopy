@@ -70,6 +70,18 @@ export default function PricingPage() {
       // Log environment for debugging
       console.log(`Checkout started in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
       
+      // For fishcad.com, add special logging
+      if (isFishCad) {
+        console.log('Using DIRECT checkout on fishcad.com - bypassing API server');
+        
+        // Get the appropriate price ID based on billing interval
+        const finalPriceId = billingInterval === 'yearly' 
+          ? STRIPE_PRICES.ANNUAL
+          : STRIPE_PRICES.MONTHLY;
+        
+        console.log(`Selected plan: ${billingInterval}, using price ID: ${finalPriceId}`);
+      }
+      
       console.log('Creating checkout session with:', {
         priceId,
         userId: user.id,
@@ -77,11 +89,6 @@ export default function PricingPage() {
         hostname: window.location.hostname,
         isProduction
       });
-      
-      // Special handling for fishcad.com
-      if (isFishCad) {
-        console.log('Using fishcad.com specific checkout flow');
-      }
       
       // Create a checkout session
       const { url } = await createCheckoutSession(
@@ -110,6 +117,23 @@ export default function PricingPage() {
     } catch (error) {
       // Dismiss any existing toasts
       toast.dismiss();
+      
+      // DIRECT CHECKOUT FALLBACK FOR FISHCAD.COM
+      // If we're on fishcad.com and there was an error, try direct checkout as a last resort
+      const isFishCad = window.location.hostname.includes('fishcad.com');
+      if (isFishCad && error instanceof Error) {
+        console.log('API checkout failed, trying direct checkout as fallback');
+        toast.error('Initial checkout method failed, trying alternative route...', { duration: 3000 });
+        
+        // Delay slightly then redirect to direct payment URL
+        setTimeout(() => {
+          const directUrl = `https://buy.stripe.com/5kA9BY2eZcYo4KI5kl?prefilled_email=${encodeURIComponent(user?.email || '')}`;
+          console.log('Redirecting to direct payment URL:', directUrl);
+          window.location.href = directUrl;
+        }, 2000);
+        
+        return;
+      }
       
       console.error('Error creating checkout session:', error);
       

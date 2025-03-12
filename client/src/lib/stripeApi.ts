@@ -55,66 +55,129 @@ export const createCheckoutSession = async (
   userId: string,
   email: string
 ): Promise<{ url: string }> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
   try {
     // Always use the absolute fishcad.com URL when on that domain
     const hostname = window.location.hostname;
     const isFishCad = hostname.includes('fishcad.com');
-    const checkoutApiUrl = isFishCad 
-      ? 'https://fishcad.com/api' 
-      : API_URL;
     
-    const endpoint = addCacheBuster(`${checkoutApiUrl}/pricing/create-checkout-session`);
+    // Set up endpoints - try with and without subdirectories
+    let checkoutApiUrl: string;
+    let currentAttempt = 1;
+    let maxAttempts = 3;
+    let lastError: Error | null = null;
     
-    console.log(`Making checkout request to ${endpoint} for user ${userId} with price ${priceId} from domain ${hostname}`);
+    console.log(`Creating checkout session on domain ${hostname} for user ${userId}`);
     
-    // Use a longer timeout for checkout API calls
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Origin': window.location.origin
-      },
-      body: JSON.stringify({
-        priceId,
-        userId,
-        email,
-        domain: hostname,
-        origin: window.location.origin
-      }),
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorData;
+    // Try different API endpoints until one works or we run out of attempts
+    while (currentAttempt <= maxAttempts) {
       try {
-        errorData = JSON.parse(errorText);
-      } catch (e) {
-        errorData = { error: errorText || 'Unknown error' };
-      }
-      
-      console.error('Checkout session creation failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        errorData
-      });
-      
-      throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
-    }
+        // Different endpoints to try
+        if (currentAttempt === 1) {
+          // First try the standard endpoint
+          checkoutApiUrl = isFishCad 
+            ? 'https://fishcad.com/api' 
+            : API_URL;
+        } else if (currentAttempt === 2) {
+          // Second attempt: try the www subdomain for fishcad
+          checkoutApiUrl = isFishCad 
+            ? 'https://www.fishcad.com/api' 
+            : API_URL;
+        } else {
+          // Last attempt: try a direct checkout server endpoint
+          checkoutApiUrl = isFishCad 
+            ? 'https://fishcad.com' 
+            : API_URL;
+        }
+        
+        const endpoint = addCacheBuster(`${checkoutApiUrl}/pricing/create-checkout-session`);
+        
+        console.log(`Attempt ${currentAttempt}/${maxAttempts}: Making checkout request to ${endpoint}`);
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Origin': window.location.origin
+          },
+          body: JSON.stringify({
+            priceId,
+            userId,
+            email,
+            domain: hostname,
+            origin: window.location.origin
+          }),
+          signal: controller.signal,
+          // Add credentials to ensure cookies are sent
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch (e) {
+            errorData = { error: errorText || 'Unknown error' };
+          }
+          
+          console.error(`Attempt ${currentAttempt}: Checkout session creation failed:`, {
+            status: response.status,
+            statusText: response.statusText,
+            errorData
+          });
+          
+          throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
+        }
 
-    const data = await response.json();
-    console.log('Checkout session created successfully:', data);
-    return data;
+        const data = await response.json();
+        console.log('Checkout session created successfully:', data);
+        clearTimeout(timeoutId);
+        return data;
+        
+      } catch (error) {
+        console.error(`Attempt ${currentAttempt} failed:`, error);
+        lastError = error instanceof Error ? error : new Error(String(error));
+        currentAttempt++;
+        
+        // Don't retry on abort/timeout
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          throw new Error('Checkout request timed out. Please try again.');
+        }
+        
+        // Wait before retry (only if not the last attempt)
+        if (currentAttempt <= maxAttempts) {
+          console.log(`Waiting before retry attempt ${currentAttempt}...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+    
+    // If we get here, all attempts failed
+    throw lastError || new Error('Failed to create checkout session after multiple attempts');
+    
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('Error creating checkout session:', error);
+    
+    // Provide more specific error messages
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Checkout request timed out. Please try again or contact support.');
+    }
+    
+    // Detect connection issues
+    if (error instanceof Error && 
+        (error.message.includes('fetch failed') || 
+         error.message.includes('network') || 
+         error.message.includes('ERR_CONNECTION_'))) {
+      throw new Error('Connection to checkout service failed. Please check your internet connection and try again.');
+    }
+    
     throw error;
   }
 };

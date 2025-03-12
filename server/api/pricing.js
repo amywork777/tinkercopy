@@ -12,29 +12,38 @@ const STRIPE_PRICES = {
 
 // Add CORS preflight handler for checkout endpoint
 router.options('/create-checkout-session', (req, res) => {
+  console.log('Received OPTIONS preflight for checkout endpoint');
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Origin');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Origin, Authorization, Cache-Control, Pragma, Expires');
   res.set('Access-Control-Max-Age', '86400'); // 24 hours
   res.status(204).end();
 });
 
 // Create a checkout session
 router.post('/create-checkout-session', async (req, res) => {
+  console.log('Received checkout session request from:', req.headers.origin || 'unknown origin');
+  console.log('Request headers:', req.headers);
+  
   // Handle OPTIONS request for CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request within POST handler');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Origin, Authorization, Cache-Control, Pragma, Expires');
     return res.status(200).end();
   }
   
   // Add CORS headers
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Origin, Authorization');
   
   try {
     const { priceId, userId, email, domain, origin } = req.body;
     
     if (!priceId || !userId) {
+      console.log('Missing required parameters:', { priceId, userId });
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     
@@ -48,6 +57,9 @@ router.post('/create-checkout-session', async (req, res) => {
     if (domain && domain.includes('fishcad.com')) {
       checkoutDomain = 'https://fishcad.com';
       console.log(`Using fishcad.com domain for checkout URLs: ${checkoutDomain}`);
+    } else if (origin && origin.includes('fishcad.com')) {
+      checkoutDomain = 'https://fishcad.com';
+      console.log(`Using fishcad.com domain based on origin header: ${checkoutDomain}`);
     } else if (domain) {
       // Ensure the domain has https://
       checkoutDomain = domain.startsWith('http') ? domain : `https://${domain}`;

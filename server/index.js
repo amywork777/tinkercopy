@@ -50,16 +50,40 @@ const app = express();
 // Middleware
 app.use(morgan('dev'));
 
-// Configure CORS with simpler options to allow all requests in development
+// Configure CORS with strong options to support production domains
 app.use(cors({
-  origin: '*', // Allow all origins
+  origin: function(origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:5173', 
+      'http://localhost:3000',
+      'https://fishcad.com', 
+      'https://www.fishcad.com',
+      'https://app.fishcad.com',
+      'https://taiyaki-test1.web.app'
+    ];
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      callback(null, true);
+    } else {
+      console.log(`CORS request from unauthorized origin: ${origin}`);
+      // Still allow all origins in development, but log them
+      callback(null, true);
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature', 'Cache-Control', 'Pragma', 'Expires', 'Origin'],
+  credentials: true,
   optionsSuccessStatus: 200 // Some legacy browsers (IE11) choke on 204
 }));
 
 // Special case for Stripe webhook to handle raw body
 app.use('/api/pricing/webhook', express.raw({ type: 'application/json' }));
+
+// Also handle direct pricing webhook (for fishcad.com direct access)
+app.use('/pricing/webhook', express.raw({ type: 'application/json' }));
 
 // Body parser for all other routes
 app.use(bodyParser.json());
@@ -68,6 +92,9 @@ app.use(bodyParser.json());
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/pricing', optimizeSubscriptionRoute);
 app.use('/api', statusCheckRoute);
+
+// Also mount pricing routes directly (for fishcad.com)
+app.use('/pricing', pricingRoutes);
 
 // Add endpoint to track downloads
 app.post('/api/track-download', async (req, res) => {

@@ -121,15 +121,56 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Configure middleware
-app.use(cors());
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow all origins in development, with logging
+    console.log(`CORS request from origin: ${origin || 'null'}`);
+    callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'stripe-signature', 'Cache-Control', 'Pragma', 'Expires'],
+  credentials: true,
+  optionsSuccessStatus: 204
+}));
+
+// Add OPTIONS handler for all routes
+app.options('*', cors());
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Special case for Stripe webhook to handle raw body
 app.use('/api/webhook', express.raw({ type: 'application/json' }));
+app.use('/webhook', express.raw({ type: 'application/json' }));
 
 // Add pricing API endpoint for subscription checkout
 app.post('/api/pricing/create-checkout-session', async (req, res) => {
+  console.log('Received checkout request at /api/pricing/create-checkout-session');
+  console.log('Request headers:', req.headers);
+  handleCheckoutSession(req, res);
+});
+
+// Add a direct endpoint for simpler access from fishcad.com
+app.post('/pricing/create-checkout-session', async (req, res) => {
+  console.log('Received checkout request at /pricing/create-checkout-session');
+  console.log('Request headers:', req.headers);
+  handleCheckoutSession(req, res);
+});
+
+// Add another direct endpoint for maximum compatibility
+app.post('/create-checkout-session', async (req, res) => {
+  console.log('Received checkout request at /create-checkout-session');
+  console.log('Request headers:', req.headers);
+  handleCheckoutSession(req, res);
+});
+
+// Handler function for checkout session creation
+async function handleCheckoutSession(req, res) {
+  // Add CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin');
+  
   try {
     const { priceId, userId, email } = req.body;
     
@@ -265,7 +306,7 @@ app.post('/api/pricing/create-checkout-session', async (req, res) => {
     console.error('Error creating checkout session:', error);
     res.status(500).json({ error: error.message });
   }
-});
+}
 
 // Endpoint to store an STL file temporarily
 app.post('/api/stl-files', (req, res) => {

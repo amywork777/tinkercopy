@@ -107,6 +107,41 @@ export const createCheckoutSession = async (
   // Helper function to wait
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   
+  // As a last resort, create a form submit to the Stripe checkout
+  const createFormSubmission = () => {
+    console.log('Attempting fallback form submission method');
+    
+    // Create a hidden form and submit it
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'https://checkout.stripe.com/create-checkout-session';
+    form.target = '_blank';
+    
+    // Add the necessary fields
+    const addField = (name: string, value: string) => {
+      const field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = name;
+      field.value = value;
+      form.appendChild(field);
+    };
+    
+    // Add required fields
+    addField('api_key', STRIPE_PROD_KEYS.PUBLISHABLE_KEY);
+    addField('price_id', priceId);
+    addField('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
+    addField('cancel_url', `${window.location.origin}/pricing`);
+    addField('customer_email', email);
+    
+    // Append the form to the body, submit it, and remove it
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+    
+    // Return a placeholder URL since we're redirecting via form
+    return Promise.resolve({ url: 'form_submission_in_progress' });
+  };
+  
   // Helper function for the fetch operation
   const attemptFetch = async (attempt: number = 1, urlIndex: number = 0): Promise<{ url: string }> => {
     try {
@@ -121,8 +156,12 @@ export const createCheckoutSession = async (
         'https://fishcad.com/pricing/create-checkout-session',  // Direct without /api
         'https://fishcad.com/api/pricing/create-checkout-session', // With /api
         'https://fishcad.com/api/create-checkout-session',      // Alternative path
+        'https://fishcad.com/checkout',                        // Simple checkout path
+        'https://fishcad.com/api/checkout',                    // Simple API checkout
         'https://www.fishcad.com/pricing/create-checkout-session', // With www
-        'https://www.fishcad.com/api/pricing/create-checkout-session' // With www and /api
+        'https://www.fishcad.com/api/pricing/create-checkout-session', // With www and /api
+        'https://www.fishcad.com/checkout',                    // Simple www checkout
+        'https://www.fishcad.com/api/checkout'                 // Simple www API checkout
       ];
       
       // Use a specific production endpoint for fishcad.com
@@ -176,20 +215,31 @@ export const createCheckoutSession = async (
 
         // Handle non-OK responses
         if (!response.ok) {
-          let errorData;
-          try {
-            errorData = await response.json();
-          } catch (e) {
-            // If not JSON, try getting the text
-            const text = await response.text();
-            errorData = { error: text || `HTTP error ${response.status}` };
-          }
-          
           console.error(`Attempt ${attempt}: Checkout session creation failed:`, {
             status: response.status,
-            statusText: response.statusText,
-            errorData
+            statusText: response.statusText
           });
+
+          // Clone the response before reading it
+          const clonedResponse = response.clone();
+          
+          // Try to get error details from the response
+          let errorData;
+          try {
+            // Try to parse as JSON first
+            errorData = await clonedResponse.json();
+          } catch (e) {
+            // If not JSON, try getting the text
+            try {
+              const text = await response.text();
+              errorData = { error: text || `HTTP error ${response.status}` };
+            } catch (textError) {
+              // If we can't read the text either, just use status info
+              errorData = { error: `HTTP error ${response.status} - ${response.statusText}` };
+            }
+          }
+          
+          console.error('Error data:', errorData);
           
           // For specific error cases, we may want to retry
           if (response.status >= 500 || response.status === 429) {
@@ -201,11 +251,43 @@ export const createCheckoutSession = async (
             }
           }
           
-          throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
+          // For 405 Method Not Allowed, try a different endpoint
+          if (response.status === 405) {
+            console.log('Server does not allow POST to this endpoint, trying a different URL pattern...');
+            const nextUrlIndex = (urlIndex + 1) % productionEndpoints.length;
+            if (nextUrlIndex !== urlIndex) {
+              await wait(RETRY_DELAY);
+              return attemptFetch(attempt, nextUrlIndex);
+            }
+          }
+          
+          throw new Error(errorData?.error || `Failed to create checkout session (HTTP ${response.status})`);
         }
         
-        // Success case
-        const data = await response.json();
+        // Success case - first clone the response before trying to read it
+        const clonedResponse = response.clone();
+        let data;
+        
+        try {
+          data = await clonedResponse.json();
+        } catch (e) {
+          console.error('Failed to parse response as JSON:', e);
+          try {
+            const text = await response.text();
+            console.log('Response as text:', text);
+            // Try to extract a URL from the text if possible
+            const urlMatch = text.match(/https:\/\/checkout\.stripe\.com\/[^\s"']+/);
+            if (urlMatch) {
+              data = { url: urlMatch[0] };
+            } else {
+              throw new Error('Could not parse response');
+            }
+          } catch (textError) {
+            console.error('Failed to read response text:', textError);
+            throw new Error('Failed to parse server response');
+          }
+        }
+        
         if (!data?.url) {
           throw new Error("API response is missing the checkout URL");
         }
@@ -227,24 +309,39 @@ export const createCheckoutSession = async (
       const isProduction = hostname.includes('fishcad.com');
       
       // In production, try a different URL pattern if we have network errors
-      if (isProduction && error instanceof TypeError && 
-          (error.message.includes('Failed to fetch') || 
-           error.message.includes('NetworkError') ||
-           error.message.includes('Network request failed'))) {
-        
+      if (isProduction && (
+          error instanceof TypeError || 
+          (error instanceof Error && (
+            error.message.includes('Failed to fetch') || 
+            error.message.includes('NetworkError') ||
+            error.message.includes('Network request failed') ||
+            error.message.includes('body stream already read') ||
+            error.message.includes('Method Not Allowed')
+          ))
+      )) {
         // Try the next URL pattern
         const productionEndpoints = [
           'https://fishcad.com/pricing/create-checkout-session',
-          'https://fishcad.com/api/pricing/create-checkout-session', 
+          'https://fishcad.com/api/pricing/create-checkout-session',
           'https://fishcad.com/api/create-checkout-session',
+          'https://fishcad.com/checkout',
+          'https://fishcad.com/api/checkout',
           'https://www.fishcad.com/pricing/create-checkout-session',
-          'https://www.fishcad.com/api/pricing/create-checkout-session'
+          'https://www.fishcad.com/api/pricing/create-checkout-session',
+          'https://www.fishcad.com/checkout',
+          'https://www.fishcad.com/api/checkout'
         ];
         
         const nextUrlIndex = (urlIndex + 1) % productionEndpoints.length;
         
         // If we've tried all URL patterns, then increment the attempt counter
         if (nextUrlIndex <= urlIndex) {
+          // If we've tried everything and we're at the last attempt, fall back to direct Stripe form submission
+          if (attempt >= MAX_RETRIES) {
+            console.log('All endpoints failed. Falling back to direct Stripe form submission...');
+            return createFormSubmission();
+          }
+          
           // Only retry for a certain number of attempts
           if (attempt < MAX_RETRIES) {
             console.log(`Network error, trying next endpoint pattern in ${RETRY_DELAY}ms...`);
@@ -265,6 +362,12 @@ export const createCheckoutSession = async (
         console.log(`Network error, retrying in ${RETRY_DELAY}ms...`);
         await wait(RETRY_DELAY);
         return attemptFetch(attempt + 1, urlIndex);
+      }
+      
+      // If we've exhausted all retries and still failed, try the direct form submission as a last resort
+      if (isProduction && attempt >= MAX_RETRIES) {
+        console.log('All API approaches failed. Falling back to direct Stripe form submission...');
+        return createFormSubmission();
       }
       
       throw error;

@@ -2894,3 +2894,65 @@ app.post('/api/pricing/create-checkout-session', async (req, res) => {
 
 // Keep the existing routes for backward compatibility
 // ... existing code ...
+
+// Add a simple direct checkout endpoint
+app.get('/simple-checkout', async (req, res) => {
+  try {
+    console.log('Simple checkout endpoint called');
+    
+    // Get parameters from query string
+    const { plan = 'monthly' } = req.query;
+    
+    // Determine price ID based on plan
+    const priceId = plan === 'monthly' 
+      ? process.env.STRIPE_PRICE_MONTHLY 
+      : process.env.STRIPE_PRICE_ANNUAL;
+    
+    if (!priceId) {
+      return res.status(500).json({ 
+        error: 'Price ID not configured. Please check server environment variables.' 
+      });
+    }
+    
+    // Get the host from the request
+    const host = req.get('host');
+    const protocol = req.protocol || 'https';
+    const origin = `${protocol}://${host}`;
+    
+    console.log(`Creating checkout session for ${plan} plan (${priceId}) with origin: ${origin}`);
+    
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      mode: 'subscription',
+      success_url: `${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/pricing`,
+      // No customer_email or client_reference_id - keeping it simple
+    });
+    
+    console.log('Checkout session created:', session.id);
+    console.log('Redirecting to:', session.url);
+    
+    // Redirect directly to the session URL
+    res.redirect(303, session.url);
+  } catch (error) {
+    console.error('Error in simple-checkout:', error);
+    
+    // Provide user-friendly error page
+    res.status(500).send(`
+      <html>
+        <head><title>Checkout Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h1>Something went wrong</h1>
+          <p>We encountered an error setting up your checkout session.</p>
+          <p>Error details: ${error.message}</p>
+          <p><a href="/pricing">Return to pricing page</a></p>
+        </body>
+      </html>
+    `);
+  }
+});
+
+// Add a REST API endpoint for the new client
+// ... existing code ...

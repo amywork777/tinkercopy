@@ -14,11 +14,9 @@ const getApiUrl = (): string => {
   
   // Production environments - fishcad.com
   if (hostname.includes('fishcad.com')) {
-    // Check if we're on the www subdomain or main domain
-    if (hostname === 'www.fishcad.com' || hostname === 'fishcad.com') {
-      // API might be on a separate subdomain
-      return 'https://api.fishcad.com';
-    }
+    console.log('Production environment detected - using api.fishcad.com');
+    // Always use dedicated API subdomain for production
+    return 'https://api.fishcad.com';
   }
   
   // Fallback to environment variable or default
@@ -32,10 +30,12 @@ const getApiUrl = (): string => {
 const API_URL = getApiUrl();
 console.log(`API URL configured as: ${API_URL}`);
 
-// Stripe price IDs from environment variables or fallback to the ones in server .env
+// Stripe price IDs - PRODUCTION LIVE MODE values
+// These must match the IDs in your Stripe dashboard's live mode
 export const STRIPE_PRICES = {
-  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
-  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
+  // IMPORTANT: These are LIVE mode price IDs for production
+  MONTHLY: 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE', // Live mode monthly price ID
+  ANNUAL: 'price_1R1LmoCLoBz9jXRlxRVYthz1',  // Live mode annual price ID
 };
 
 // Helper to add cache-busting parameter
@@ -95,18 +95,33 @@ export const createCheckoutSession = async (
   // Helper function for the fetch operation
   const attemptFetch = async (attempt: number = 1): Promise<{ url: string }> => {
     try {
-      // Construct the appropriate endpoint based on the API URL structure
-      let endpoint = API_URL;
+      const hostname = window.location.hostname;
+      const isProduction = hostname.includes('fishcad.com');
       
-      // API_URL might already include /api, so don't add it twice
-      const endpointPath = API_URL.includes('/api') 
-        ? '/pricing/create-checkout-session' 
-        : '/api/pricing/create-checkout-session';
+      console.log(`Checkout attempt ${attempt} - Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
       
-      // Complete endpoint with cache buster
-      endpoint = addCacheBuster(`${endpoint}${endpointPath}`);
+      // Use a specific production endpoint for fishcad.com
+      let endpoint;
+      if (isProduction) {
+        // In production, use the API subdomain with absolute endpoint
+        endpoint = 'https://api.fishcad.com/pricing/create-checkout-session';
+        console.log(`Using production endpoint: ${endpoint}`);
+      } else {
+        // For development, use the configured API URL
+        const endpointPath = API_URL.includes('/api') 
+          ? '/pricing/create-checkout-session' 
+          : '/api/pricing/create-checkout-session';
+        endpoint = `${API_URL}${endpointPath}`;
+        console.log(`Using development endpoint: ${endpoint}`);
+      }
       
-      console.log(`Attempt ${attempt}: Making request to ${endpoint}`);
+      // Add cache buster
+      endpoint = addCacheBuster(endpoint);
+      
+      console.log(`Attempt ${attempt}: Making request to ${endpoint} with price ID: ${priceId}`);
+      
+      // In production, always use credentials include
+      const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
       
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -116,13 +131,13 @@ export const createCheckoutSession = async (
           'Pragma': 'no-cache',
           'Expires': '0'
         },
-        credentials: 'include',
+        credentials,
         body: JSON.stringify({
           priceId,
           userId,
           email,
-          // Add force_new_customer flag to ensure we don't try to reuse a test customer in live mode
-          force_new_customer: true 
+          // Force new customer on production to avoid test/live mode conflicts
+          force_new_customer: isProduction
         }),
       });
 
@@ -162,7 +177,7 @@ export const createCheckoutSession = async (
         throw new Error("API response is missing the checkout URL");
       }
       
-      console.log(`Attempt ${attempt}: Successfully created checkout session`);
+      console.log(`Attempt ${attempt}: Successfully created checkout session - Redirecting to: ${data.url}`);
       return data;
     } catch (error: unknown) {
       console.error(`Attempt ${attempt} failed:`, error);
@@ -197,8 +212,30 @@ export const getUserSubscription = async (userId: string): Promise<{
   trialEndDate: string | null;
 }> => {
   try {
-    const endpoint = addCacheBuster(`${API_URL}/pricing/user-subscription/${userId}`);
+    const hostname = window.location.hostname;
+    const isProduction = hostname.includes('fishcad.com');
+    
+    // Use direct API URL for production
+    let endpoint;
+    if (isProduction) {
+      endpoint = `https://api.fishcad.com/pricing/user-subscription/${userId}`;
+      console.log(`Using production subscription endpoint: ${endpoint}`);
+    } else {
+      const endpointPath = API_URL.includes('/api') 
+        ? `/pricing/user-subscription/${userId}`
+        : `/api/pricing/user-subscription/${userId}`;
+      endpoint = `${API_URL}${endpointPath}`;
+      console.log(`Using development subscription endpoint: ${endpoint}`);
+    }
+    
+    // Add cache buster
+    endpoint = addCacheBuster(endpoint);
+    
     console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
+    
+    // In production, always use credentials include
+    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
+    
     const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
@@ -207,6 +244,7 @@ export const getUserSubscription = async (userId: string): Promise<{
         'Pragma': 'no-cache',
         'Expires': '0'
       },
+      credentials,
       // Add a reasonable timeout
       signal: AbortSignal.timeout(10000), // 10 second timeout
     });
@@ -254,7 +292,30 @@ export const getUserSubscription = async (userId: string): Promise<{
 // Cancel subscription
 export const cancelSubscription = async (userId: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const endpoint = addCacheBuster(`${API_URL}/pricing/cancel-subscription`);
+    const hostname = window.location.hostname;
+    const isProduction = hostname.includes('fishcad.com');
+    
+    // Use direct API URL for production
+    let endpoint;
+    if (isProduction) {
+      endpoint = 'https://api.fishcad.com/pricing/cancel-subscription';
+      console.log(`Using production cancel endpoint: ${endpoint}`);
+    } else {
+      const endpointPath = API_URL.includes('/api') 
+        ? '/pricing/cancel-subscription' 
+        : '/api/pricing/cancel-subscription';
+      endpoint = `${API_URL}${endpointPath}`;
+      console.log(`Using development cancel endpoint: ${endpoint}`);
+    }
+    
+    // Add cache buster
+    endpoint = addCacheBuster(endpoint);
+    
+    console.log(`Cancelling subscription for user: ${userId}`);
+    
+    // In production, always use credentials include
+    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
+    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -263,17 +324,30 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
         'Pragma': 'no-cache',
         'Expires': '0'
       },
+      credentials,
       body: JSON.stringify({
         userId,
       }),
     });
 
+    // Handle non-OK responses properly
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to cancel subscription');
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        // If not JSON, try getting the text
+        const text = await response.text();
+        errorData = { error: text || `HTTP error ${response.status}` };
+      }
+      
+      throw new Error(errorData.error || `Failed to cancel subscription (HTTP ${response.status})`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log('Cancellation response:', data);
+    
+    return data;
   } catch (error) {
     console.error('Error canceling subscription:', error);
     throw error;
@@ -300,8 +374,30 @@ export const verifySubscription = async (
   message: string;
 }> => {
   try {
-    const endpoint = addCacheBuster(`${API_URL}/pricing/verify-subscription`);
+    const hostname = window.location.hostname;
+    const isProduction = hostname.includes('fishcad.com');
+    
+    // Use direct API URL for production
+    let endpoint;
+    if (isProduction) {
+      endpoint = 'https://api.fishcad.com/pricing/verify-subscription';
+      console.log(`Using production verify endpoint: ${endpoint}`);
+    } else {
+      const endpointPath = API_URL.includes('/api') 
+        ? '/pricing/verify-subscription' 
+        : '/api/pricing/verify-subscription';
+      endpoint = `${API_URL}${endpointPath}`;
+      console.log(`Using development verify endpoint: ${endpoint}`);
+    }
+    
+    // Add cache buster
+    endpoint = addCacheBuster(endpoint);
+    
     console.log(`Verifying subscription for user: ${userId}, session: ${sessionId || 'none'}`);
+    
+    // In production, always use credentials include
+    const credentials: RequestCredentials = isProduction ? 'include' : 'omit';
+    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -310,6 +406,7 @@ export const verifySubscription = async (
         'Pragma': 'no-cache',
         'Expires': '0'
       },
+      credentials,
       body: JSON.stringify({
         userId,
         email,
@@ -317,12 +414,23 @@ export const verifySubscription = async (
       }),
     });
 
-    const data = await response.json();
-    
+    // Handle non-OK responses properly
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to verify subscription');
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        // If not JSON, try getting the text
+        const text = await response.text();
+        errorData = { error: text || `HTTP error ${response.status}` };
+      }
+      
+      throw new Error(errorData.error || `Failed to verify subscription (HTTP ${response.status})`);
     }
 
+    const data = await response.json();
+    console.log('Verification response:', data);
+    
     return data;
   } catch (error) {
     console.error('Error verifying subscription:', error);

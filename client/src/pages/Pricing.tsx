@@ -59,6 +59,10 @@ export default function PricingPage() {
     setIsLoading(true);
     
     try {
+      const isProduction = window.location.hostname.includes('fishcad.com');
+      console.log(`Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+      console.log(`Using price ID: ${priceId}`);
+      
       // First check API connectivity
       const isApiAccessible = await checkApiConnectivity();
       
@@ -70,7 +74,8 @@ export default function PricingPage() {
         priceId,
         userId: user.id,
         email: user.email,
-        location: window.location.hostname
+        location: window.location.hostname,
+        isProduction
       });
       
       // Create a checkout session
@@ -83,7 +88,10 @@ export default function PricingPage() {
       // Redirect to checkout
       if (url) {
         console.log('Redirecting to checkout URL:', url);
-        window.location.href = url;
+        // Use a short timeout to ensure the console log is visible
+        setTimeout(() => {
+          window.location.href = url;
+        }, 100);
       } else {
         throw new Error('No checkout URL returned');
       }
@@ -104,11 +112,15 @@ export default function PricingPage() {
         }
         // Check for CORS errors
         else if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
-          errorMessage = 'CORS error: The browser blocked the request due to security restrictions. Please try again later.';
+          errorMessage = 'Connection error: The browser blocked the request. Please try again later or contact support if the problem persists.';
         }
         // Check for 404 errors
         else if (error.message.includes('404') || error.message.includes('not found')) {
           errorMessage = 'Server error: The checkout endpoint could not be found. Please contact support.';
+        }
+        // Check for Stripe errors
+        else if (error.message.includes('Stripe') || error.message.includes('price') || error.message.includes('customer')) {
+          errorMessage = 'Payment processing error: There was an issue with the payment system. Please contact support.';
         }
         // For other errors, include the message
         else {

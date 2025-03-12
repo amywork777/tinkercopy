@@ -12,6 +12,13 @@ const crypto = require('crypto');
 // Load environment variables
 dotenv.config();
 
+// Log key environment variables
+console.log('Environment variables loaded:');
+console.log('- STRIPE_PRICE_MONTHLY:', process.env.STRIPE_PRICE_MONTHLY);
+console.log('- STRIPE_PRICE_ANNUAL:', process.env.STRIPE_PRICE_ANNUAL);
+console.log('- STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY ? '✓ Configured' : '✗ Missing');
+console.log('- STRIPE_PUBLISHABLE_KEY:', process.env.STRIPE_PUBLISHABLE_KEY ? '✓ Configured' : '✗ Missing');
+
 // Initialize Firebase Admin SDK if not already initialized
 let firestore;
 let storage;
@@ -2898,7 +2905,7 @@ app.post('/api/pricing/create-checkout-session', async (req, res) => {
 // Add a simple direct checkout endpoint
 app.get('/simple-checkout', async (req, res) => {
   try {
-    console.log('Simple checkout endpoint called');
+    console.log('Simple checkout endpoint called with query:', req.query);
     
     // Get parameters from query string
     const { plan = 'monthly' } = req.query;
@@ -2908,10 +2915,21 @@ app.get('/simple-checkout', async (req, res) => {
       ? process.env.STRIPE_PRICE_MONTHLY 
       : process.env.STRIPE_PRICE_ANNUAL;
     
+    console.log('Using price ID:', priceId);
+    
     if (!priceId) {
-      return res.status(500).json({ 
-        error: 'Price ID not configured. Please check server environment variables.' 
-      });
+      console.error('Price ID not configured in server environment');
+      return res.status(500).send(`
+        <html>
+          <head><title>Configuration Error</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>Configuration Error</h1>
+            <p>Price ID not configured in server environment.</p>
+            <p>Check server .env file for STRIPE_PRICE_MONTHLY and STRIPE_PRICE_ANNUAL.</p>
+            <p><a href="/pricing">Return to pricing page</a></p>
+          </body>
+        </html>
+      `);
     }
     
     // Get the host from the request
@@ -2921,21 +2939,56 @@ app.get('/simple-checkout', async (req, res) => {
     
     console.log(`Creating checkout session for ${plan} plan (${priceId}) with origin: ${origin}`);
     
-    // Create checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      mode: 'subscription',
-      success_url: `${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/pricing`,
-      // No customer_email or client_reference_id - keeping it simple
-    });
-    
-    console.log('Checkout session created:', session.id);
-    console.log('Redirecting to:', session.url);
-    
-    // Redirect directly to the session URL
-    res.redirect(303, session.url);
+    try {
+      // Create checkout session
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [{ price: priceId, quantity: 1 }],
+        mode: 'subscription',
+        success_url: `${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}/pricing`,
+        // No customer_email or client_reference_id - keeping it simple
+      });
+      
+      console.log('Checkout session created successfully:', session.id);
+      console.log('Redirecting to:', session.url);
+      
+      // Redirect directly to the session URL
+      return res.redirect(303, session.url);
+    } catch (stripeError) {
+      console.error('Stripe session creation failed:', stripeError);
+      
+      // Handle Stripe errors with more specific messages
+      let errorMessage = 'Error creating checkout session.';
+      let technicalDetails = stripeError.message || 'Unknown Stripe error';
+      
+      if (stripeError.type === 'StripeInvalidRequestError') {
+        if (stripeError.message.includes('No such price')) {
+          errorMessage = 'The price ID does not exist in your Stripe account.';
+          technicalDetails = `Price ID "${priceId}" was not found in your Stripe account. Check your Stripe Dashboard.`;
+        }
+      }
+      
+      // Return a user-friendly error page
+      return res.status(500).send(`
+        <html>
+          <head><title>Checkout Error</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>Checkout Error</h1>
+            <p>${errorMessage}</p>
+            <p>Technical details: ${technicalDetails}</p>
+            <p><a href="/pricing">Return to pricing page</a></p>
+            <div style="margin-top: 50px; padding: 20px; background: #f5f5f5; border-radius: 5px; text-align: left;">
+              <h3>Debug Information (for site administrator)</h3>
+              <p>Plan type: ${plan}</p>
+              <p>Price ID: ${priceId}</p>
+              <p>Host: ${host}</p>
+              <p>Stripe API key configured: ${!!process.env.STRIPE_SECRET_KEY}</p>
+            </div>
+          </body>
+        </html>
+      `);
+    }
   } catch (error) {
     console.error('Error in simple-checkout:', error);
     
@@ -2956,3 +3009,152 @@ app.get('/simple-checkout', async (req, res) => {
 
 // Add a REST API endpoint for the new client
 // ... existing code ...
+
+// Direct checkout web page
+app.get('/direct-checkout', async (req, res) => {
+  const { plan = 'monthly' } = req.query;
+  
+  // Get the price ID for the plan
+  const priceId = plan === 'monthly' 
+    ? process.env.STRIPE_PRICE_MONTHLY 
+    : process.env.STRIPE_PRICE_ANNUAL;
+  
+  const priceLabel = plan === 'monthly' ? '$20 monthly' : '$192 annually';
+  const publicKey = process.env.STRIPE_PUBLISHABLE_KEY;
+  
+  // Send an HTML page with a direct checkout button
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>FishCAD Pro Checkout</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          line-height: 1.6;
+          padding: 40px 20px;
+          max-width: 600px;
+          margin: 0 auto;
+          text-align: center;
+        }
+        h1 { margin-bottom: 10px; }
+        .price { 
+          font-size: 2rem; 
+          font-weight: bold; 
+          margin: 20px 0;
+        }
+        .btn {
+          display: inline-block;
+          background: #556cd6;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          padding: 12px 24px;
+          font-size: 16px;
+          font-weight: 600;
+          cursor: pointer;
+          margin-top: 20px;
+          text-decoration: none;
+        }
+        .debug {
+          margin-top: 40px;
+          text-align: left;
+          background: #f5f5f5;
+          padding: 15px;
+          border-radius: 4px;
+          font-size: 13px;
+          color: #666;
+        }
+      </style>
+      <script src="https://js.stripe.com/v3/"></script>
+    </head>
+    <body>
+      <h1>FishCAD Pro Subscription</h1>
+      <p>You're subscribing to the FishCAD Pro ${plan} plan</p>
+      <div class="price">${priceLabel}</div>
+      
+      <button class="btn" id="checkout-button">Subscribe Now</button>
+      
+      <p><a href="/">Return to FishCAD</a></p>
+      
+      <div class="debug">
+        <strong>Debug Info:</strong>
+        <div>Plan: ${plan}</div>
+        <div>Price ID: ${priceId}</div>
+        <div>Stripe Key Available: ${!!publicKey}</div>
+      </div>
+      
+      <script>
+        document.getElementById('checkout-button').addEventListener('click', function() {
+          // Create the checkout directly with Stripe.js
+          const stripe = Stripe('${publicKey}');
+          
+          fetch('/create-checkout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              priceId: '${priceId}',
+              plan: '${plan}'
+            })
+          })
+          .then(function(response) {
+            return response.json();
+          })
+          .then(function(session) {
+            return stripe.redirectToCheckout({ sessionId: session.id });
+          })
+          .then(function(result) {
+            if (result.error) {
+              alert(result.error.message);
+            }
+          })
+          .catch(function(error) {
+            console.error('Error:', error);
+            alert('There was an error processing your payment. Please try again.');
+          });
+        });
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// API endpoint for creating checkout sessions via fetch
+app.post('/create-checkout', async (req, res) => {
+  try {
+    console.log('Create checkout API called', req.body);
+    
+    const { priceId } = req.body;
+    
+    if (!priceId) {
+      console.error('No price ID provided');
+      return res.status(400).json({ error: 'Missing priceId parameter' });
+    }
+    
+    // Get the host from the request
+    const host = req.get('host');
+    const protocol = req.protocol || 'https';
+    const origin = `${protocol}://${host}`;
+    
+    // Create the checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      mode: 'subscription',
+      success_url: `${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/pricing`
+    });
+    
+    console.log('Checkout session created:', session.id);
+    
+    // Return the session ID
+    res.json({ id: session.id });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});

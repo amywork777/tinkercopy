@@ -30,155 +30,34 @@ const USE_TEST_MODE = false;
  * @returns {Promise<void>}
  */
 export async function directStripeCheckout(planType, userEmail, userId) {
-  console.log('Starting simple checkout in ' + (USE_TEST_MODE ? 'TEST' : 'LIVE') + ' mode...');
-  
-  // Get the correct set of keys based on mode
-  const keys = USE_TEST_MODE ? STRIPE_KEYS.TEST : STRIPE_KEYS.LIVE;
-  
-  // Get price ID based on plan
-  const priceId = planType === 'monthly' 
-    ? keys.MONTHLY_PRICE 
-    : keys.ANNUAL_PRICE;
-  
-  console.log('Using price ID:', priceId);
+  console.log('Starting checkout with simplified approach...');
   
   try {
-    // FIRST ATTEMPT: Use the super simple checkout endpoint (most reliable)
-    const simpleCheckoutUrl = new URL('/simple-checkout', window.location.origin);
-    simpleCheckoutUrl.searchParams.append('plan', planType);
+    // FIRST ATTEMPT: Use the direct checkout page (most reliable)
+    const directCheckoutUrl = new URL('/direct-checkout', window.location.origin);
+    directCheckoutUrl.searchParams.append('plan', planType);
     
-    console.log('Redirecting to simple checkout:', simpleCheckoutUrl.toString());
-    window.location.href = simpleCheckoutUrl.toString();
+    // Add optional parameters if available
+    if (userEmail) directCheckoutUrl.searchParams.append('email', userEmail);
+    if (userId) directCheckoutUrl.searchParams.append('userId', userId);
+    
+    console.log('Redirecting to direct checkout page:', directCheckoutUrl.toString());
+    window.location.href = directCheckoutUrl.toString();
     return;
   } catch (error) {
-    console.error('Simple checkout redirect failed:', error);
+    console.error('Direct checkout redirect failed, trying fallback:', error);
     
-    // SECOND ATTEMPT: Try the API endpoint with query parameters for GET
+    // FALLBACK: Try the simple checkout endpoint
     try {
-      const serverUrl = new URL('/api/pricing/create-checkout-session', window.location.origin);
+      const simpleCheckoutUrl = new URL('/simple-checkout', window.location.origin);
+      simpleCheckoutUrl.searchParams.append('plan', planType);
       
-      // Add query parameters
-      serverUrl.searchParams.append('priceId', priceId);
-      if (userId) serverUrl.searchParams.append('userId', userId);
-      if (userEmail) serverUrl.searchParams.append('email', userEmail);
-      
-      console.log('Making server request to:', serverUrl.toString());
-      
-      // Make the request
-      const response = await fetch(serverUrl.toString());
-      
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-      }
-      
-      // Parse the response
-      const data = await response.json();
-      
-      if (data.url) {
-        console.log('Redirecting to Stripe checkout:', data.url);
-        window.location.href = data.url;
-        return;
-      } else {
-        throw new Error('Server did not return a checkout URL');
-      }
-    } catch (apiError) {
-      console.error('API checkout failed:', apiError);
-      
-      // THIRD ATTEMPT: Fallback to POST request if GET fails
-      try {
-        console.log('Trying POST request fallback...');
-        
-        const response = await fetch('/api/pricing/create-checkout-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            priceId,
-            userId,
-            email: userEmail
-          }),
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.url) {
-          console.log('Redirecting to Stripe checkout from POST:', data.url);
-          window.location.href = data.url;
-          return;
-        } else {
-          throw new Error('Server did not return a checkout URL from POST');
-        }
-      } catch (postError) {
-        console.error('POST request failed:', postError);
-        
-        // LAST ATTEMPT: Fall back to legacy checkout endpoints
-        try {
-          console.log('Trying legacy checkout endpoints...');
-          
-          // Try each of these paths in order
-          const possiblePaths = [
-            '/pricing/create-checkout-session',
-            '/create-checkout-session',
-            '/stripe/create-checkout-session'
-          ];
-          
-          for (const path of possiblePaths) {
-            try {
-              console.log(`Trying ${path}...`);
-              const response = await fetch(`${path}?priceId=${priceId}`);
-              
-              if (response.ok) {
-                const data = await response.json();
-                if (data.url) {
-                  console.log(`Success with ${path}! Redirecting to:`, data.url);
-                  window.location.href = data.url;
-                  return;
-                }
-              }
-            } catch (e) {
-              console.error(`Failed with ${path}:`, e);
-              // Continue to next path
-            }
-          }
-          
-          throw new Error('All legacy paths failed');
-        } catch (legacyError) {
-          console.error('All server methods failed:', legacyError);
-          
-          // ABSOLUTE LAST RESORT: Direct URL (unlikely to work but worth a try)
-          console.log('LAST RESORT: Trying direct URL approach...');
-          
-          // Use Stripe's hosted checkout page directly
-          const params = new URLSearchParams();
-          params.append('key', keys.PUBLISHABLE_KEY);
-          params.append('line_items[0][price]', priceId);
-          params.append('line_items[0][quantity]', '1');
-          params.append('mode', 'subscription');
-          params.append('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
-          params.append('cancel_url', `${window.location.origin}/pricing`);
-          
-          if (userEmail) {
-            params.append('customer_email', userEmail);
-          }
-          
-          if (userId) {
-            params.append('client_reference_id', userId);
-          }
-          
-          // Use the more reliable direct checkout URL format
-          const checkoutUrl = USE_TEST_MODE 
-            ? `https://checkout.stripe.com/c/pay/${priceId}?${params.toString()}`
-            : `https://checkout.stripe.com/c/pay/${priceId}?${params.toString()}`;
-            
-          console.log('Last resort direct URL:', checkoutUrl);
-          window.location.href = checkoutUrl;
-        }
-      }
+      console.log('Redirecting to simple checkout:', simpleCheckoutUrl.toString());
+      window.location.href = simpleCheckoutUrl.toString();
+      return;
+    } catch (fallbackError) {
+      console.error('All checkout methods failed:', fallbackError);
+      alert('Unable to start checkout process. Please try refreshing the page or contact support.');
     }
   }
 } 

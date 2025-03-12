@@ -837,7 +837,7 @@ const Print3DTab = () => {
       // Important: For fishcad.com, we need to use /create-checkout-session without the /api prefix
       // because the API might be at a different path in production
       const apiUrl = isFishCad 
-        ? 'https://www.fishcad.com/create-checkout-session' 
+        ? 'https://www.fishcad.com/api/create-checkout-session' 
         : '/api/create-checkout-session';
       
       console.log(`Running in ${isFishCad ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);

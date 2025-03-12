@@ -138,7 +138,7 @@ export default function PricingPage() {
           // Create a hidden form to submit to Stripe
           const form = document.createElement('form');
           form.method = 'POST';
-          form.action = 'https://buy.stripe.com/session';
+          form.action = 'https://checkout.stripe.com/create-session';
           form.style.display = 'none';
           
           // Append all required fields

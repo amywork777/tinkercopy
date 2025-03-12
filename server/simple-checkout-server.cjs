@@ -184,6 +184,12 @@ app.post('/create-checkout-session', async (req, res) => {
   handleCheckoutSession(req, res);
 });
 
+// Handle GET requests to redirect to the appropriate page
+app.get('/create-checkout-session', (req, res) => {
+  console.log('Received GET request to /create-checkout-session, redirecting to pricing page');
+  res.redirect('/pricing');
+});
+
 // Add CORS preflight handler for the 3D print checkout endpoint
 app.options('/api/create-checkout-session', (req, res) => {
   // Set CORS headers

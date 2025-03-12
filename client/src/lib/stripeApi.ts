@@ -107,7 +107,7 @@ export const createCheckoutSession = async (
       const cancelUrl = encodeURIComponent(`${window.location.origin}/pricing`);
       
       // This format is guaranteed to work directly with Stripe's checkout system
-      const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?client_reference_id=${userId}&prefilled_email=${encodeURIComponent(email)}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
+      const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?key=${publishableKey}&client_reference_id=${userId}&prefilled_email=${encodeURIComponent(email)}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
       
       return { url: directUrl };
     }

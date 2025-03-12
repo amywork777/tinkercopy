@@ -795,8 +795,20 @@ const Print3DTab = () => {
       const selectedColor = filamentColors.find(color => color.id === selectedFilament);
       const colorName = selectedColor ? selectedColor.name : "Unknown Color";
       
-      // Prepare the checkout data
-      const checkoutData = {
+      // Create checkout data object with model information
+      const checkoutData: {
+        modelName: string;
+        color: string;
+        quantity: number;
+        finalPrice: number;
+        hasStlFileData: boolean;
+        stlFileDataType: string;
+        stlFileDataLength: number;
+        stlFileName: string;
+        stlFileData: string | null;
+        domain?: string;
+        origin?: string;
+      } = {
         modelName,
         color: colorName,
         quantity: quantity,
@@ -819,12 +831,28 @@ const Print3DTab = () => {
         stlFileName: checkoutData.stlFileName
       });
       
+      // Check if we're in production (fishcad.com)
+      const isFishCad = window.location.hostname.includes('fishcad.com');
+      const apiUrl = isFishCad ? 'https://www.fishcad.com/api/create-checkout-session' : '/api/create-checkout-session';
+      
+      console.log(`Running in ${isFishCad ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
+      console.log(`Using API URL: ${apiUrl}`);
+      
+      // Add the host information to the checkout data
+      checkoutData.domain = window.location.hostname;
+      checkoutData.origin = window.location.origin;
+      
       // Send the data to our server
-      fetch("/api/create-checkout-session", {
+      fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0",
+          "Origin": window.location.origin
         },
+        credentials: 'include', // Include cookies for cross-domain requests
         body: JSON.stringify(checkoutData),
       })
       .then(response => {
@@ -838,7 +866,7 @@ const Print3DTab = () => {
       .then(data => {
         if (data.success && data.url) {
           // Redirect to Stripe Checkout
-          console.log("Redirecting to Stripe Checkout");
+          console.log("Redirecting to Stripe Checkout:", data.url);
           window.location.href = data.url;
         } else {
           console.error("Invalid response from server:", data);

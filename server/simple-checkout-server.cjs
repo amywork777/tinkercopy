@@ -2811,3 +2811,86 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 
+
+// Add a REST API endpoint for the new client
+app.get('/api/pricing/create-checkout-session', async (req, res) => {
+  try {
+    console.log('GET API handler for checkout session called');
+    
+    // Get parameters from query string
+    const { priceId, userId, email } = req.query;
+    
+    if (!priceId) {
+      return res.status(400).json({ error: 'Missing required parameter: priceId' });
+    }
+    
+    console.log('Creating checkout session with:', { priceId, userId, email });
+    
+    // Create a checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${req.headers.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/pricing`,
+      client_reference_id: userId || undefined,
+      customer_email: email || undefined,
+    });
+    
+    console.log('Checkout session created:', session.id);
+    
+    // Return the checkout session URL
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('Error in GET API create-checkout-session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add a POST endpoint for the same functionality
+app.post('/api/pricing/create-checkout-session', async (req, res) => {
+  try {
+    console.log('POST API handler for checkout session called');
+    
+    // Get parameters from request body
+    const { priceId, userId, email } = req.body;
+    
+    if (!priceId) {
+      return res.status(400).json({ error: 'Missing required parameter: priceId' });
+    }
+    
+    console.log('Creating checkout session with:', { priceId, userId, email });
+    
+    // Create a checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${req.headers.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/pricing`,
+      client_reference_id: userId || undefined,
+      customer_email: email || undefined,
+    });
+    
+    console.log('Checkout session created:', session.id);
+    
+    // Return the checkout session URL
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('Error in POST API create-checkout-session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Keep the existing routes for backward compatibility
+// ... existing code ...

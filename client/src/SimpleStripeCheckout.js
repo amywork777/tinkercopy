@@ -8,8 +8,8 @@ const STRIPE_KEYS = {
   // Live mode keys
   LIVE: {
     PUBLISHABLE_KEY: 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi',
-    MONTHLY_PRICE: 'price_1R1jGiCLoBz9jXRlB1uLgvE9', 
-    ANNUAL_PRICE: 'price_1R1jGgCLoBz9jXRluMN6PsNw'
+    MONTHLY_PRICE: 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ', 
+    ANNUAL_PRICE: 'price_1QzyJNCLoBz9jXRlXE8bsC68'
   },
   // Test mode keys (from previous implementations)
   TEST: {
@@ -20,7 +20,7 @@ const STRIPE_KEYS = {
 };
 
 // IMPORTANT: Set to true for test mode, false for live mode
-const USE_TEST_MODE = true;
+const USE_TEST_MODE = false;
 
 /**
  * Redirects directly to Stripe checkout

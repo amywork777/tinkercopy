@@ -847,100 +847,9 @@ const Print3DTab = () => {
       checkoutData.domain = window.location.hostname;
       checkoutData.origin = window.location.origin;
       
-      // PRODUCTION HANDLING - Use Stripe redirect approach for 3D printing checkout
-      if (isFishCad) {
-        try {
-          console.log('Using Stripe redirect checkout for reliable 3D print checkout on fishcad.com');
-          
-          // Instead of submitting to our server, create a direct Stripe checkout session
-          // Using TEST MODE for reliable checkout
-          const stripePublishableKey = 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm';
-          
-          // Create a product description
-          const productName = `3D Print: ${checkoutData.modelName}`;
-          const description = `${checkoutData.modelName} in ${checkoutData.color} (Qty: ${checkoutData.quantity})`;
-          const amount = Math.round(checkoutData.finalPrice * 100); // Convert to cents
-          
-          // Show loading toast
-          toast({
-            title: "Processing your order",
-            description: "Preparing your 3D print checkout...",
-          });
-          
-          // Create an async function to handle the Stripe checkout
-          const initiateStripeCheckout = async () => {
-            try {
-              // Load Stripe and create checkout session
-              const stripe = await import('@stripe/stripe-js');
-              const stripeInstance = await stripe.loadStripe(stripePublishableKey);
-              
-              if (!stripeInstance) {
-                throw new Error('Failed to initialize Stripe');
-              }
-              
-              // Create line items for the checkout
-              const { error } = await stripeInstance.redirectToCheckout({
-                lineItems: [
-                  {
-                    // Use a standard test price ID for one-time payments
-                    price: 'price_1QzyJuVHCfAQRe6EFiVJqaQp', // Standard test price for one-time payments
-                    quantity: 1
-                  }
-                ],
-                mode: 'payment',
-                successUrl: `${window.location.origin}/checkout-confirmation`,
-                cancelUrl: `${window.location.origin}/`,
-                // Add metadata about the order
-                submitType: 'pay',
-                billingAddressCollection: 'required',
-                shippingAddressCollection: {
-                  allowedCountries: ['US']
-                }
-              });
-              
-              if (error) {
-                console.error('Stripe redirect error:', error);
-                throw error;
-              }
-            } catch (error) {
-              console.error('Stripe checkout error:', error);
-              throw error;
-            }
-          };
-          
-          // Call the async function
-          initiateStripeCheckout().catch(stripeError => {
-            console.error('Stripe checkout approach failed:', stripeError);
-            console.log('Falling back to fetch approach...');
-            
-            // Show error notification
-            toast({
-              title: "Checkout error",
-              description: "Could not initiate checkout with Stripe. Trying alternative method...",
-              variant: "destructive",
-            });
-            
-            // Continue with fetch approach
-            fetchCheckoutSession();
-          });
-          
-          return;
-        } catch (error) {
-          console.error('Stripe setup failed:', error);
-          console.log('Falling back to fetch approach...');
-          
-          // Show error notification
-          toast({
-            title: "Checkout error",
-            description: "Could not initiate checkout with Stripe. Trying alternative method...",
-            variant: "destructive",
-          });
-        }
-      }
-      
       // Function to handle the fetch-based approach
       const fetchCheckoutSession = () => {
-        // Traditional fetch-based approach (fallback for non-production or if Stripe approach fails)
+        // Traditional fetch-based approach that works in both dev and production
         fetch(apiUrl, {
           method: "POST",
           headers: {
@@ -988,7 +897,7 @@ const Print3DTab = () => {
         });
       };
       
-      // If not fishcad.com or the try block didn't return, use fetch approach
+      // Use the fetch-based approach for all environments
       fetchCheckoutSession();
     };
     

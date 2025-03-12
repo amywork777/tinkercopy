@@ -79,56 +79,9 @@ export const createCheckoutSession = async (
 
   try {
     // SPECIAL HANDLING FOR FISHCAD.COM DOMAIN
-    // Check if we're on fishcad.com - if so, use Stripe redirect method
+    // Check if we're on fishcad.com - use appropriate approach
     const hostname = window.location.hostname;
     const isFishCad = hostname.includes('fishcad.com');
-    
-    // If on fishcad.com, use Stripe redirect checkout instead of buy.stripe.com
-    if (isFishCad) {
-      console.log('Using REDIRECT Stripe checkout flow for fishcad.com in TEST MODE');
-      
-      // Determine which price ID to use based on the selected plan
-      const isAnnual = priceId.includes('annual') || priceId.includes('year');
-      
-      // Use the test mode price IDs
-      const realPriceId = isAnnual
-        ? STRIPE_TEST_KEYS.ANNUAL_PRICE
-        : STRIPE_TEST_KEYS.MONTHLY_PRICE;
-      
-      console.log(`Using Stripe redirect checkout with price ID: ${realPriceId} (${isAnnual ? 'annual' : 'monthly'} plan)`);
-      clearTimeout(timeoutId);
-      
-      // Create a standard Stripe checkout session using the Stripe API directly
-      const stripe = await import('@stripe/stripe-js');
-      const stripeInstance = await stripe.loadStripe(STRIPE_TEST_KEYS.PUBLISHABLE_KEY);
-      
-      if (!stripeInstance) {
-        throw new Error('Failed to initialize Stripe');
-      }
-      
-      // Redirect to Stripe Checkout page
-      const { error } = await stripeInstance.redirectToCheckout({
-        lineItems: [
-          {
-            price: realPriceId,
-            quantity: 1
-          }
-        ],
-        mode: 'subscription',
-        successUrl: `${window.location.origin}/pricing-success`,
-        cancelUrl: `${window.location.origin}/pricing`,
-        clientReferenceId: userId,
-        customerEmail: email || undefined
-      });
-      
-      if (error) {
-        console.error('Stripe redirect error:', error);
-        throw error;
-      }
-      
-      // Return a dummy URL since the redirect already happened
-      return { url: '#' };
-    }
     
     // For non-fishcad.com domains, continue with the regular checkout flow
     // Set up endpoints - try with and without subdirectories

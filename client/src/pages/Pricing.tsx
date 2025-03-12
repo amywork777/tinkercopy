@@ -122,7 +122,7 @@ export default function PricingPage() {
       // If we're on fishcad.com and there was an error, try direct checkout as a last resort
       const isFishCad = window.location.hostname.includes('fishcad.com');
       if (isFishCad && error instanceof Error) {
-        console.log('API checkout failed, trying simplified checkout approach');
+        console.log('API checkout failed, trying server API approach again');
         toast.loading('Preparing secure checkout...', { duration: 5000 });
         
         // Determine which Stripe price ID to use based on the selected plan
@@ -133,52 +133,46 @@ export default function PricingPage() {
         
         console.log(`Using ${isAnnual ? 'annual' : 'monthly'} plan with price ID: ${realPriceId} (TEST MODE)`);
         
-        // STRIPE REDIRECT APPROACH - Use Stripe's redirectToCheckout method instead of form
+        // Try one more time with the server API
         try {
-          // Get the Stripe publishable key
-          const stripePublishableKey = 'pk_test_51QIaT9CLoBz9jXRlLe4qRgojwW0MQ1anBfsTIVMjpxXjUUMPhkNbXcgHmPaySCZjoqiOJDQbCskQOzlvEUrGvQjz00UUcr3Qrm';
+          // Direct API call to create checkout session
+          const checkoutApiUrl = 'https://fishcad.com/api';
+          const endpoint = `${checkoutApiUrl}/pricing/create-checkout-session?_t=${Date.now()}`;
           
-          // Create an async function to handle the Stripe checkout
-          const initiateStripeCheckout = async () => {
-            // Load Stripe and create checkout session
-            const stripe = await import('@stripe/stripe-js');
-            const stripeInstance = await stripe.loadStripe(stripePublishableKey);
-            
-            if (!stripeInstance) {
-              throw new Error('Failed to initialize Stripe');
-            }
-            
-            // Redirect to Stripe Checkout page
-            const { error } = await stripeInstance.redirectToCheckout({
-              lineItems: [
-                {
-                  price: realPriceId,
-                  quantity: 1
-                }
-              ],
-              mode: 'subscription',
-              successUrl: `${window.location.origin}/pricing-success`,
-              cancelUrl: `${window.location.origin}/pricing`,
-              clientReferenceId: user?.id,
-              customerEmail: user?.email || undefined
-            });
-            
-            if (error) {
-              console.error('Stripe redirect error:', error);
-              throw error;
-            }
-          };
-          
-          // Call the async function
-          initiateStripeCheckout().catch(stripeError => {
-            console.error('Stripe checkout failed:', stripeError);
-            toast.error('Payment system error. Please try again later or contact support.');
-            setIsLoading(false);
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+              'Expires': '0',
+              'Origin': window.location.origin
+            },
+            body: JSON.stringify({
+              priceId: realPriceId,
+              userId: user?.id,
+              email: user?.email || '',
+              domain: window.location.hostname,
+              origin: window.location.origin
+            }),
+            credentials: 'include'
           });
           
-          return; // Exit early since checkout is handled by Stripe redirect
-        } catch (formError) {
-          console.error('Stripe checkout failed:', formError);
+          if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          if (data.url) {
+            console.log('Redirecting to checkout URL:', data.url);
+            window.location.href = data.url;
+            return;
+          } else {
+            throw new Error('No checkout URL returned from server');
+          }
+        } catch (finalError) {
+          console.error('Final API attempt failed:', finalError);
           toast.error('Payment system error. Please try again later or contact support.');
           setIsLoading(false);
         }

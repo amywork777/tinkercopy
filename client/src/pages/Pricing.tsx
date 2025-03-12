@@ -123,12 +123,25 @@ export default function PricingPage() {
       const isFishCad = window.location.hostname.includes('fishcad.com');
       if (isFishCad && error instanceof Error) {
         console.log('API checkout failed, trying direct checkout as fallback');
-        toast.error('Initial checkout method failed, trying alternative route...', { duration: 3000 });
+        toast.error('Initial checkout method failed, trying alternative checkout...', { duration: 3000 });
         
-        // Delay slightly then redirect to direct payment URL
+        // Determine which Stripe price ID to use based on the selected plan
+        const isAnnual = priceId.includes('annual') || billingInterval === 'yearly';
+        const realPriceId = isAnnual
+          ? 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Annual price
+          : 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'; // Monthly price
+        
+        console.log(`Redirecting to direct ${isAnnual ? 'annual' : 'monthly'} checkout with price ID: ${realPriceId}`);
+        
+        // Build the success/cancel URLs for redirecting back to the app
+        const successUrl = encodeURIComponent(`${window.location.origin}/pricing-success`);
+        const cancelUrl = encodeURIComponent(`${window.location.origin}/pricing`);
+        
+        // Create the direct Stripe checkout URL with all necessary parameters
+        const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?client_reference_id=${user.id}&prefilled_email=${encodeURIComponent(user?.email || '')}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
+        
+        // Delay slightly then redirect
         setTimeout(() => {
-          const directUrl = `https://buy.stripe.com/5kA9BY2eZcYo4KI5kl?prefilled_email=${encodeURIComponent(user?.email || '')}`;
-          console.log('Redirecting to direct payment URL:', directUrl);
           window.location.href = directUrl;
         }, 2000);
         

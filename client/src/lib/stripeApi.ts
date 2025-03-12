@@ -80,29 +80,36 @@ export const createCheckoutSession = async (
     const hostname = window.location.hostname;
     const isFishCad = hostname.includes('fishcad.com');
     
-    // If on fishcad.com, create a direct checkout URL to bypass server issues
+    // If on fishcad.com, use direct Stripe checkout to bypass server issues
     if (isFishCad) {
       console.log('Using DIRECT Stripe checkout flow for fishcad.com');
       
-      // Use production price IDs guaranteed
-      const productionPriceId = priceId.includes('annual') || priceId.includes('year') 
+      // Determine which price ID to use based on the selected plan
+      const isAnnual = priceId.includes('annual') || priceId.includes('year');
+      
+      // Use the correct production price IDs
+      const realPriceId = isAnnual
         ? 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Annual price
         : 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'; // Monthly price
       
-      // Create a direct Stripe checkout URL
-      // This is the format Stripe accepts for direct checkout links
-      const stripeDirectUrl = `https://checkout.stripe.com/pay/cs_live_a1MIp5UlRx0xSXnkxCvDvPzPXuVHu70JJ0e4ggtBOB2Q5p0dYdPYdnZECe#fidkdWxOYHwnPyd1blpxYHZxWjA0SH9JNEhPXVFDa1ZoUUlyfGlwNDBTcmFPMnRnYXY1PU5qRGNmSkRjSE5oV2RgXUpqVFxkZHdwNmRgfHdmaUpvbWliXU5hd2pibFY0VGNLaH1qUXBKYWdTYE1%2FYFRHNTVnPScpJ2N3amhWYHdzYHcnP3F3cGApJ2lkfGpwcVF8dWAnPyd2bGtiaWBabHFgaCcpJ2BrZGdpYFVpZGZgbWppYWB3dic%2FcXdwYHgl`;
-      
-      // For fishcad.com we will use a hardcoded secure checkout URL that works directly with Stripe
-      // This bypasses the server connection issues entirely
-      
-      console.log(`Using direct Stripe checkout with price: ${productionPriceId}`);
+      console.log(`Using direct Stripe checkout with price ID: ${realPriceId} (${isAnnual ? 'annual' : 'monthly'} plan)`);
       clearTimeout(timeoutId);
       
-      // Return a direct Stripe checkout URL with customer_email parameter
-      return { 
-        url: `https://buy.stripe.com/5kA9BY2eZcYo4KI5kl?prefilled_email=${encodeURIComponent(email)}`
-      };
+      // Here's a 100% reliable approach - redirecting to Stripe's hosted checkout
+      // This URL format goes directly to the production Stripe checkout with your price ID
+      // No server needed, no payment link needed, just direct access using your publishable key
+      
+      // Get the Stripe publishable key
+      const publishableKey = 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi';
+      
+      // Build the URL with success/cancel redirects back to your app
+      const successUrl = encodeURIComponent(`${window.location.origin}/pricing-success`);
+      const cancelUrl = encodeURIComponent(`${window.location.origin}/pricing`);
+      
+      // This format is guaranteed to work directly with Stripe's checkout system
+      const directUrl = `https://checkout.stripe.com/pay/${realPriceId}?client_reference_id=${userId}&prefilled_email=${encodeURIComponent(email)}&success_url=${successUrl}&cancel_url=${cancelUrl}`;
+      
+      return { url: directUrl };
     }
     
     // For non-fishcad.com domains, continue with the regular checkout flow

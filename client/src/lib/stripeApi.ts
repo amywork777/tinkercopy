@@ -984,17 +984,39 @@ export const createDirectStripeCheckout = async (
   
   // Load the Stripe.js library dynamically
   const loadStripe = async (): Promise<any> => {
-    if (window.Stripe) {
-      return window.Stripe;
-    }
-    
-    return new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = 'https://js.stripe.com/v3/';
-      script.onload = () => {
-        resolve(window.Stripe);
-      };
-      document.head.appendChild(script);
+    return new Promise((resolve, reject) => {
+      // Check if Stripe is already loaded
+      if (typeof window.Stripe !== 'undefined') {
+        console.log('Stripe already loaded');
+        return resolve(window.Stripe);
+      }
+      
+      try {
+        console.log('Loading Stripe.js dynamically');
+        // Create script element
+        const script = document.createElement('script');
+        script.src = 'https://js.stripe.com/v3/';
+        script.async = true;
+        
+        // Set up load handlers
+        script.onload = () => {
+          console.log('Stripe.js loaded successfully');
+          if (typeof window.Stripe !== 'undefined') {
+            resolve(window.Stripe);
+          } else {
+            reject(new Error('Stripe.js loaded but Stripe is not defined'));
+          }
+        };
+        
+        script.onerror = () => {
+          reject(new Error('Failed to load Stripe.js'));
+        };
+        
+        // Add script to document
+        document.head.appendChild(script);
+      } catch (error) {
+        reject(error);
+      }
     });
   };
   
@@ -1005,7 +1027,7 @@ export const createDirectStripeCheckout = async (
     
     console.log('Stripe loaded successfully, redirecting to checkout...');
     
-    // Create simple checkout parameters
+    // Create checkout parameters for direct checkout
     const checkoutParams = {
       lineItems: [
         {
@@ -1020,27 +1042,58 @@ export const createDirectStripeCheckout = async (
       clientReferenceId: userId,
     };
     
+    console.log('Redirecting to Stripe checkout with params:', checkoutParams);
+    
     // Redirect to Stripe's hosted checkout page
     const result = await stripe.redirectToCheckout(checkoutParams);
     
     if (result.error) {
-      throw new Error(result.error.message);
+      console.error('Stripe redirect error:', result.error);
+      throw new Error(result.error.message || 'Failed to redirect to Stripe checkout');
     }
   } catch (error) {
     console.error('Error creating direct Stripe checkout:', error);
-    // As a last resort, try the form submission method
-    return createFormSubmission();
+    // Use a simpler approach with window.open as a last resort
+    try {
+      console.log('Trying alternative approach - direct link to Stripe...');
+      // Direct link to Stripe Checkout with parameters in URL
+      const params = new URLSearchParams({
+        'client_reference_id': userId,
+        'customer_email': email,
+        'mode': 'subscription',
+        'success_url': `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+        'cancel_url': `${window.location.origin}/pricing`,
+      });
+      
+      // For price, we need to add it separately
+      params.append('line_items[0][price]', priceId);
+      params.append('line_items[0][quantity]', '1');
+      
+      // Add API key
+      params.append('key', STRIPE_PROD_KEYS.PUBLISHABLE_KEY);
+      
+      // Construct the final URL
+      const url = `https://checkout.stripe.com/pay/${params.toString()}`;
+      console.log('Opening direct Stripe URL:', url);
+      
+      // Open in new tab
+      window.open(url, '_blank');
+    } catch (directError) {
+      console.error('Direct Stripe URL failed:', directError);
+      // As an absolute last resort, try the form submission method
+      createFormSubmission(priceId, email);
+    }
   }
 };
 
 // As a last resort, create a form submit to the Stripe checkout
-const createFormSubmission = () => {
+const createFormSubmission = (priceId: string, email?: string) => {
   console.log('Attempting fallback form submission method');
   
   // Create a hidden form and submit it
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = 'https://checkout.stripe.com/create-checkout-session';
+  form.action = 'https://checkout.stripe.com/pay';
   form.target = '_blank';
   
   // Add the necessary fields
@@ -1053,13 +1106,22 @@ const createFormSubmission = () => {
   };
   
   // Add required fields
-  addField('api_key', STRIPE_PROD_KEYS.PUBLISHABLE_KEY);
-  addField('price_id', STRIPE_PRICES.MONTHLY); // Default to monthly
+  addField('key', STRIPE_PROD_KEYS.PUBLISHABLE_KEY);
+  addField('line_items[0][price]', priceId);
+  addField('line_items[0][quantity]', '1');
+  addField('mode', 'subscription');
   addField('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
   addField('cancel_url', `${window.location.origin}/pricing`);
+  
+  // Add customer email if provided
+  if (email) {
+    addField('customer_email', email);
+  }
   
   // Append the form to the body, submit it, and remove it
   document.body.appendChild(form);
   form.submit();
   document.body.removeChild(form);
+  
+  return { url: 'form_submission_in_progress' };
 }; 

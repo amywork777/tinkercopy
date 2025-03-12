@@ -2661,6 +2661,7 @@ app.listen(PORT, () => {
   console.log(`Simple checkout server running at http://localhost:${PORT}`);
 }); 
 
+// IMPORTANT: Add this GET handler BEFORE the catchall route (app.all('*') handler)
 // Special handler for the www domain path that was returning 405 errors
 app.get('/pricing/create-checkout-session', async (req, res) => {
   console.log('Received GET request to /pricing/create-checkout-session with query params:', req.query);
@@ -2730,10 +2731,7 @@ app.get('/pricing/create-checkout-session', async (req, res) => {
     console.log('Checkout session created with URL:', session.url);
     
     // Return the session URL as JSON
-    const jsonResponse = JSON.stringify({ url: session.url });
-    console.log('Sending JSON response:', jsonResponse);
-    
-    return res.status(200).send(jsonResponse);
+    return res.status(200).json({ url: session.url });
   } catch (error) {
     console.error('Error creating checkout session:', error);
     return res.status(500).json({ 

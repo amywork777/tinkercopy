@@ -33,6 +33,7 @@ export default function PricingPage() {
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
+  const [errorMessage, setErrorMessage] = useState('');
   
   // Parse URL parameters to set default plan if specified
   useEffect(() => {
@@ -50,78 +51,75 @@ export default function PricingPage() {
     };
   }, [location]);
 
-  const handleSubscribe = async (priceId: string) => {
-    if (!user) {
-      // If user is not logged in, redirect to login page with return URL to pricing
-      navigate('/login?redirect=/pricing');
-      return;
-    }
-
-    setIsLoading(true);
-    
-    // Show loading message
-    toast.loading('Preparing checkout...', { duration: 30000 });
-    
+  const handleSubscribe = async (planType: string) => {
     try {
-      // Check if we're on fishcad.com to ensure production mode
-      const isFishCad = window.location.hostname.includes('fishcad.com');
-      console.log(`Checkout started on domain: ${window.location.hostname}`);
+      setIsLoading(true);
+      setErrorMessage('');
       
-      // Get the appropriate price ID based on billing interval
-      const finalPriceId = priceId;
-      console.log(`Selected plan: ${billingInterval}, using price ID: ${finalPriceId}`);
+      console.log('Checkout started on domain:', window.location.hostname);
       
-      // Create a checkout session
-      const { url } = await createCheckoutSession(
-        finalPriceId, 
-        user.id, 
-        user.email || ''
-      );
-      
-      // Dismiss any existing toasts
-      toast.dismiss();
-      
-      // Redirect to checkout
-      if (url) {
-        console.log('Redirecting to checkout URL:', url);
-        
-        // Show success message before redirect
-        toast.success('Redirecting to secure checkout...', { duration: 3000 });
-        
-        // Short delay to show the message before redirect
-        setTimeout(() => {
-          window.location.href = url;
-        }, 1000);
-      } else {
-        throw new Error('No checkout URL returned');
+      // Validate we have the required data
+      if (!user || !user.uid || !user.email) {
+        setErrorMessage('Please log in to subscribe');
+        setIsLoading(false);
+        return;
       }
-    } catch (error) {
-      // Dismiss any existing toasts
-      toast.dismiss();
       
-      console.error('Error creating checkout session:', error);
+      // Get the price ID based on the selected plan
+      const priceId = planType === 'monthly' 
+        ? STRIPE_PRICES.MONTHLY 
+        : STRIPE_PRICES.ANNUAL;
       
-      // More detailed error message
-      let errorMessage = 'There was a problem processing your subscription. Please try again.';
+      console.log('Selected plan:', planType, 'using price ID:', priceId);
       
-      if (error instanceof Error) {
-        console.error('Error details:', error.message);
-        
-        // Check for specific error types
-        if (error.message.includes('network') || error.message.includes('timeout')) {
-          errorMessage = 'Network error: Could not connect to the checkout service. Please check your internet connection and try again.';
-        } else if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
-          errorMessage = 'Error connecting to payment service. Please try using a different browser or device.';
-        } else if (error.message.includes('404')) {
-          errorMessage = 'Checkout service not available. Please try again later or contact support.';
-        } else {
-          errorMessage += ` (${error.message})`;
+      // For production fishcad.com, attempt direct Stripe checkout first
+      // This bypasses our server entirely for more reliability
+      if (window.location.hostname.includes('fishcad.com')) {
+        try {
+          console.log('Using direct Stripe checkout for production...');
+          
+          // Import dynamically to avoid circular dependencies
+          const { createDirectStripeCheckout } = await import('../lib/stripeApi');
+          
+          // Use the direct checkout method
+          await createDirectStripeCheckout(priceId, user.uid, user.email);
+          
+          // If we get here, the direct checkout was initiated successfully
+          console.log('Direct checkout initiated successfully');
+          setIsLoading(false);
+          return;
+        } catch (directError) {
+          console.error('Direct checkout failed, falling back to API method:', directError);
+          // Continue to try the API method below
         }
       }
       
-      // Show error message
-      toast.error('Checkout Error', { description: errorMessage });
-      
+      // Only try the normal API approach if direct checkout failed or we're in dev
+      try {
+        // Try the normal checkout flow
+        const { url } = await createCheckoutSession(priceId, user.uid, user.email);
+        
+        // Check if we received a special value for direct checkout
+        if (url === 'direct_stripe_checkout_initiated' || url === 'form_submission_in_progress') {
+          // If this is a direct checkout, we don't need to redirect further
+          // The user should already be redirected
+          console.log('Direct checkout initiated, no further action needed');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Redirect to the checkout page
+        window.location.href = url;
+      } catch (error) {
+        console.error('Error creating checkout session:', error);
+        console.error('Error details:', error);
+        
+        setErrorMessage('Could not create checkout session. Please try again later.');
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error('Error in subscription flow:', error);
+      setErrorMessage('Could not complete subscription. Please try again later.');
       setIsLoading(false);
     }
   };
@@ -280,7 +278,7 @@ export default function PricingPage() {
                       <Button 
                         className="w-full" 
                         onClick={() => handleSubscribe(
-                          billingInterval === 'monthly' ? STRIPE_PRICES.MONTHLY : STRIPE_PRICES.ANNUAL
+                          billingInterval === 'monthly' ? 'monthly' : 'yearly'
                         )}
                         disabled={isLoading}
                       >

@@ -85,18 +85,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log(`Fetching subscription data for user: ${userId}`);
       
-      // First try to get from API
+      // Try direct Firestore first for faster results
       try {
-        const subscriptionData = await getUserSubscription(userId);
-        console.log('API subscription data:', subscriptionData);
-        return {
-          isPro: subscriptionData.isPro,
-          subscriptionPlan: subscriptionData.subscriptionPlan
-        };
-      } catch (apiError) {
-        console.warn('API error, falling back to direct Firestore query', apiError);
-        
-        // Fallback to direct Firestore query
+        // Prioritize Firestore for speed on login
         const userRef = doc(db, 'users', userId);
         const userSnap = await getDoc(userRef);
         
@@ -108,7 +99,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             subscriptionPlan: userData.subscriptionPlan || 'free'
           };
         }
+      } catch (firestoreError) {
+        console.error('Firestore query error, trying API:', firestoreError);
+      }
+      
+      // If Firestore fails or returns no data, try the API with shorter timeout
+      try {
+        // Use a shorter timeout for API calls on initial login to avoid blocking the UI
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), 3000); // 3-second timeout
         
+        const subscriptionData = await getUserSubscription(userId, abortController.signal);
+        clearTimeout(timeoutId);
+        
+        console.log('API subscription data:', subscriptionData);
+        return {
+          isPro: subscriptionData.isPro,
+          subscriptionPlan: subscriptionData.subscriptionPlan
+        };
+      } catch (apiError) {
+        console.warn('API error, falling back to results from Firestore query', apiError);
+        // We already tried Firestore above, so just return a default here
         return { isPro: false, subscriptionPlan: 'free' };
       }
     } catch (error) {

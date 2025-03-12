@@ -101,28 +101,31 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setSubscription(prev => ({ ...prev, loading: true }));
       console.log(`Refreshing subscription data for user: ${user.id}`);
       
-      // Try to get data from API first
-      let data;
+      // Try Firestore first for speed
+      let data = null;
       try {
-        data = await getUserSubscription(user.id);
-        console.log('Received subscription data:', data);
-      } catch (apiError) {
-        console.error('Error fetching subscription data:', apiError);
-        
-        // If API fails, try direct Firestore fallback
-        console.log('API failed, trying Firestore fallback...');
         data = await getSubscriptionDirectFromFirestore(user.id);
-        
         if (data) {
-          console.log('FALLBACK SUCCESS: Got subscription data directly from Firestore');
-          toast({
-            title: 'Using Firestore Fallback',
-            description: 'Server API is unavailable. Using direct database connection.',
-            variant: 'default',
-          });
-        } else {
-          // Both API and fallback failed
-          throw new Error('Both API and Firestore fallback failed');
+          console.log('Got subscription data directly from Firestore');
+        }
+      } catch (firestoreError) {
+        console.error('Error getting subscription from Firestore:', firestoreError);
+      }
+      
+      // If Firestore didn't work, try the API
+      if (!data) {
+        try {
+          // Use a shorter timeout for API
+          const abortController = new AbortController();
+          const timeoutId = setTimeout(() => abortController.abort(), 5000);
+          
+          data = await getUserSubscription(user.id, abortController.signal);
+          clearTimeout(timeoutId);
+          
+          console.log('Received subscription data from API:', data);
+        } catch (apiError) {
+          console.error('Error fetching subscription data from API:', apiError);
+          throw apiError; // Let the catch handler below handle it
         }
       }
       
@@ -161,45 +164,40 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Check if we should retry the request
       try {
         console.log('Retrying subscription data fetch after error...');
+        const fallbackData = await getSubscriptionDirectFromFirestore(user.id);
         
-        // Try direct Firestore as a last resort if previous attempt didn't
-        let data = await getSubscriptionDirectFromFirestore(user.id);
-        
-        if (!data) {
-          throw new Error('Final Firestore attempt failed');
+        if (fallbackData) {
+          console.log('FALLBACK SUCCESS: Got subscription data directly from Firestore');
+          toast({
+            title: 'Using Firestore Fallback',
+            description: 'Server API is unavailable. Using direct database connection.',
+            variant: 'default',
+          });
+          
+          setSubscription({
+            isPro: fallbackData.isPro,
+            modelsRemainingThisMonth: fallbackData.modelsRemainingThisMonth || 0,
+            modelsGeneratedThisMonth: fallbackData.modelsGeneratedThisMonth || 0,
+            downloadsThisMonth: fallbackData.downloadsThisMonth || 0,
+            subscriptionStatus: fallbackData.subscriptionStatus || 'none',
+            subscriptionEndDate: fallbackData.subscriptionEndDate || null,
+            subscriptionPlan: fallbackData.subscriptionPlan || 'free',
+            trialActive: fallbackData.trialActive === true,
+            trialEndDate: fallbackData.trialEndDate || null,
+            loading: false
+          });
+          
+          return;
         }
-        
-        // Ensure we have a valid value for isPro (default to false if missing)
-        const isPro = data.isPro === true;
-        console.log(`Final retry successful. User pro status: ${isPro ? 'PRO' : 'FREE'}`);
-        
-        setSubscription({
-          isPro, // Use our validated value
-          modelsRemainingThisMonth: data.modelsRemainingThisMonth || 0,
-          modelsGeneratedThisMonth: data.modelsGeneratedThisMonth || 0,
-          downloadsThisMonth: data.downloadsThisMonth || 0,
-          subscriptionStatus: data.subscriptionStatus || 'none',
-          subscriptionEndDate: data.subscriptionEndDate || null,
-          subscriptionPlan: data.subscriptionPlan || 'free',
-          trialActive: data.trialActive === true,
-          trialEndDate: data.trialEndDate || null,
-          loading: false
-        });
-      } catch (retryError) {
-        console.error('Retry also failed:', retryError);
-        
-        // Keep the existing subscription data but mark as not loading
-        setSubscription(prev => ({ 
-          ...prev, 
-          loading: false 
-        }));
-        
-        toast({
-          title: "Subscription data error",
-          description: "Could not verify your subscription status. Please try again or contact support.",
-          variant: "destructive",
-        });
+      } catch (fallbackError) {
+        console.error('Fallback error:', fallbackError);
       }
+      
+      // If all attempts failed, set default free tier values
+      setSubscription({
+        ...defaultSubscription,
+        loading: false,
+      });
     }
   };
 

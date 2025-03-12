@@ -2,6 +2,15 @@ const admin = require('firebase-admin');
 const express = require('express');
 const router = express.Router();
 
+// Add a preflight handler for CORS
+router.options('/optimize-subscription/:userId', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Max-Age', '86400'); // 24 hours
+  res.status(204).end();
+});
+
 // Lightweight subscription endpoint that returns minimal data
 // This is designed to be efficient and avoid ERR_INSUFFICIENT_RESOURCES errors
 router.get('/optimize-subscription/:userId', async (req, res) => {
@@ -38,6 +47,11 @@ router.get('/optimize-subscription/:userId', async (req, res) => {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
+    
+    // Add CORS headers to make sure this works from any domain
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
     
     return res.status(200).json(essentialData);
   } catch (error) {

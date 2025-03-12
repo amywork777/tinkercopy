@@ -102,6 +102,12 @@ const fetchWithRetry = async (
     const response = await fetch(url, options);
     return response;
   } catch (error) {
+    // Don't retry if abort was requested (e.g., timeout)
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.log('Fetch aborted (timeout or manual cancel)');
+      throw error;
+    }
+    
     if (retries <= 0) {
       throw error;
     }
@@ -115,7 +121,10 @@ const fetchWithRetry = async (
 };
 
 // Get user subscription status with retry and fallback logic
-export const getUserSubscription = async (userId: string): Promise<{
+export const getUserSubscription = async (
+  userId: string,
+  signal?: AbortSignal
+): Promise<{
   isPro: boolean;
   modelsRemainingThisMonth: number;
   modelsGeneratedThisMonth: number;
@@ -132,19 +141,27 @@ export const getUserSubscription = async (userId: string): Promise<{
       const optimizedEndpoint = addCacheBuster(`${API_URL}/pricing/optimize-subscription/${userId}`);
       console.log(`Trying optimized subscription endpoint for user: ${userId}`);
       
+      // Create options with signal if provided
+      const options: RequestInit = {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      };
+      
+      // Add signal if provided, otherwise use a default timeout
+      if (signal) {
+        options.signal = signal;
+      } else {
+        options.signal = AbortSignal.timeout(8000); // 8 second timeout by default
+      }
+      
       const response = await fetchWithRetry(
         optimizedEndpoint,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          },
-          // Add a reasonable timeout
-          signal: AbortSignal.timeout(8000), // 8 second timeout
-        },
+        options,
         2, // Number of retries
         500 // Initial backoff in ms
       );
@@ -177,19 +194,27 @@ export const getUserSubscription = async (userId: string): Promise<{
     const endpoint = addCacheBuster(`${API_URL}/pricing/user-subscription/${userId}`);
     console.log(`Fetching subscription for user: ${userId} from ${endpoint}`);
     
+    // Create options with signal if provided
+    const options: RequestInit = {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    };
+    
+    // Add signal if provided, otherwise use a default timeout
+    if (signal) {
+      options.signal = signal;
+    } else {
+      options.signal = AbortSignal.timeout(10000); // 10 second timeout by default
+    }
+    
     const response = await fetchWithRetry(
       endpoint,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        },
-        // Add a reasonable timeout
-        signal: AbortSignal.timeout(10000), // 10 second timeout
-      },
+      options,
       2, // Number of retries  
       300 // Initial backoff in ms
     );

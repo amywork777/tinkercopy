@@ -89,6 +89,24 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// Log Stripe key mode
+const isProductionKey = process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
+console.log(`Simple Checkout Server using Stripe ${isProductionKey ? 'PRODUCTION' : 'TEST'} mode`);
+if (!isProductionKey) {
+  console.warn('WARNING: Not using production Stripe key. Checkout may not work correctly in production.');
+} else {
+  console.log('✓ Production Stripe key detected in simple-checkout-server');
+}
+
+// Constants for Stripe products
+const STRIPE_PRICES = {
+  MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
+  ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
+};
+
+// Log the price IDs being used
+console.log('Simple Checkout Server using Stripe Price IDs:', STRIPE_PRICES);
+
 // Validate Stripe key
 (async function validateStripeKey() {
   try {
@@ -179,6 +197,28 @@ async function handleCheckoutSession(req, res) {
     if (!priceId || !userId || !email) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
+    
+    // Verify this is a valid production price ID (starting with price_1) 
+    // and use fallback if necessary
+    let finalPriceId = priceId;
+    if (!priceId.startsWith('price_1')) {
+      console.warn(`WARNING: Invalid price ID format: ${priceId}, using fallback`);
+      // Check if it matches a known plan type
+      if (priceId.includes('month') || priceId === 'monthly') {
+        finalPriceId = STRIPE_PRICES.MONTHLY;
+        console.log(`Using monthly price fallback: ${finalPriceId}`);
+      } else if (priceId.includes('year') || priceId === 'annual' || priceId === 'yearly') {
+        finalPriceId = STRIPE_PRICES.ANNUAL;
+        console.log(`Using annual price fallback: ${finalPriceId}`);
+      } else {
+        // Default to monthly
+        finalPriceId = STRIPE_PRICES.MONTHLY;
+        console.log(`Using default monthly price: ${finalPriceId}`);
+      }
+    }
+    
+    // Log that we'll create a production checkout
+    console.log(`Creating PRODUCTION checkout with price ID: ${finalPriceId}`);
     
     let customerId = null;
     
@@ -287,7 +327,7 @@ async function handleCheckoutSession(req, res) {
       customer: customerId,
       line_items: [
         {
-          price: priceId,
+          price: finalPriceId,
           quantity: 1,
         },
       ],

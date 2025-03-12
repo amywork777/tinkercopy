@@ -6,11 +6,27 @@ const API_URL = isDevelopment
   ? 'http://localhost:3001/api' 
   : (import.meta.env.VITE_API_URL || 'https://fishcad.com/api');
 
+// Explicitly specify whether we're in production mode based on hostname
+const isProduction = window.location.hostname.includes('fishcad.com') || 
+                     window.location.hostname.includes('taiyaki-test1.web.app');
+
+// Log the environment mode for debugging
+console.log(`Running in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
+console.log(`Using API URL: ${API_URL}`);
+
 // Stripe price IDs from environment variables with production fallbacks
+// Always use the production price IDs on fishcad.com
 export const STRIPE_PRICES = {
-  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
-  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
+  MONTHLY: isProduction 
+    ? 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'  // Always use production price ID
+    : (import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'),
+  ANNUAL: isProduction
+    ? 'price_1QzyJNCLoBz9jXRlXE8bsC68'  // Always use production price ID
+    : (import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68'),
 };
+
+// Log the Stripe Price IDs being used
+console.log('Using Stripe Price IDs:', STRIPE_PRICES);
 
 // Helper to add cache-busting parameter
 const addCacheBuster = (url: string): string => {

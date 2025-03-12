@@ -3,12 +3,24 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { getFirestore } = require('firebase-admin/firestore');
 const router = express.Router();
 
+// Log Stripe key mode
+const isProductionKey = process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
+console.log(`Using Stripe ${isProductionKey ? 'PRODUCTION' : 'TEST'} mode`);
+if (!isProductionKey) {
+  console.warn('WARNING: Not using production Stripe key. Checkout may not work correctly in production.');
+} else {
+  console.log('✓ Production Stripe key detected');
+}
+
 // Constants
 const DEFAULT_DOMAIN = process.env.DOMAIN || 'https://fishcad.com';
 const STRIPE_PRICES = {
   MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
   ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
+
+// Log the price IDs being used
+console.log('Using Stripe Price IDs:', STRIPE_PRICES);
 
 // Add CORS preflight handler for checkout endpoint
 router.options('/create-checkout-session', (req, res) => {
@@ -49,6 +61,28 @@ router.post('/create-checkout-session', async (req, res) => {
     
     console.log(`Creating checkout session for user ${userId} with price ${priceId}`);
     console.log(`Request from domain: ${domain}, origin: ${origin || 'none'}`);
+    
+    // Verify this is a valid production price ID (starting with price_1) 
+    // and use fallback if necessary
+    let finalPriceId = priceId;
+    if (!priceId.startsWith('price_1')) {
+      console.warn(`WARNING: Invalid price ID format: ${priceId}, using fallback`);
+      // Check if it matches a known plan type
+      if (priceId.includes('month') || priceId === 'monthly') {
+        finalPriceId = STRIPE_PRICES.MONTHLY;
+        console.log(`Using monthly price fallback: ${finalPriceId}`);
+      } else if (priceId.includes('year') || priceId === 'annual' || priceId === 'yearly') {
+        finalPriceId = STRIPE_PRICES.ANNUAL;
+        console.log(`Using annual price fallback: ${finalPriceId}`);
+      } else {
+        // Default to monthly
+        finalPriceId = STRIPE_PRICES.MONTHLY;
+        console.log(`Using default monthly price: ${finalPriceId}`);
+      }
+    }
+    
+    // Log that we'll create a production checkout
+    console.log(`Creating PRODUCTION checkout with price ID: ${finalPriceId}`);
     
     // Determine the correct domain for success/cancel URLs
     let checkoutDomain = DEFAULT_DOMAIN;
@@ -98,7 +132,7 @@ router.post('/create-checkout-session', async (req, res) => {
       customer: customerId,
       line_items: [
         {
-          price: priceId,
+          price: finalPriceId,
           quantity: 1,
         },
       ],

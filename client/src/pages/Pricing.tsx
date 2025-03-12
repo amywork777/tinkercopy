@@ -63,15 +63,22 @@ export default function PricingPage() {
     toast.loading('Preparing checkout...', { duration: 30000 });
     
     try {
+      // Check if we're on fishcad.com to ensure production mode
+      const isFishCad = window.location.hostname.includes('fishcad.com');
+      const isProduction = isFishCad || window.location.hostname.includes('taiyaki-test1.web.app');
+      
+      // Log environment for debugging
+      console.log(`Checkout started in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
+      
       console.log('Creating checkout session with:', {
         priceId,
         userId: user.id,
         email: user.email,
-        hostname: window.location.hostname
+        hostname: window.location.hostname,
+        isProduction
       });
       
       // Special handling for fishcad.com
-      const isFishCad = window.location.hostname.includes('fishcad.com');
       if (isFishCad) {
         console.log('Using fishcad.com specific checkout flow');
       }

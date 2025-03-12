@@ -1,6 +1,12 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables or use localhost in development
-const isDevelopment = window.location.hostname === 'localhost';
+// More comprehensive check for local development environments
+const hostname = window.location.hostname;
+const isDevelopment = hostname === 'localhost' || 
+                     hostname === '127.0.0.1' ||
+                     hostname.includes('.local') ||
+                     window.location.origin.includes('localhost') ||
+                     !hostname.includes('.');
 
 // Use the current origin (including www if present) for production to avoid CORS issues
 // This ensures we use the same domain as the page is loaded from
@@ -94,12 +100,19 @@ export const createCheckoutSession = async (
     // Get current hostname for logging
     const hostname = window.location.hostname;
     const origin = window.location.origin;
-    const isLocalhost = hostname === 'localhost';
     
-    console.log(`Creating checkout session on domain ${hostname} for user ${userId} in ${isLocalhost ? 'LOCAL' : 'PRODUCTION'} mode`);
+    // More comprehensive check for local development environments
+    // This will catch localhost, 127.0.0.1, and any dev server ports
+    const isLocalDevelopment = hostname === 'localhost' || 
+                              hostname === '127.0.0.1' ||
+                              hostname.includes('.local') ||
+                              origin.includes('localhost') ||
+                              !hostname.includes('.');
+    
+    console.log(`Creating checkout session on domain ${hostname} for user ${userId} in ${isLocalDevelopment ? 'LOCAL' : 'PRODUCTION'} mode`);
     
     // Always use the current origin for API requests to avoid CORS issues
-    const endpoint = isLocalhost
+    const endpoint = isLocalDevelopment
       ? addCacheBuster(`http://localhost:3001/api/pricing/create-checkout-session`) 
       : addCacheBuster(`${origin}/api/pricing/create-checkout-session`);
     
@@ -129,18 +142,19 @@ export const createCheckoutSession = async (
     
     // CRITICAL: Only include credentials in production environment
     // We must NEVER include credentials for localhost to avoid CORS issues
-    if (!isLocalhost) {
+    if (!isLocalDevelopment) {
       requestOptions.credentials = 'include';
     } else {
       // Explicitly set credentials to 'omit' for localhost to ensure they're never sent
       requestOptions.credentials = 'omit';
+      console.log('LOCAL DEVELOPMENT: Credentials explicitly set to "omit" to prevent CORS issues');
     }
     
-    console.log(`Attempt: Making checkout request to ${endpoint} ${isLocalhost ? 'without' : 'with'} credentials`);
+    console.log(`Attempt: Making checkout request to ${endpoint} ${isLocalDevelopment ? 'without' : 'with'} credentials`);
     
     // For localhost, retry without credentials if first attempt fails
     let retryCount = 0;
-    const maxRetries = isLocalhost ? 1 : 3; // Only retry once for localhost
+    const maxRetries = isLocalDevelopment ? 1 : 3; // Only retry once for localhost
     
     while (retryCount <= maxRetries) {
       try {
@@ -187,7 +201,7 @@ export const createCheckoutSession = async (
         return data;
       } catch (fetchError) {
         // If this was our last retry, or it's a network error in development, throw the error
-        if (retryCount > maxRetries || (isLocalhost && fetchError instanceof TypeError)) {
+        if (retryCount > maxRetries || (isLocalDevelopment && fetchError instanceof TypeError)) {
           console.error(`Attempt ${retryCount} failed:`, fetchError);
           throw fetchError;
         }
@@ -210,10 +224,29 @@ export const createCheckoutSession = async (
     
     // Check for CORS errors specifically
     if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-      if (window.location.hostname === 'localhost') {
-        throw new Error('The API server appears to be unavailable. Please ensure your local API server is running at http://localhost:3001');
+      const hostname = window.location.hostname;
+      const isLocalDevelopment = hostname === 'localhost' || 
+                                hostname === '127.0.0.1' ||
+                                hostname.includes('.local') ||
+                                !hostname.includes('.');
+      
+      if (isLocalDevelopment) {
+        throw new Error('Local API server appears to be unavailable. Please ensure your server is running at http://localhost:3001 and has CORS configured correctly.');
       } else {
         throw new Error('Connection to checkout service failed. Please check your internet connection and try again.');
+      }
+    }
+    
+    // Check for specific CORS error with credentials
+    if (error instanceof Error && error.message.includes('CORS') && error.message.includes('credentials')) {
+      const hostname = window.location.hostname;
+      const isLocalDevelopment = hostname === 'localhost' || 
+                                hostname === '127.0.0.1' ||
+                                hostname.includes('.local') ||
+                                !hostname.includes('.');
+      
+      if (isLocalDevelopment) {
+        throw new Error('CORS error with credentials: Your local API server at http://localhost:3001 needs to be configured to handle CORS properly with credentials.');
       }
     }
     
@@ -286,9 +319,15 @@ export const getUserSubscription = async (
     try {
       const hostname = window.location.hostname;
       const origin = window.location.origin;
-      const isLocalhost = hostname === 'localhost';
       
-      const optimizedEndpoint = isLocalhost
+      // More comprehensive check for local development environments
+      const isLocalDevelopment = hostname === 'localhost' || 
+                              hostname === '127.0.0.1' ||
+                              hostname.includes('.local') ||
+                              origin.includes('localhost') ||
+                              !hostname.includes('.');
+      
+      const optimizedEndpoint = isLocalDevelopment
         ? addCacheBuster(`http://localhost:3001/api/pricing/optimize-subscription/${userId}`)
         : addCacheBuster(`${origin}/api/pricing/optimize-subscription/${userId}`);
       
@@ -310,6 +349,13 @@ export const getUserSubscription = async (
         options.signal = signal;
       } else {
         options.signal = AbortSignal.timeout(8000); // 8 second timeout by default
+      }
+      
+      // Only include credentials in production environment
+      if (!isLocalDevelopment) {
+        options.credentials = 'include';
+      } else {
+        options.credentials = 'omit';
       }
       
       const response = await fetchWithRetry(
@@ -346,9 +392,15 @@ export const getUserSubscription = async (
     // Try legacy endpoint as fallback
     const hostname = window.location.hostname;
     const origin = window.location.origin;
-    const isLocalhost = hostname === 'localhost';
     
-    const endpoint = isLocalhost
+    // More comprehensive check for local development environments
+    const isLocalDevelopment = hostname === 'localhost' || 
+                               hostname === '127.0.0.1' ||
+                               hostname.includes('.local') ||
+                               origin.includes('localhost') ||
+                               !hostname.includes('.');
+    
+    const endpoint = isLocalDevelopment
       ? addCacheBuster(`http://localhost:3001/api/pricing/user-subscription/${userId}`)
       : addCacheBuster(`${origin}/api/pricing/user-subscription/${userId}`);
     
@@ -370,6 +422,13 @@ export const getUserSubscription = async (
       options.signal = signal;
     } else {
       options.signal = AbortSignal.timeout(10000); // 10 second timeout by default
+    }
+    
+    // Only include credentials in production environment
+    if (!isLocalDevelopment) {
+      options.credentials = 'include';
+    } else {
+      options.credentials = 'omit';
     }
     
     const response = await fetchWithRetry(

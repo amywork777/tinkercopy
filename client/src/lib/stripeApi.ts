@@ -1,12 +1,13 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL || 'https://www.fishcad.com/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Import the multi-endpoint functions
 import { createSubscriptionCheckout, getUserSubscriptionData } from '../SimpleStripeCheckout';
 
 // Stripe price IDs from environment variables
 export const STRIPE_PRICES = {
+  // Using test mode price IDs as fallback
   MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
   ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
@@ -29,25 +30,48 @@ export const createCheckoutSession = async (
       console.error('Multi-endpoint approach failed, falling back to original method:', multiEndpointError);
     }
     
-    // Fall back to the original method
-    const response = await fetch(`${API_URL}/pricing/create-checkout-session`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        priceId,
-        userId,
-        email,
-      }),
-    });
+    // Fall back to the original method - trying different endpoint formats
+    const endpoints = [
+      `${window.location.origin}/api/pricing/create-checkout-session`,
+      `/api/pricing/create-checkout-session`,
+      `${window.location.origin}/api/create-checkout-session`,
+      `/api/create-checkout-session`,
+    ];
+    
+    let lastError = null;
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`Trying endpoint: ${endpoint}`);
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            priceId,
+            userId,
+            email,
+          }),
+        });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to create checkout session');
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.warn(`Error from ${endpoint}:`, errorData);
+          continue; // Try the next endpoint
+        }
+
+        const data = await response.json();
+        if (data.url) {
+          return { url: data.url };
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch from ${endpoint}:`, error);
+        lastError = error;
+      }
     }
-
-    return await response.json();
+    
+    throw new Error(lastError ? `All endpoints failed: ${lastError.message}` : 'All endpoints failed');
   } catch (error) {
     console.error('Error creating checkout session:', error);
     throw error;

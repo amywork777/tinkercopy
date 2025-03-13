@@ -30,46 +30,34 @@ export const STRIPE_PRICES = {
 };
 
 /**
- * Create a checkout session for subscription
- * @param {string} priceId - The Stripe Price ID
+ * Create a checkout session for subscription with enhanced endpoint fallbacks
+ * @param {string} priceId - The Stripe price ID
  * @param {string} userId - The user's ID
  * @param {string} email - The user's email
- * @returns {Promise<string>} - Checkout URL
+ * @returns {Promise<string>} - The checkout URL
  */
-export const createSubscriptionCheckout = async (
-  priceId,
-  userId,
-  email
-) => {
-  // Log the request details for debugging
-  console.log('Creating subscription checkout:', { priceId, userId, email });
+export const createSubscriptionCheckout = async (priceId, userId, email) => {
+  console.log("Creating subscription checkout:", { priceId, userId, email });
   
-  // Prepare the request payload
-  const payload = {
+  // Prepare checkout data
+  const checkoutData = {
     priceId,
     userId,
-    email,
-    type: 'subscription', // Add type to distinguish from 3D print checkout
-    // Add timestamp to prevent caching issues
-    timestamp: new Date().getTime()
+    email
   };
   
   // Create a list of endpoints to try (in order of preference)
-  const baseUrl = getBaseUrl();
+  // Similar to the working 3D printing approach
   const endpoints = [
-    // Try direct www endpoints first for most reliable connection
-    'https://www.fishcad.com/api/pricing/create-checkout-session',
-    // Then try relative paths which may work in some environments
-    `/api/pricing/create-checkout-session`,
-    // Then try explicit baseUrl construction (prevent double /api/ by checking if baseUrl ends with /api)
-    `${baseUrl}${baseUrl.endsWith('/api') ? '' : '/api'}/pricing/create-checkout-session`,
-    // Fallback to alternative paths
-    `/api/create-checkout-session`,
-    `${baseUrl}${baseUrl.endsWith('/api') ? '' : '/api'}/create-checkout-session`
+    // Try relative endpoints first (works in both dev and prod)
+    '/api/pricing/create-checkout-session',
+    '/api/create-checkout-session',
+    // Then try absolute URLs
+    `${window.location.origin}/api/pricing/create-checkout-session`,
+    `${window.location.origin}/api/create-checkout-session`
   ];
   
-  // Log the endpoints we're going to try
-  console.log('Attempting checkout with these endpoints:', endpoints);
+  console.log("Attempting checkout with these endpoints:", endpoints);
   
   // Try each endpoint until one works
   let lastError = null;
@@ -81,10 +69,9 @@ export const createSubscriptionCheckout = async (
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
         },
-        credentials: 'include',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(checkoutData),
+        credentials: 'include' // Include cookies in the request
       });
       
       // Log response status for debugging
@@ -93,14 +80,14 @@ export const createSubscriptionCheckout = async (
       // Check if the response is valid
       if (response.ok) {
         const data = await response.json();
-        console.log('Checkout response:', data);
+        console.log('Checkout response data:', data);
         
-        // Return the checkout URL
         if (data.url) {
-          console.log('✅ Checkout URL obtained:', data.url);
+          // Redirect to the checkout page
+          window.location.href = data.url;
           return data.url;
         } else {
-          console.error('Response missing URL property:', data);
+          console.log("Response missing URL - trying next endpoint");
         }
       } else {
         // Try to get error details

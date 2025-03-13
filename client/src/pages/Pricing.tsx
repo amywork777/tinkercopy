@@ -19,19 +19,24 @@ import { Check, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { createCheckoutSession, STRIPE_PRICES } from '@/lib/stripeApi';
 import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
-import { CrownIcon } from 'lucide-react';
+import { CrownIcon, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { directStripeCheckout, STRIPE_PRICES } from '../SimpleStripeCheckout';
+import { createCheckoutSession } from '../lib/stripeApi';
+// TODO: Remove this import as we're using STRIPE_PRICES from SimpleStripeCheckout
+// import { config } from '../lib/config';
 
 export default function PricingPage() {
   const { user } = useAuth();
   const { subscription } = useSubscription();
-  const { toast } = useToast();
+  const { toast: uiToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
+  const [errorMessage, setErrorMessage] = useState('');
   
   // Parse URL parameters to set default plan if specified
   useEffect(() => {
@@ -41,35 +46,69 @@ export default function PricingPage() {
     if (plan === PRICING_PLANS.PRO_ANNUAL) {
       setBillingInterval('yearly');
     }
+    
+    // Force a repaint to ensure the modal is visible
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [location]);
 
-  const handleSubscribe = async (priceId: string) => {
-    if (!user) {
-      // If user is not logged in, redirect to login page with return URL to pricing
-      navigate('/login?redirect=/pricing');
-      return;
-    }
-
-    setIsLoading(true);
-    
+  const handleSubscribe = async (plan: string) => {
     try {
-      // Create a checkout session
-      const { url } = await createCheckoutSession(
-        priceId, 
-        user.id, 
-        user.email || ''
-      );
+      setIsLoading(true);
       
-      // Redirect to checkout
-      window.location.href = url;
+      // Log the plan type for debugging
+      console.log(`Subscribing to ${plan} plan...`);
+      
+      // Get user information if available
+      const userEmail = user?.email || '';
+      const userId = user?.uid || '';
+      
+      console.log(`User info - Email: ${userEmail}, ID: ${userId}`);
+      
+      // Get the correct price ID based on the plan
+      const planType = plan === 'monthly' ? 'MONTHLY' : 'ANNUAL';
+      const priceId = STRIPE_PRICES[planType]; 
+      
+      console.log(`Using price ID: ${priceId} for ${planType} plan`);
+      
+      try {
+        // Try the direct Stripe checkout first (handles redirection internally)
+        const success = await directStripeCheckout(planType, userId, userEmail);
+        
+        if (success) {
+          console.log('Checkout session created successfully');
+          // The user will be redirected by the directStripeCheckout function
+          return;
+        }
+      } catch (directError) {
+        console.error('Direct checkout method failed:', directError);
+        // Continue to alternative method
+      }
+      
+      // If direct checkout fails, try the API checkout
+      try {
+        console.log('Trying API checkout as fallback');
+        const { url } = await createCheckoutSession(priceId, userId, userEmail);
+        
+        if (url) {
+          console.log('Redirecting to checkout URL:', url);
+          window.location.href = url;
+          return;
+        }
+      } catch (apiError) {
+        console.error('API checkout method failed:', apiError);
+        throw new Error('All checkout methods failed');
+      }
+      
     } catch (error) {
-      console.error('Error creating checkout session:', error);
-      toast({
-        title: 'Subscription error',
-        description: 'There was a problem processing your subscription. Please try again.',
-        variant: 'destructive',
+      console.error('Error during subscription process:', error);
+      toast('Error starting checkout. Please try again.', {
+        type: 'error',
       });
     } finally {
+      // Always make sure to clear loading state
       setIsLoading(false);
     }
   };
@@ -84,10 +123,10 @@ export default function PricingPage() {
   return (
     <div className="flex min-h-screen bg-background/95 flex-col items-center justify-center p-4 md:p-8 relative">
       {/* Semi-transparent background overlay */}
-      <div className="fixed inset-0 bg-black/25 backdrop-blur-sm z-0" onClick={() => navigate('/')}></div>
+      <div className="fixed inset-0 bg-black/25 backdrop-blur-sm z-10" onClick={() => navigate('/')}></div>
       
       {/* Main content container */}
-      <div className="bg-background rounded-xl shadow-xl border max-w-5xl w-full z-10 overflow-hidden relative">
+      <div className="bg-background rounded-xl shadow-xl border max-w-5xl w-full z-20 overflow-hidden relative">
         {/* Close button moved inside the card */}
         <Button 
           variant="ghost" 
@@ -153,15 +192,11 @@ export default function PricingPage() {
                     <ul className="mt-4 space-y-3">
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Try it out upon account creation</span>
+                        <span>One-hour Pro trial upon signup</span>
                       </li>
                       <li className="flex items-start">
                         <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
                         <span>Unlimited 3D Print Requests</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Limited Access to Assets Library</span>
                       </li>
                     </ul>
                   </CardContent>
@@ -195,7 +230,7 @@ export default function PricingPage() {
                     </TabsContent>
                     <TabsContent value="yearly" className="mt-0 p-0">
                       <div className="text-2xl font-bold">$192</div>
-                      <div className="text-sm text-muted-foreground">/year <span className="text-xs font-medium text-green-500">(save $48)</span></div>
+                      <div className="text-sm text-muted-foreground">/year <span className="text-xs font-medium text-green-500">(save 20%)</span></div>
                     </TabsContent>
                     
                     <ul className="mt-4 space-y-3">
@@ -232,11 +267,18 @@ export default function PricingPage() {
                       <Button 
                         className="w-full" 
                         onClick={() => handleSubscribe(
-                          billingInterval === 'monthly' ? STRIPE_PRICES.MONTHLY : STRIPE_PRICES.ANNUAL
+                          billingInterval === 'monthly' ? 'monthly' : 'yearly'
                         )}
                         disabled={isLoading}
                       >
-                        {!user ? 'Sign in to Subscribe' : (isLoading ? 'Processing...' : 'Upgrade to Pro')}
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>Subscribe</>
+                        )}
                       </Button>
                     )}
                   </CardFooter>
@@ -245,17 +287,32 @@ export default function PricingPage() {
                 {/* Enterprise Tier */}
                 <Card className="flex flex-col h-full">
                   <CardHeader className="pb-3">
-                    <CardTitle>Enterprise Solutions</CardTitle>
-                    <CardDescription>Looking for more? We offer custom solutions for businesses.</CardDescription>
+                    <CardTitle>Enterprise</CardTitle>
+                    <CardDescription>For larger teams or organizations with custom requirements.</CardDescription>
                   </CardHeader>
                   <CardContent className="flex-1 pb-4">
                     <div className="text-2xl font-bold">Custom</div>
-                    <div className="text-sm text-muted-foreground">Contact us for pricing</div>
+                    <div className="text-sm text-muted-foreground">Tailored pricing</div>
+                    
+                    <ul className="mt-4 space-y-3">
+                      <li className="flex items-start">
+                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                        <span>Dedicated Support</span>
+                      </li>
+                      <li className="flex items-start">
+                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                        <span>Custom Features</span>
+                      </li>
+                      <li className="flex items-start">
+                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                        <span>Volume Discounts</span>
+                      </li>
+                    </ul>
                   </CardContent>
                   <CardFooter>
                     <Button 
-                      className="w-full" 
-                      variant="outline"
+                      variant="outline" 
+                      className="w-full"
                       onClick={handleContactUs}
                     >
                       Contact Us
@@ -263,26 +320,11 @@ export default function PricingPage() {
                   </CardFooter>
                 </Card>
               </div>
+              
+              <div className="mt-10 text-center text-sm text-muted-foreground">
+                <p>Have questions? <a href="mailto:contact@fishcad.com" className="text-primary underline hover:no-underline">Contact our team</a></p>
+              </div>
             </Tabs>
-          </div>
-          
-          <div className="mt-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              {user ? (
-                <>
-                  {isProUser ? 
-                    'Thank you for being a Pro user!' : 
-                    'Upgrade to Pro for more model generations and features!'
-                  }
-                </>
-              ) : (
-                <>
-                  Not sure which plan is right for you?
-                  <br />
-                  Start with the Free Tier—upgrade anytime!
-                </>
-              )}
-            </p>
           </div>
         </div>
       </div>

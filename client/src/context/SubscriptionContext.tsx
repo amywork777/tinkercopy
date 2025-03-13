@@ -50,13 +50,15 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const refreshSubscription = async () => {
     try {
-      console.log('Trying to fetch subscription with multi-endpoint approach');
-      const userId = user?.uid || user?.id;
+      // Set loading state
+      setSubscription(prev => ({ ...prev, loading: true }));
       
-      if (!userId) {
+      // Check if user is available
+      if (!user) {
+        // No user, set to free tier and exit
         setSubscription({
           isPro: false,
-          modelsRemainingThisMonth: 2,
+          modelsRemainingThisMonth: 2, // Default free tier limit
           modelsGeneratedThisMonth: 0,
           downloadsThisMonth: 0,
           subscriptionStatus: 'none',
@@ -67,12 +69,19 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return;
       }
       
+      const userId = user?.uid || ''; // Use optional chaining to safely access uid
+      
+      // Try multiple approaches to get subscription data
+      let subscriptionFetched = false;
+      
+      // First approach: Use multi-endpoint fetch function
       try {
-        // First try multiple endpoints with new function
+        console.log(`Fetching subscription data for user ID: ${userId}`);
         const response = await getUserSubscriptionData(userId);
+        
         if (response && response.success) {
           const subscriptionData = {
-            isPro: response.isPro,
+            isPro: response.isPro || false,
             modelsRemainingThisMonth: response.modelsRemainingThisMonth || (response.isPro ? Infinity : 2),
             modelsGeneratedThisMonth: response.modelsGeneratedThisMonth || 0,
             downloadsThisMonth: response.downloadsThisMonth || 0,
@@ -82,24 +91,29 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
             loading: false,
           };
           setSubscription(subscriptionData);
-          return;
+          subscriptionFetched = true;
         }
       } catch (multiEndpointError) {
-        console.error('Multi-endpoint approach failed, falling back to original method:', multiEndpointError);
+        console.error('Multi-endpoint approach failed, trying next method:', multiEndpointError);
       }
       
-      try {
-        // If that fails, try the original method
-        const userData = await getUserSubscription(userId);
-        setSubscription({
-          ...userData,
-          loading: false,
-        });
-      } catch (error) {
-        console.error('Error fetching subscription data:', error);
-        
-        // REVISED FALLBACK: If API calls fail, default to free user access
-        // This ensures users without valid subscriptions can't access pro features
+      // Second approach: Try Stripe API wrapper
+      if (!subscriptionFetched) {
+        try {
+          console.log('Trying getUserSubscription API wrapper');
+          const userData = await getUserSubscription(userId);
+          setSubscription({
+            ...userData,
+            loading: false,
+          });
+          subscriptionFetched = true;
+        } catch (error) {
+          console.error('Error fetching subscription data:', error);
+        }
+      }
+      
+      // If all fetching methods failed, set to free tier as fallback
+      if (!subscriptionFetched) {
         console.log('⚠️ API calls failed - setting user to free tier as fallback');
         setSubscription({
           isPro: false, // Default to free user when API fails
@@ -114,6 +128,13 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     } catch (e) {
       console.error('Global error in refreshSubscription:', e);
+      // Ensure subscription state is properly set even after errors
+      setSubscription(prev => ({ 
+        ...prev, 
+        loading: false,
+        isPro: false,
+        modelsRemainingThisMonth: 2
+      }));
     }
   };
 

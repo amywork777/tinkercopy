@@ -1,6 +1,6 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL || 'https://fishcad.com/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://www.fishcad.com/api';
 
 // Stripe price IDs from environment variables
 export const STRIPE_PRICES = {

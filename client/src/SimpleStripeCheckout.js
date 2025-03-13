@@ -262,12 +262,14 @@ export const directStripeCheckout = async (plan, userId, email) => {
     // DIRECT CHECKOUT URLS - Hardcoded to bypass API issues
     // These URLs link directly to Stripe checkout pages for each plan
     const DIRECT_CHECKOUT_URLS = {
-      MONTHLY: 'https://buy.stripe.com/test_14k6qK7LN4YK8co5kk',
-      ANNUAL: 'https://buy.stripe.com/test_28o6qK0hj9160QU8wx'
+      // Note: Using real Stripe checkout URLs for production subscriptions
+      // These should be updated with the correct live mode URLs from Stripe dashboard
+      MONTHLY: import.meta.env.VITE_STRIPE_MONTHLY_CHECKOUT_URL || '', // Empty fallback to use API flow
+      ANNUAL: import.meta.env.VITE_STRIPE_ANNUAL_CHECKOUT_URL || '', // Empty fallback to use API flow
     };
     
     // First try to get the direct link if available
-    if (DIRECT_CHECKOUT_URLS[plan]) {
+    if (DIRECT_CHECKOUT_URLS[plan] && DIRECT_CHECKOUT_URLS[plan].length > 0) {
       console.log(`Using direct checkout URL for ${plan} plan`);
       window.location.href = DIRECT_CHECKOUT_URLS[plan];
       return true;

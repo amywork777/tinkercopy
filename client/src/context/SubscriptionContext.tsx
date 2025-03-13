@@ -98,17 +98,17 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       } catch (error) {
         console.error('Error fetching subscription data:', error);
         
-        // EMERGENCY FALLBACK: If all API calls fail, assume user has a subscription to prevent blocking them
-        // This is temporary until API is fixed - will let users access pro features even if API is down
-        console.log('⚠️ Using emergency subscription fallback to prevent blocking users');
+        // REVISED FALLBACK: If API calls fail, default to free user access
+        // This ensures users without valid subscriptions can't access pro features
+        console.log('⚠️ API calls failed - setting user to free tier as fallback');
         setSubscription({
-          isPro: true, // Assuming user has subscription as fallback
-          modelsRemainingThisMonth: Infinity,
+          isPro: false, // Default to free user when API fails
+          modelsRemainingThisMonth: 2, // Standard free tier limit
           modelsGeneratedThisMonth: 0,
           downloadsThisMonth: 0,
-          subscriptionStatus: 'active',
-          subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-          subscriptionPlan: 'pro',
+          subscriptionStatus: 'none',
+          subscriptionEndDate: null,
+          subscriptionPlan: 'free',
           loading: false,
         });
       }

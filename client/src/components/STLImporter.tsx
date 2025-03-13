@@ -9,11 +9,13 @@ import { AlertCircle, CheckCircle, XCircle, ArrowUpCircle, RotateCw } from 'luci
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 // Define the allowed origins - ensure this matches what's in the server
-const ALLOWED_ORIGINS = ["https://magic.taiyaki.ai", "https://library.taiyaki.ai", "http://localhost:3000"];
+const ALLOWED_ORIGINS = ["https://fishcad.com", "https://www.fishcad.com", "http://localhost:3000", "http://localhost:3001", "http://localhost:5173"];
 
 // Define the API endpoint
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://fishcad.com/api' 
+  ? window.location.hostname === 'www.fishcad.com' 
+    ? 'https://www.fishcad.com/api' // Use same domain as current page
+    : 'https://fishcad.com/api'
   : 'http://localhost:3001/api';
 
 // Define import job status types
@@ -71,13 +73,21 @@ export function STLImporter() {
   useEffect(() => {
     // Connect to the server socket
     try {
-      const socketUrl = API_BASE_URL.replace('/api', '');
+      // Use the same origin as the current page to avoid CORS issues
+      const currentOrigin = window.location.origin;
+      const socketUrl = process.env.NODE_ENV === 'production'
+        ? currentOrigin // Use same origin in production
+        : API_BASE_URL.replace('/api', '');
+      
       console.log(`Connecting to Socket.IO at: ${socketUrl}`);
       
       const newSocket = io(socketUrl, {
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
-        timeout: 20000
+        timeout: 20000,
+        transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
+        path: '/socket.io/', // Ensure path is consistent
+        withCredentials: true
       });
       
       // Set the socket to state
@@ -96,6 +106,7 @@ export function STLImporter() {
       
       newSocket.on('connect_error', (error: Error) => {
         console.error('Socket.IO connection error:', error);
+        console.log('Connection error details:', error.message);
         setIsReady(false);
       });
       

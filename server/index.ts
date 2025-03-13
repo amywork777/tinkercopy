@@ -47,7 +47,8 @@ const allowedOrigins = [
   'https://magic.taiyaki.ai',
   'https://library.taiyaki.ai',
   'https://fishcad.com',
-  'http://localhost:3000'
+  'https://www.fishcad.com',
+  'https://app.fishcad.com'
 ];
 
 // Configure middleware
@@ -56,12 +57,25 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
     
+    // Check if the origin is explicitly allowed
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
-    } else {
-      console.warn(`Origin ${origin} not allowed by CORS`);
-      callback(null, false);
+      return;
     }
+    
+    // Check if it's a fishcad.com domain
+    try {
+      const hostname = new URL(origin).hostname;
+      if (hostname.endsWith('.fishcad.com') || hostname === 'fishcad.com') {
+        callback(null, true);
+        return;
+      }
+    } catch (e) {
+      // Invalid URL, continue with regular checks
+    }
+    
+    console.warn(`Origin ${origin} not allowed by CORS`);
+    callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
@@ -147,10 +161,35 @@ let io: SocketIOServer;
   // Initialize Socket.IO with CORS settings
   io = new SocketIOServer(server, {
     cors: {
-      origin: allowedOrigins,
-      methods: ["GET", "POST"],
-      credentials: true
-    }
+      origin: (origin, callback) => {
+        // For Socket.IO we need more permissive CORS
+        // Allow any fishcad.com subdomain to connect
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        
+        const originHost = new URL(origin).hostname;
+        const isLocalhost = originHost.includes('localhost') || originHost.includes('127.0.0.1');
+        const isFishCadDomain = originHost === 'fishcad.com' || 
+                                originHost === 'www.fishcad.com' || 
+                                originHost.endsWith('.fishcad.com');
+        
+        if (isLocalhost || isFishCadDomain || allowedOrigins.includes(origin)) {
+          console.log(`Socket.IO allowing connection from origin: ${origin}`);
+          callback(null, true);
+        } else {
+          console.warn(`Socket.IO rejected connection from origin: ${origin}`);
+          callback(new Error('Not allowed by CORS'), false);
+        }
+      },
+      methods: ["GET", "POST", "OPTIONS"],
+      credentials: true,
+      allowedHeaders: ["Content-Type", "Authorization"]
+    },
+    transports: ['websocket', 'polling'],
+    allowEIO3: true, // Allow compatibility with older clients
+    path: '/socket.io/' // Ensure consistent path
   });
   
   // Socket.IO connection handling

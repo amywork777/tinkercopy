@@ -818,11 +818,19 @@ const Print3DTab = () => {
       });
       
       // Try multiple endpoints in order of preference
-      const endpoints = [
-        "/api/checkout",
-        "/api/create-checkout-session",
-        "/api/print/create-checkout-session"
-      ];
+      const endpoints = process.env.NODE_ENV === 'production'
+        ? [
+            // In production, prefer endpoints on the same domain to avoid CORS issues
+            `${window.location.origin}/api/checkout`,
+            `${window.location.origin}/api/create-checkout-session`,
+            `${window.location.origin}/api/print/create-checkout-session`
+          ] 
+        : [
+            // In development, try relative endpoints
+            "/api/checkout",
+            "/api/create-checkout-session",
+            "/api/print/create-checkout-session"
+          ];
       
       // Function to try each endpoint
       const tryEndpoints = async (index = 0) => {

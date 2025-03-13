@@ -9,10 +9,15 @@ const getBaseUrl = () => {
   const configuredUrl = import.meta.env.VITE_API_URL;
   if (configuredUrl) return configuredUrl;
   
+  // If we're in production, use the current origin to avoid CORS issues
+  if (import.meta.env.PROD) {
+    return window.location.origin;
+  }
+  
   // If we're in development (using Vite dev server), use empty prefix for proxy setup
   if (import.meta.env.DEV) return '';
   
-  // For production, fallback to empty path (API is at same origin)
+  // For any other case, fallback to empty path (API is at same origin)
   return '';
 };
 

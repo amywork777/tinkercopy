@@ -30,6 +30,18 @@
       "dest": "/api/print/create-checkout-session.ts"
     },
     {
+      "src": "/api/pricing/create-checkout-session",
+      "dest": "/api/pricing/create-checkout-session.ts"
+    },
+    {
+      "src": "/api/pricing/test",
+      "dest": "/api/pricing/test.ts"
+    },
+    {
+      "src": "/api/pricing/user-subscription/(.*)",
+      "dest": "/api/pricing/user-subscription/[userId].ts"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/$1"
     },

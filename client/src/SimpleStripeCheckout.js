@@ -24,8 +24,8 @@ const getBaseUrl = () => {
 
 // Stripe price IDs - using environment variables with fallbacks
 export const STRIPE_PRICES = {
-  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
-  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
+  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE',
+  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1R1LloCLoBz9jXRldumh2DNl',
 };
 
 /**

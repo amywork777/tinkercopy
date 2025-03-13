@@ -13,6 +13,16 @@ import dotenv from 'dotenv';
 import { sendOrderNotificationEmail, sendCustomerConfirmationEmail } from './email-service.js';
 import { storeSTLInFirebase, cleanupTempSTLFile, storeTempSTLFile } from './file-service.js';
 import { firestore } from './firebase-admin.js';
+import { fileURLToPath } from 'url';
+import { Router } from 'express';
+import { PrismaClient } from '@prisma/client';
+import * as THREE from 'three';
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
+import * as crypto from 'crypto';
+
+// ES Module alternative to __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -1416,6 +1426,31 @@ ${feedback}
         message: 'Error fetching order details',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  });
+
+  // Add route to serve STL files
+  app.get('/stl-files/:year/:month/:day/:filename', (req, res) => {
+    try {
+      const { year, month, day, filename } = req.params;
+      const filePath = path.join(stlFilesDir, year, month, day, filename);
+      
+      // Check if the file exists
+      if (!fs.existsSync(filePath)) {
+        console.error(`STL file not found: ${filePath}`);
+        return res.status(404).send('File not found');
+      }
+      
+      // Set appropriate headers for STL files
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      
+      // Stream the file to the response
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error('Error serving STL file:', error);
+      res.status(500).send('Error serving file');
     }
   });
 

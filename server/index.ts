@@ -9,9 +9,14 @@ import path from 'path';
 import { Server as SocketIOServer } from 'socket.io';
 import fs from 'fs';
 import { createServer } from 'http';
+import { fileURLToPath } from 'url';
+
+// ES Module alternative to __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables from server/.env file
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 // Log environment variables (without exposing sensitive info)
 console.log('Environment variables loaded:');

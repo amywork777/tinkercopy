@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getUserSubscription } from '@/lib/stripeApi';
-import { getUserSubscriptionData } from '../SimpleStripeCheckout';
 import { useAuth } from './AuthContext';
 import { MODEL_LIMITS } from '@/lib/constants';
 
@@ -53,12 +52,11 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Set loading state
       setSubscription(prev => ({ ...prev, loading: true }));
       
-      // Check if user is available
+      // If no user, set to free tier and exit
       if (!user) {
-        // No user, set to free tier and exit
         setSubscription({
           isPro: false,
-          modelsRemainingThisMonth: 2, // Default free tier limit
+          modelsRemainingThisMonth: MODEL_LIMITS.FREE,
           modelsGeneratedThisMonth: 0,
           downloadsThisMonth: 0,
           subscriptionStatus: 'none',
@@ -69,55 +67,26 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return;
       }
       
-      const userId = user?.uid || ''; // Use optional chaining to safely access uid
+      // Get the user ID
+      const userId = user?.uid || '';
       
-      // Try multiple approaches to get subscription data
-      let subscriptionFetched = false;
-      
-      // First approach: Use multi-endpoint fetch function
+      // Simple approach - single API call with built-in fallback
       try {
-        console.log(`Fetching subscription data for user ID: ${userId}`);
-        const response = await getUserSubscriptionData(userId);
+        console.log(`Fetching subscription for user: ${userId}`);
+        const userData = await getUserSubscription(userId);
         
-        if (response && response.success) {
-          const subscriptionData = {
-            isPro: response.isPro || false,
-            modelsRemainingThisMonth: response.modelsRemainingThisMonth || (response.isPro ? Infinity : 2),
-            modelsGeneratedThisMonth: response.modelsGeneratedThisMonth || 0,
-            downloadsThisMonth: response.downloadsThisMonth || 0,
-            subscriptionStatus: response.subscriptionStatus || (response.isPro ? 'active' : 'none'),
-            subscriptionEndDate: response.subscriptionEndDate,
-            subscriptionPlan: response.subscriptionPlan || (response.isPro ? 'pro' : 'free'),
-            loading: false,
-          };
-          setSubscription(subscriptionData);
-          subscriptionFetched = true;
-        }
-      } catch (multiEndpointError) {
-        console.error('Multi-endpoint approach failed, trying next method:', multiEndpointError);
-      }
-      
-      // Second approach: Try Stripe API wrapper
-      if (!subscriptionFetched) {
-        try {
-          console.log('Trying getUserSubscription API wrapper');
-          const userData = await getUserSubscription(userId);
-          setSubscription({
-            ...userData,
-            loading: false,
-          });
-          subscriptionFetched = true;
-        } catch (error) {
-          console.error('Error fetching subscription data:', error);
-        }
-      }
-      
-      // If all fetching methods failed, set to free tier as fallback
-      if (!subscriptionFetched) {
-        console.log('⚠️ API calls failed - setting user to free tier as fallback');
         setSubscription({
-          isPro: false, // Default to free user when API fails
-          modelsRemainingThisMonth: 2, // Standard free tier limit
+          ...userData,
+          loading: false,
+        });
+        
+      } catch (error) {
+        console.error('Error fetching subscription data:', error);
+        
+        // Fall back to free tier
+        setSubscription({
+          isPro: false,
+          modelsRemainingThisMonth: MODEL_LIMITS.FREE,
           modelsGeneratedThisMonth: 0,
           downloadsThisMonth: 0,
           subscriptionStatus: 'none',
@@ -128,12 +97,13 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     } catch (e) {
       console.error('Global error in refreshSubscription:', e);
+      
       // Ensure subscription state is properly set even after errors
       setSubscription(prev => ({ 
         ...prev, 
         loading: false,
         isPro: false,
-        modelsRemainingThisMonth: 2
+        modelsRemainingThisMonth: MODEL_LIMITS.FREE
       }));
     }
   };
@@ -172,13 +142,13 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     try {
       // Call the API to update the download count in Firebase
-      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/track-download`, {
+      const response = await fetch('/api/track-download', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId: user.id,
+          userId: user.uid,
         }),
       });
       

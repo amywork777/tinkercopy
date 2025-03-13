@@ -23,8 +23,7 @@ import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { CrownIcon, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { directStripeCheckout, STRIPE_PRICES } from '../SimpleStripeCheckout';
-import { createCheckoutSession } from '../lib/stripeApi';
+import { createCheckoutSession, STRIPE_PRICES } from '../lib/stripeApi';
 // TODO: Remove this import as we're using STRIPE_PRICES from SimpleStripeCheckout
 // import { config } from '../lib/config';
 
@@ -73,23 +72,8 @@ export default function PricingPage() {
       
       console.log(`Using price ID: ${priceId} for ${planType} plan`);
       
+      // Simple, direct checkout approach
       try {
-        // Try the direct Stripe checkout first (handles redirection internally)
-        const success = await directStripeCheckout(planType, userId, userEmail);
-        
-        if (success) {
-          console.log('Checkout session created successfully');
-          // The user will be redirected by the directStripeCheckout function
-          return;
-        }
-      } catch (directError) {
-        console.error('Direct checkout method failed:', directError);
-        // Continue to alternative method
-      }
-      
-      // If direct checkout fails, try the API checkout
-      try {
-        console.log('Trying API checkout as fallback');
         const { url } = await createCheckoutSession(priceId, userId, userEmail);
         
         if (url) {
@@ -97,18 +81,14 @@ export default function PricingPage() {
           window.location.href = url;
           return;
         }
-      } catch (apiError) {
-        console.error('API checkout method failed:', apiError);
-        throw new Error('All checkout methods failed');
+      } catch (error) {
+        console.error('Checkout failed:', error);
+        throw error;
       }
-      
     } catch (error) {
       console.error('Error during subscription process:', error);
-      toast('Error starting checkout. Please try again.', {
-        type: 'error',
-      });
+      toast('Error starting checkout. Please try again.');
     } finally {
-      // Always make sure to clear loading state
       setIsLoading(false);
     }
   };

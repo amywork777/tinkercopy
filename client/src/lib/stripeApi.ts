@@ -1,84 +1,59 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
-// Import the multi-endpoint functions
-import { createSubscriptionCheckout, getUserSubscriptionData } from '../SimpleStripeCheckout';
-
-// Stripe price IDs from environment variables
+// Stripe price IDs - hardcoded for consistency
 export const STRIPE_PRICES = {
-  // Using test mode price IDs as fallback
-  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
-  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
+  MONTHLY: 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
+  ANNUAL: 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 
-// Create a checkout session for a subscription
+// Create a checkout session for a subscription using a simple approach
 export const createCheckoutSession = async (
   priceId: string,
   userId: string,
   email: string
 ): Promise<{ url: string }> => {
   try {
-    // Use the multi-endpoint approach first
-    try {
-      console.log('Using multi-endpoint approach for subscription checkout');
-      const checkoutUrl = await createSubscriptionCheckout(priceId, userId, email);
-      if (checkoutUrl) {
-        return { url: checkoutUrl as string };
-      }
-    } catch (multiEndpointError) {
-      console.error('Multi-endpoint approach failed, falling back to original method:', multiEndpointError);
-    }
-    
-    // Fall back to the original method - trying different endpoint formats
-    const endpoints = [
-      `${window.location.origin}/api/pricing/create-checkout-session`,
-      `/api/pricing/create-checkout-session`,
-      `${window.location.origin}/api/create-checkout-session`,
-      `/api/create-checkout-session`,
-    ];
-    
-    let lastError = null;
-    
-    for (const endpoint of endpoints) {
-      try {
-        console.log(`Trying endpoint: ${endpoint}`);
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            priceId,
-            userId,
-            email,
-          }),
-        });
+    console.log('Creating checkout session with:', {
+      priceId,
+      userId,
+      email
+    });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.warn(`Error from ${endpoint}:`, errorData);
-          continue; // Try the next endpoint
-        }
+    const response = await fetch(`${API_URL}/create-checkout-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        priceId,
+        userId,
+        email,
+        type: 'subscription' // Flag to indicate this is a subscription checkout
+      }),
+    });
 
-        const data = await response.json();
-        if (data.url) {
-          return { url: data.url };
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch from ${endpoint}:`, error);
-        lastError = error;
-      }
+    // Handle response
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Checkout error:', errorData);
+      throw new Error(errorData.error || 'Failed to create checkout session');
     }
-    
-    throw new Error(lastError ? `All endpoints failed: ${lastError.message}` : 'All endpoints failed');
+
+    const data = await response.json();
+    if (!data.url) {
+      throw new Error('No checkout URL returned from server');
+    }
+
+    return { url: data.url };
   } catch (error) {
     console.error('Error creating checkout session:', error);
     throw error;
   }
 };
 
-// Get user subscription status
+// Get user subscription status - simplified
 export const getUserSubscription = async (userId: string): Promise<{
   isPro: boolean;
   modelsRemainingThisMonth: number;
@@ -88,46 +63,55 @@ export const getUserSubscription = async (userId: string): Promise<{
   subscriptionEndDate: string | null;
   subscriptionPlan: string;
 }> => {
+  // If no userId, return free tier immediately
+  if (!userId) {
+    return {
+      isPro: false,
+      modelsRemainingThisMonth: 2, // Free tier limit
+      modelsGeneratedThisMonth: 0,
+      downloadsThisMonth: 0,
+      subscriptionStatus: 'none',
+      subscriptionEndDate: null,
+      subscriptionPlan: 'free',
+    };
+  }
+  
   try {
-    // Use the multi-endpoint approach first
-    try {
-      console.log('Using multi-endpoint approach for getting user subscription');
-      const response = await getUserSubscriptionData(userId);
-      if (response && response.success) {
-        const subscription = response.subscription || {};
-        return {
-          isPro: !!subscription.status && subscription.status === 'active',
-          modelsRemainingThisMonth: subscription.status === 'active' ? Infinity : 0,
-          modelsGeneratedThisMonth: 0,
-          downloadsThisMonth: 0,
-          subscriptionStatus: subscription.status || 'none',
-          subscriptionEndDate: subscription.current_period_end 
-            ? new Date(subscription.current_period_end * 1000).toISOString() 
-            : null,
-          subscriptionPlan: subscription.items?.data?.[0]?.price?.nickname || 'free',
-        };
-      }
-    } catch (multiEndpointError) {
-      console.error('Multi-endpoint approach failed, falling back to original method:', multiEndpointError);
-    }
-    
-    // Fall back to the original method
+    // Simple, direct API call
     const response = await fetch(`${API_URL}/pricing/user-subscription/${userId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-      },
+      }
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to get user subscription');
+      // Return free tier if API fails
+      return {
+        isPro: false,
+        modelsRemainingThisMonth: 2,
+        modelsGeneratedThisMonth: 0,
+        downloadsThisMonth: 0,
+        subscriptionStatus: 'none',
+        subscriptionEndDate: null,
+        subscriptionPlan: 'free',
+      };
     }
 
+    // Return the subscription data
     return await response.json();
   } catch (error) {
     console.error('Error getting user subscription:', error);
-    throw error;
+    // Return free tier as fallback on error
+    return {
+      isPro: false,
+      modelsRemainingThisMonth: 2,
+      modelsGeneratedThisMonth: 0,
+      downloadsThisMonth: 0,
+      subscriptionStatus: 'none',
+      subscriptionEndDate: null,
+      subscriptionPlan: 'free',
+    };
   }
 };
 
@@ -139,9 +123,7 @@ export const cancelSubscription = async (userId: string): Promise<{ success: boo
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        userId,
-      }),
+      body: JSON.stringify({ userId }),
     });
 
     if (!response.ok) {

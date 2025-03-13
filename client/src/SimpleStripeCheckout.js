@@ -12,6 +12,7 @@ const getBaseUrl = () => {
   // If we're in production, use www.fishcad.com to avoid CORS issues
   if (import.meta.env.PROD) {
     // Always use www.fishcad.com to prevent CORS redirect issues
+    // Return domain only, not including /api to prevent double api in paths
     return 'https://www.fishcad.com';
   }
   
@@ -24,8 +25,8 @@ const getBaseUrl = () => {
 
 // Stripe price IDs - using environment variables with fallbacks
 export const STRIPE_PRICES = {
-  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE',
-  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1R1LloCLoBz9jXRldumh2DNl',
+  MONTHLY: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
+  ANNUAL: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 
 /**
@@ -56,14 +57,15 @@ export const createSubscriptionCheckout = async (
   // Create a list of endpoints to try (in order of preference)
   const baseUrl = getBaseUrl();
   const endpoints = [
+    // Try direct www endpoints first for most reliable connection
+    'https://www.fishcad.com/api/pricing/create-checkout-session',
+    // Then try relative paths which may work in some environments
     `/api/pricing/create-checkout-session`,
-    `${baseUrl}/api/pricing/create-checkout-session`,
+    // Then try explicit baseUrl construction (prevent double /api/ by checking if baseUrl ends with /api)
+    `${baseUrl}${baseUrl.endsWith('/api') ? '' : '/api'}/pricing/create-checkout-session`,
     // Fallback to alternative paths
     `/api/create-checkout-session`,
-    `${baseUrl}/api/create-checkout-session`,
-    // Try direct www subdomain as final fallback
-    `https://www.fishcad.com/api/pricing/create-checkout-session`,
-    `https://www.fishcad.com/api/create-checkout-session`
+    `${baseUrl}${baseUrl.endsWith('/api') ? '' : '/api'}/create-checkout-session`
   ];
   
   // Log the endpoints we're going to try
@@ -298,10 +300,12 @@ export const getUserSubscriptionData = async (userId) => {
   // Create a list of endpoints to try (in order of preference)
   const baseUrl = getBaseUrl();
   const endpoints = [
+    // Try direct www endpoint first for most reliable connection
+    `https://www.fishcad.com/api/pricing/user-subscription/${userId}`,
+    // Then try relative paths which may work in some environments  
     `/api/pricing/user-subscription/${userId}`,
-    `${baseUrl}/api/pricing/user-subscription/${userId}`,
-    // Try direct www subdomain as final fallback
-    `https://www.fishcad.com/api/pricing/user-subscription/${userId}`
+    // Then try explicit baseUrl construction (prevent double /api/ by checking if baseUrl ends with /api)
+    `${baseUrl}${baseUrl.endsWith('/api') ? '' : '/api'}/pricing/user-subscription/${userId}`
   ];
   
   // Log the endpoints we're going to try

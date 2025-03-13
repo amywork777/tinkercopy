@@ -2,17 +2,53 @@
  * Stripe Checkout Server
  * Works in both development and production environments
  */
-import { app, PORT, allowedOrigins } from './server.js';
+import express from 'express';
+import cors from 'cors';
 import { Stripe } from 'stripe';
 import admin from 'firebase-admin';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 // Fix for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Express app
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Define allowed origins for CORS
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://fishcad.com',
+  'https://www.fishcad.com'
+];
+
+// Configure CORS
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+}));
+
+// Parse JSON body
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Initialize Stripe with secret key
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);

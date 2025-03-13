@@ -801,11 +801,11 @@ const Print3DTab = () => {
         color: colorName,
         quantity: quantity,
         finalPrice: finalPrice,
-        hasStlFileData: !!stlFileData,
-        stlFileDataType: typeof stlFileData,
-        stlFileDataLength: stlFileData ? stlFileData.length : 0,
+        userId: "guest", // Replace with actual user ID if available
+        email: "guest@example.com", // Replace with actual email if available
+        type: "3d_print", // Specify this is a 3D print checkout
         stlFileName,
-        stlFileData // Send the STL data for the server to store in Firebase
+        stlFileData // Send the STL data for the server to store
       };
       
       console.log("Sending checkout request with data:", {
@@ -813,53 +813,71 @@ const Print3DTab = () => {
         color: checkoutData.color,
         quantity: checkoutData.quantity,
         finalPrice: checkoutData.finalPrice,
-        hasStlFileData: checkoutData.hasStlFileData,
-        stlFileDataType: checkoutData.stlFileDataType,
-        stlFileDataLength: checkoutData.stlFileDataLength,
+        hasStlFileData: !!checkoutData.stlFileData,
         stlFileName: checkoutData.stlFileName
       });
       
-      // Send the data to our server
-      fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(checkoutData),
-      })
-      .then(response => {
-        if (!response.ok) {
-          return response.text().then(text => {
-            throw new Error(`Server error: ${response.status} - ${text}`);
-          });
-        }
-        return response.json();
-      })
-      .then(data => {
-        if (data.success && data.url) {
-          // Redirect to Stripe Checkout
-          console.log("Redirecting to Stripe Checkout");
-          window.location.href = data.url;
-        } else {
-          console.error("Invalid response from server:", data);
+      // Try multiple endpoints in order of preference
+      const endpoints = [
+        "/api/checkout",
+        "/api/create-checkout-session",
+        "/api/print/create-checkout-session"
+      ];
+      
+      // Function to try each endpoint
+      const tryEndpoints = async (index = 0) => {
+        if (index >= endpoints.length) {
           toast({
             title: "Checkout failed",
-            description: data.message || "Failed to create checkout session",
+            description: "All checkout endpoints failed. Please try again later.",
             variant: "destructive",
           });
+          setIsLoading(false);
+          return;
         }
-      })
-      .catch(fetchError => {
-        console.error("Checkout request failed:", fetchError);
-        toast({
-          title: "Checkout error",
-          description: fetchError?.message || "Failed to process your checkout request",
-          variant: "destructive",
-        });
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+        
+        const endpoint = endpoints[index];
+        
+        try {
+          console.log(`Trying endpoint: ${endpoint}`);
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(checkoutData),
+          });
+          
+          if (!response.ok) {
+            console.error(`Error with ${endpoint}: ${response.status}`);
+            // Try the next endpoint
+            return tryEndpoints(index + 1);
+          }
+          
+          const data = await response.json();
+          
+          if (data.success && data.url) {
+            // Redirect to Stripe Checkout
+            console.log("Redirecting to Stripe Checkout");
+            window.location.href = data.url;
+          } else if (data.url) {
+            // Some endpoints might not include success flag
+            console.log("Redirecting to Stripe Checkout (no success flag)");
+            window.location.href = data.url;
+          } else {
+            console.error("Invalid response from server:", data);
+            // Try the next endpoint
+            return tryEndpoints(index + 1);
+          }
+        } catch (fetchError) {
+          console.error(`Fetch error with ${endpoint}:`, fetchError);
+          // Try the next endpoint
+          return tryEndpoints(index + 1);
+        }
+      };
+      
+      // Start trying endpoints
+      tryEndpoints();
     };
     
     try {

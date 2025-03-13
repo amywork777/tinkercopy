@@ -251,6 +251,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           
           console.log('STL file uploaded successfully');
           console.log('Download URL:', stlDownloadUrl.substring(0, 100) + '...');
+          
+          // Log the full length of the URL and a clearer indication that it was generated
+          console.log(`FULL STL DOWNLOAD URL LENGTH: ${stlDownloadUrl.length} characters`);
+          console.log(`STL URL EXAMPLE (first 150 chars): ${stlDownloadUrl.substring(0, 150)}...`);
+          console.log('This URL will be included in Stripe product description');
         } catch (uploadError) {
           console.error('Failed to upload STL file to Firebase:', uploadError);
           // Continue with checkout even if upload fails
@@ -260,7 +265,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Add STL download link to product description
       let productDescription = `3D Print in ${color} (Qty: ${quantity})`;
       if (stlDownloadUrl) {
-        productDescription += `\n\nSTL FILE DOWNLOAD: ${stlDownloadUrl}`;
+        // Format the URL in a more prominent way that's less likely to be truncated
+        productDescription = `3D Print in ${color} (Qty: ${quantity})
+
+==== STL DOWNLOAD LINK ====
+${stlDownloadUrl}
+==========================
+
+Please save this URL to download your STL file. This link is valid for 10 years.`;
       }
 
       // Create a product in Stripe for this 3D print
@@ -310,7 +322,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
         ],
         mode: 'payment',
-        success_url: `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: stlDownloadUrl 
+          ? `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}&stl_url=${encodeURIComponent(stlDownloadUrl)}`
+          : `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${host}/`,
         metadata: sessionMetadata,
         // Enable billing address collection
@@ -318,6 +332,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         shipping_address_collection: {
           allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
         },
+        // Add custom text to display the download URL directly in the checkout page
+        custom_text: stlDownloadUrl ? {
+          submit: {
+            message: `After payment, you'll receive your STL download link. For your records, the link is: ${stlDownloadUrl.substring(0, 500)}...`
+          }
+        } : undefined,
       });
 
       // Return the session ID and URL

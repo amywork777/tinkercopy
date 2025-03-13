@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getUserSubscription } from '@/lib/stripeApi';
+import { getUserSubscriptionData } from '../SimpleStripeCheckout';
 import { useAuth } from './AuthContext';
 import { MODEL_LIMITS } from '@/lib/constants';
 
@@ -55,6 +56,35 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     try {
       setSubscription(prev => ({ ...prev, loading: true }));
+      
+      // Try the multi-endpoint approach first
+      try {
+        console.log('Trying to fetch subscription with multi-endpoint approach');
+        const response = await getUserSubscriptionData(user.id);
+        
+        // Check if the response has the required data
+        if (response && response.success) {
+          const subscriptionData = response.subscription || {};
+          
+          setSubscription({
+            isPro: !!subscriptionData.status && subscriptionData.status === 'active',
+            modelsRemainingThisMonth: MODEL_LIMITS.PRO,
+            modelsGeneratedThisMonth: 0,
+            downloadsThisMonth: 0,
+            subscriptionStatus: subscriptionData.status || 'none',
+            subscriptionEndDate: subscriptionData.current_period_end 
+              ? new Date(subscriptionData.current_period_end * 1000).toISOString() 
+              : null,
+            subscriptionPlan: subscriptionData.items?.data?.[0]?.price?.nickname || 'free',
+            loading: false,
+          });
+          return;
+        }
+      } catch (multiEndpointError) {
+        console.error('Multi-endpoint approach failed, falling back to original method:', multiEndpointError);
+      }
+      
+      // Fall back to the original method
       const data = await getUserSubscription(user.id);
       
       setSubscription({

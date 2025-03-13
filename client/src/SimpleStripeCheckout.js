@@ -56,9 +56,14 @@ export const createSubscriptionCheckout = async (
   // Create a list of endpoints to try (in order of preference)
   const baseUrl = getBaseUrl();
   const endpoints = [
-    `/api/pricing/create-checkout-session`, // This is the endpoint that works
-    // Fallback options with explicit base URL
-    `${baseUrl}/api/pricing/create-checkout-session`
+    `/api/pricing/create-checkout-session`,
+    `${baseUrl}/api/pricing/create-checkout-session`,
+    // Fallback to alternative paths
+    `/api/create-checkout-session`,
+    `${baseUrl}/api/create-checkout-session`,
+    // Try direct www subdomain as final fallback
+    `https://www.fishcad.com/api/pricing/create-checkout-session`,
+    `https://www.fishcad.com/api/create-checkout-session`
   ];
   
   // Log the endpoints we're going to try
@@ -279,6 +284,73 @@ export const directStripeCheckout = async (plan, userId, email) => {
       return false;
     }
   }
+};
+
+/**
+ * Get user subscription data with multiple endpoint fallbacks
+ * @param {string} userId - The user's ID
+ * @returns {Promise<Object>} - Subscription data
+ */
+export const getUserSubscriptionData = async (userId) => {
+  // Log debugging information
+  console.log('Fetching subscription data for user:', userId);
+  
+  // Create a list of endpoints to try (in order of preference)
+  const baseUrl = getBaseUrl();
+  const endpoints = [
+    `/api/pricing/user-subscription/${userId}`,
+    `${baseUrl}/api/pricing/user-subscription/${userId}`,
+    // Try direct www subdomain as final fallback
+    `https://www.fishcad.com/api/pricing/user-subscription/${userId}`
+  ];
+  
+  // Log the endpoints we're going to try
+  console.log('Attempting to fetch subscription data with these endpoints:', endpoints);
+  
+  // Try each endpoint until one works
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      console.log(`Attempting to fetch subscription with endpoint: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include'
+      });
+      
+      // Log response status for debugging
+      console.log(`${endpoint} response status:`, response.status);
+      
+      // Check if the response is valid
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Subscription data response:', data);
+        return data;
+      } else {
+        // Try to get error details
+        try {
+          const errorData = await response.json();
+          console.error(`Error response from ${endpoint}:`, errorData);
+        } catch (e) {
+          console.error(`Error parsing error response from ${endpoint}:`, e);
+        }
+      }
+    } catch (error) {
+      console.error(`Error with endpoint ${endpoint}:`, error);
+      lastError = error;
+      // Continue to the next endpoint
+    }
+  }
+  
+  // If we get here, all endpoints failed
+  throw new Error(lastError ? 
+    `Failed to fetch subscription data: ${lastError.message}` : 
+    'Failed to fetch subscription data with all available endpoints'
+  );
 };
 
 // Export the direct checkout function as default

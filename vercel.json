@@ -18,6 +18,18 @@
   ],
   "routes": [
     {
+      "src": "/api/checkout",
+      "dest": "/api/checkout.ts"
+    },
+    {
+      "src": "/api/create-checkout-session",
+      "dest": "/api/create-checkout-session.ts"
+    },
+    {
+      "src": "/api/print/create-checkout-session",
+      "dest": "/api/print/create-checkout-session.ts"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/$1"
     },

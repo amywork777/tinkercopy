@@ -821,15 +821,24 @@ const Print3DTab = () => {
       const endpoints = process.env.NODE_ENV === 'production'
         ? [
             // In production, prefer endpoints on the same domain to avoid CORS issues
+            `${window.location.origin}/api/checkout-test`, // Test if API routes are working at all
             `${window.location.origin}/api/checkout`,
             `${window.location.origin}/api/create-checkout-session`,
-            `${window.location.origin}/api/print/create-checkout-session`
+            `${window.location.origin}/api/print/create-checkout-session`,
+            // Try without origin as well (relative paths)
+            `/api/checkout`,
+            `/api/create-checkout-session`,
+            `/api/print/create-checkout-session`,
+            // Legacy endpoints (may be available in certain deployments)
+            `https://fishcad.com/api/checkout`,
+            `https://fishcad.com/api/create-checkout-session`
           ] 
         : [
             // In development, try relative endpoints
-            "/api/checkout",
-            "/api/create-checkout-session",
-            "/api/print/create-checkout-session"
+            `/api/checkout-test`, // Test endpoint
+            `/api/checkout`,
+            `/api/create-checkout-session`,
+            `/api/print/create-checkout-session`
           ];
       
       // Function to try each endpoint

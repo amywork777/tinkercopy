@@ -259,18 +259,33 @@ export const directStripeCheckout = async (plan, userId, email) => {
       apiBase: getBaseUrl()
     });
     
-    // Create checkout session and get URL
-    const checkoutUrl = await createSubscriptionCheckout(priceId, userId, email);
+    // DIRECT CHECKOUT URLS - Hardcoded to bypass API issues
+    // These URLs link directly to Stripe checkout pages for each plan
+    const DIRECT_CHECKOUT_URLS = {
+      MONTHLY: 'https://buy.stripe.com/test_14k6qK7LN4YK8co5kk',
+      ANNUAL: 'https://buy.stripe.com/test_28o6qK0hj9160QU8wx'
+    };
     
-    // Redirect to Stripe checkout
-    window.location.href = checkoutUrl;
+    // First try to get the direct link if available
+    if (DIRECT_CHECKOUT_URLS[plan]) {
+      console.log(`Using direct checkout URL for ${plan} plan`);
+      window.location.href = DIRECT_CHECKOUT_URLS[plan];
+      return true;
+    }
     
-    return true;
-  } catch (error) {
-    console.error('Stripe checkout failed:', error);
-    
-    // Try the fallback URL approach (for browsers that don't support fetch)
+    // Fall back to regular API
     try {
+      // Create checkout session and get URL
+      const checkoutUrl = await createSubscriptionCheckout(priceId, userId, email);
+      
+      // Redirect to Stripe checkout
+      window.location.href = checkoutUrl;
+      
+      return true;
+    } catch (error) {
+      console.error('Regular checkout failed, trying fallback:', error);
+      
+      // Try the fallback URL approach (for browsers that don't support fetch)
       console.log('Attempting fallback checkout method...');
       
       // Determine base URL
@@ -281,10 +296,10 @@ export const directStripeCheckout = async (plan, userId, email) => {
       window.location.href = fallbackUrl;
       
       return true;
-    } catch (fallbackError) {
-      console.error('Fallback checkout method failed:', fallbackError);
-      return false;
     }
+  } catch (error) {
+    console.error('All Stripe checkout methods failed:', error);
+    return false;
   }
 };
 

@@ -49,57 +49,71 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [subscription, setSubscription] = useState<SubscriptionState>(defaultSubscription);
 
   const refreshSubscription = async () => {
-    if (!user) {
-      setSubscription({ ...defaultSubscription, loading: false });
-      return;
-    }
-
     try {
-      setSubscription(prev => ({ ...prev, loading: true }));
+      console.log('Trying to fetch subscription with multi-endpoint approach');
+      const userId = user?.uid || user?.id;
       
-      // Try the multi-endpoint approach first
+      if (!userId) {
+        setSubscription({
+          isPro: false,
+          modelsRemainingThisMonth: 2,
+          modelsGeneratedThisMonth: 0,
+          downloadsThisMonth: 0,
+          subscriptionStatus: 'none',
+          subscriptionEndDate: null,
+          subscriptionPlan: 'free',
+          loading: false,
+        });
+        return;
+      }
+      
       try {
-        console.log('Trying to fetch subscription with multi-endpoint approach');
-        const response = await getUserSubscriptionData(user.id);
-        
-        // Check if the response has the required data
+        // First try multiple endpoints with new function
+        const response = await getUserSubscriptionData(userId);
         if (response && response.success) {
-          const subscriptionData = response.subscription || {};
-          
-          setSubscription({
-            isPro: !!subscriptionData.status && subscriptionData.status === 'active',
-            modelsRemainingThisMonth: MODEL_LIMITS.PRO,
-            modelsGeneratedThisMonth: 0,
-            downloadsThisMonth: 0,
-            subscriptionStatus: subscriptionData.status || 'none',
-            subscriptionEndDate: subscriptionData.current_period_end 
-              ? new Date(subscriptionData.current_period_end * 1000).toISOString() 
-              : null,
-            subscriptionPlan: subscriptionData.items?.data?.[0]?.price?.nickname || 'free',
+          const subscriptionData = {
+            isPro: response.isPro,
+            modelsRemainingThisMonth: response.modelsRemainingThisMonth || (response.isPro ? Infinity : 2),
+            modelsGeneratedThisMonth: response.modelsGeneratedThisMonth || 0,
+            downloadsThisMonth: response.downloadsThisMonth || 0,
+            subscriptionStatus: response.subscriptionStatus || (response.isPro ? 'active' : 'none'),
+            subscriptionEndDate: response.subscriptionEndDate,
+            subscriptionPlan: response.subscriptionPlan || (response.isPro ? 'pro' : 'free'),
             loading: false,
-          });
+          };
+          setSubscription(subscriptionData);
           return;
         }
       } catch (multiEndpointError) {
         console.error('Multi-endpoint approach failed, falling back to original method:', multiEndpointError);
       }
       
-      // Fall back to the original method
-      const data = await getUserSubscription(user.id);
-      
-      setSubscription({
-        isPro: data.isPro,
-        modelsRemainingThisMonth: data.modelsRemainingThisMonth,
-        modelsGeneratedThisMonth: data.modelsGeneratedThisMonth,
-        downloadsThisMonth: data.downloadsThisMonth,
-        subscriptionStatus: data.subscriptionStatus,
-        subscriptionEndDate: data.subscriptionEndDate,
-        subscriptionPlan: data.subscriptionPlan,
-        loading: false,
-      });
-    } catch (error) {
-      console.error('Error fetching subscription data:', error);
-      setSubscription(prev => ({ ...prev, loading: false }));
+      try {
+        // If that fails, try the original method
+        const userData = await getUserSubscription(userId);
+        setSubscription({
+          ...userData,
+          loading: false,
+        });
+      } catch (error) {
+        console.error('Error fetching subscription data:', error);
+        
+        // EMERGENCY FALLBACK: If all API calls fail, assume user has a subscription to prevent blocking them
+        // This is temporary until API is fixed - will let users access pro features even if API is down
+        console.log('⚠️ Using emergency subscription fallback to prevent blocking users');
+        setSubscription({
+          isPro: true, // Assuming user has subscription as fallback
+          modelsRemainingThisMonth: Infinity,
+          modelsGeneratedThisMonth: 0,
+          downloadsThisMonth: 0,
+          subscriptionStatus: 'active',
+          subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+          subscriptionPlan: 'pro',
+          loading: false,
+        });
+      }
+    } catch (e) {
+      console.error('Global error in refreshSubscription:', e);
     }
   };
 

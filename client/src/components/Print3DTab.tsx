@@ -817,84 +817,41 @@ const Print3DTab = () => {
         stlFileName: checkoutData.stlFileName
       });
       
-      // Try multiple endpoints in order of preference
-      const endpoints = process.env.NODE_ENV === 'production'
-        ? [
-            // In production, prefer endpoints on the same domain to avoid CORS issues
-            `${window.location.origin}/api/checkout-test`, // Test if API routes are working at all
-            `${window.location.origin}/api/checkout`,
-            `${window.location.origin}/api/create-checkout-session`,
-            `${window.location.origin}/api/print/create-checkout-session`,
-            // Try without origin as well (relative paths)
-            `/api/checkout`,
-            `/api/create-checkout-session`,
-            `/api/print/create-checkout-session`,
-            // Legacy endpoints (may be available in certain deployments)
-            `https://fishcad.com/api/checkout`,
-            `https://fishcad.com/api/create-checkout-session`
-          ] 
-        : [
-            // In development, try relative endpoints
-            `/api/checkout-test`, // Test endpoint
-            `/api/checkout`,
-            `/api/create-checkout-session`,
-            `/api/print/create-checkout-session`
-          ];
+      // Use a single endpoint directly
+      const endpoint = '/api/create-checkout-session';
       
-      // Function to try each endpoint
-      const tryEndpoints = async (index = 0) => {
-        if (index >= endpoints.length) {
-          toast({
-            title: "Checkout failed",
-            description: "All checkout endpoints failed. Please try again later.",
-            variant: "destructive",
-          });
-          setIsLoading(false);
-          return;
+      // Call the checkout endpoint
+      fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(checkoutData),
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
         }
-        
-        const endpoint = endpoints[index];
-        
-        try {
-          console.log(`Trying endpoint: ${endpoint}`);
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(checkoutData),
-          });
-          
-          if (!response.ok) {
-            console.error(`Error with ${endpoint}: ${response.status}`);
-            // Try the next endpoint
-            return tryEndpoints(index + 1);
-          }
-          
-          const data = await response.json();
-          
-          if (data.success && data.url) {
-            // Redirect to Stripe Checkout
-            console.log("Redirecting to Stripe Checkout");
-            window.location.href = data.url;
-          } else if (data.url) {
-            // Some endpoints might not include success flag
-            console.log("Redirecting to Stripe Checkout (no success flag)");
-            window.location.href = data.url;
-          } else {
-            console.error("Invalid response from server:", data);
-            // Try the next endpoint
-            return tryEndpoints(index + 1);
-          }
-        } catch (fetchError) {
-          console.error(`Fetch error with ${endpoint}:`, fetchError);
-          // Try the next endpoint
-          return tryEndpoints(index + 1);
+        return response.json();
+      })
+      .then(data => {
+        if (data.url) {
+          // Redirect to Stripe Checkout
+          console.log("Redirecting to Stripe Checkout:", data.url);
+          window.location.href = data.url;
+        } else {
+          throw new Error("No checkout URL returned from server");
         }
-      };
-      
-      // Start trying endpoints
-      tryEndpoints();
+      })
+      .catch(error => {
+        console.error("Checkout error:", error);
+        toast({
+          title: "Checkout failed",
+          description: error.message || "Failed to create checkout session",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+      });
     };
     
     try {

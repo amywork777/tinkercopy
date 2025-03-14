@@ -42,78 +42,161 @@ export function directStripeCheckout(planType, userEmail, userId) {
   
   console.log('Using price ID:', priceId);
   
-  // Use the new Stripe Checkout v3 URL format
-  let checkoutUrl;
-  
-  // Try using the newer Checkout API if possible
+  // Method 1: Use direct buy.stripe.com links (most reliable method)
   try {
-    // Create parameters for Stripe checkout URL
-    const params = new URLSearchParams();
+    // These direct product links work even if other methods fail
+    let directProductUrl;
     
-    // Add Stripe publishable key
-    params.append('key', keys.PUBLISHABLE_KEY);
+    if (USE_TEST_MODE) {
+      // Test mode direct links
+      directProductUrl = planType === 'monthly'
+        ? 'https://buy.stripe.com/test_28o5nBeWGcFG3iE5kk' // Monthly test product
+        : 'https://buy.stripe.com/test_9AQdUn2ccdJK9D25kl'; // Annual test product
+    } else {
+      // Live mode direct links
+      directProductUrl = planType === 'monthly'
+        ? 'https://buy.stripe.com/28oe00cHF8R3fPOcMM' // Monthly live product
+        : 'https://buy.stripe.com/00gaEu5d7gfnbXW28a'; // Annual live product
+    }
     
-    // Add line items (what the customer is buying)
-    // Note: Stripe's hosted checkout expects line_items[0][price] format
-    params.append('line_items[0][price]', priceId);
-    params.append('line_items[0][quantity]', '1');
+    console.log('Using direct Stripe product URL:', directProductUrl);
     
-    // Set subscription mode
-    params.append('mode', 'subscription');
-    
-    // Add success and cancel URLs
-    params.append('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
-    params.append('cancel_url', `${window.location.origin}/pricing`);
-    
-    // Add customer email if provided
+    // Add customer email as a query parameter if available
     if (userEmail) {
-      params.append('customer_email', userEmail);
+      directProductUrl += `?prefilled_email=${encodeURIComponent(userEmail)}`;
     }
     
-    // Add client reference ID if provided
-    if (userId) {
-      params.append('client_reference_id', userId);
+    // Open in a new tab
+    const newTab = window.open(directProductUrl, '_blank');
+    
+    // If opening in a new tab fails (e.g., popup blockers), redirect the current page
+    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+      console.log('Window.open failed, redirecting current page...');
+      window.location.href = directProductUrl;
     }
     
-    // Build the final URL - use correct checkout endpoint
-    // Fix: Using the correct Stripe checkout URL format
-    checkoutUrl = `https://checkout.stripe.com/c/pay?${params.toString()}`;
-    console.log('Redirecting to Stripe checkout v3:', checkoutUrl);
-    
-    // Try to open immediately to test if it works
-    window.open(checkoutUrl, '_blank') || window.location.assign(checkoutUrl);
     return;
   } catch (error) {
-    console.error('Error building checkout URL:', error);
-    
-    // Fallback to direct URL format
-    try {
-      console.log('Trying fallback direct checkout URL...');
-      checkoutUrl = `https://buy.stripe.com/${USE_TEST_MODE ? '0gwe00cHF8R3fPOcMM' : '28oe00cHF8R3fPOcMM'}`;
-      console.log('Using fallback direct URL:', checkoutUrl);
-      
-      window.open(checkoutUrl, '_blank') || window.location.assign(checkoutUrl);
-      return;
-    } catch (fallbackError) {
-      console.error('Fallback URL also failed:', fallbackError);
-      
-      // Legacy v2 fallback as last resort
-      checkoutUrl = `https://checkout.stripe.com/v2/checkout.js?key=${keys.PUBLISHABLE_KEY}&amount=2000&currency=usd&name=FishCAD+Pro&description=${planType === 'monthly' ? 'Monthly' : 'Annual'}+Subscription&locale=auto&zipCode=true&billingAddress=false&panelLabel=Subscribe&label=FishCAD&allowRememberMe=true&recurrent=true`;
-      
-      if (userEmail) {
-        checkoutUrl += `&email=${encodeURIComponent(userEmail)}`;
-      }
-      
-      console.log('Falling back to legacy checkout:', checkoutUrl);
-    }
+    console.error('Error with direct product URL:', error);
+    // Continue to fallback methods
   }
   
-  // First try to open in a new tab
-  const newTab = window.open(checkoutUrl, '_blank');
+  // Method 2: Use Stripe's redirectToCheckout API (requires loading Stripe.js)
+  try {
+    console.log('Attempting to load Stripe.js for redirectToCheckout...');
+    
+    // Load the Stripe.js script
+    const script = document.createElement('script');
+    script.src = 'https://js.stripe.com/v3/';
+    script.async = true;
+    document.head.appendChild(script);
+    
+    script.onload = () => {
+      try {
+        // Initialize Stripe
+        const stripe = window.Stripe(keys.PUBLISHABLE_KEY);
+        
+        // Create checkout options
+        const checkoutOptions = {
+          lineItems: [{ price: priceId, quantity: 1 }],
+          mode: 'subscription',
+          successUrl: `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${window.location.origin}/pricing`,
+        };
+        
+        // Add customer email if available
+        if (userEmail) {
+          checkoutOptions.customerEmail = userEmail;
+        }
+        
+        // Add client reference ID if available
+        if (userId) {
+          checkoutOptions.clientReferenceId = userId;
+        }
+        
+        // Redirect to checkout
+        stripe.redirectToCheckout(checkoutOptions)
+          .then(function(result) {
+            if (result.error) {
+              console.error('Stripe redirectToCheckout failed:', result.error);
+              // Fall through to Method 3
+              useCheckoutUrl();
+            }
+          });
+      } catch (stripeError) {
+        console.error('Error initializing Stripe:', stripeError);
+        // Fall through to Method 3
+        useCheckoutUrl();
+      }
+    };
+    
+    script.onerror = () => {
+      console.error('Failed to load Stripe.js');
+      // Fall through to Method 3
+      useCheckoutUrl();
+    };
+    
+    // Don't return here - let the script load and execute
+  } catch (error) {
+    console.error('Error setting up Stripe.js:', error);
+    // Fall through to Method 3
+    useCheckoutUrl();
+  }
   
-  // If that failed (popup blockers), redirect the current page
-  if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
-    console.log('Window.open failed, redirecting current page...');
-    window.location.href = checkoutUrl;
+  // Method 3: Use a constructed checkout URL as last resort
+  function useCheckoutUrl() {
+    try {
+      console.log('Falling back to constructed checkout URL...');
+      
+      // Construct a URL for Stripe's checkout page
+      const params = new URLSearchParams();
+      
+      // Add necessary parameters
+      params.append('key', keys.PUBLISHABLE_KEY);
+      params.append('success_url', `${window.location.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`);
+      params.append('cancel_url', `${window.location.origin}/pricing`);
+      params.append('mode', 'subscription');
+      
+      // Add line items
+      params.append('line_items[0][price]', priceId);
+      params.append('line_items[0][quantity]', '1');
+      
+      // Add customer email if available
+      if (userEmail) {
+        params.append('customer_email', userEmail);
+      }
+      
+      // Add client reference ID if available
+      if (userId) {
+        params.append('client_reference_id', userId);
+      }
+      
+      // Use the correct URL format for Stripe checkout
+      // Try multiple formats in case one doesn't work
+      const checkoutUrls = [
+        `https://checkout.stripe.com/checkout?${params.toString()}`,
+        `https://checkout.stripe.com/c/pay?${params.toString()}`,
+        `https://checkout.stripe.com/pay?${params.toString()}`
+      ];
+      
+      // Try to open each URL until one works
+      for (const url of checkoutUrls) {
+        console.log('Trying checkout URL:', url);
+        const newTab = window.open(url, '_blank');
+        
+        if (newTab && !newTab.closed && typeof newTab.closed !== 'undefined') {
+          console.log('Successfully opened checkout in new tab');
+          return;
+        }
+      }
+      
+      // If all window.open attempts fail, redirect the current page to the first URL
+      console.log('All window.open attempts failed, redirecting current page...');
+      window.location.href = checkoutUrls[0];
+    } catch (error) {
+      console.error('Error with all checkout methods:', error);
+      // As an absolute last resort, alert the user
+      alert('Could not open Stripe checkout. Please try again or contact support.');
+    }
   }
 } 

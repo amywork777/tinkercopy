@@ -7,51 +7,71 @@ let firebaseInitialized = false;
 
 // Initialize Firebase Admin if needed
 function initializeFirebaseDirectly() {
-  if (!firebaseInitialized && !admin.apps.length) {
-    try {
-      // Try to load service account from environment variable
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-        : undefined;
-      
-      // Add validation for required environment variables
-      if (!privateKey) {
-        console.error('Firebase private key is missing or invalid');
-      }
-      
-      if (!process.env.FIREBASE_PROJECT_ID) {
-        console.error('Firebase project ID is missing');
-      }
-      
-      if (!process.env.FIREBASE_CLIENT_EMAIL) {
-        console.error('Firebase client email is missing');
-      }
-      
-      const credential = admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey || '',
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      });
-      
-      admin.initializeApp({
-        credential: credential,
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
-      });
-      
-      firebaseInitialized = true;
-      console.log('Firebase Admin SDK initialized directly in setup-trial endpoint');
-    } catch (error) {
-      console.error('Error initializing Firebase directly:', error);
-      throw error;
+  // Check if already initialized - avoid trying to access admin.apps.length directly
+  try {
+    if (firebaseInitialized) {
+      console.log('Using existing Firebase Admin SDK instance');
+      return admin;
     }
-  } else if (firebaseInitialized) {
-    console.log('Using existing Firebase Admin SDK instance');
-  } else if (admin.apps.length) {
-    firebaseInitialized = true;
-    console.log('Using existing Firebase Admin app');
+    
+    // If no apps exist or this is first initialization
+    if (!admin.apps || admin.apps.length === 0) {
+      try {
+        // Parse the private key - Vercel requires special handling
+        const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+          ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+          : undefined;
+        
+        // Initialize with credential
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId: process.env.FIREBASE_PROJECT_ID || '',
+            privateKey: privateKey || '',
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+          }),
+          storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+        });
+        
+        firebaseInitialized = true;
+        console.log('Firebase Admin SDK initialized directly in setup-trial endpoint');
+      } catch (error) {
+        console.error('Error initializing Firebase directly:', error);
+        throw error;
+      }
+    } else {
+      firebaseInitialized = true;
+      console.log('Using existing Firebase Admin app');
+    }
+    
+    return admin;
+  } catch (error) {
+    console.error('Error in Firebase initialization check:', error);
+    
+    // Last resort - try to initialize regardless of previous state
+    try {
+      if (!firebaseInitialized) {
+        const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+          ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+          : '';
+          
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId: process.env.FIREBASE_PROJECT_ID || '',
+            privateKey: privateKey,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+          }),
+          storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+        });
+        
+        firebaseInitialized = true;
+        console.log('Firebase Admin SDK initialized with fallback method');
+      }
+      return admin;
+    } catch (initError) {
+      console.error('Fatal error initializing Firebase:', initError);
+      throw initError;
+    }
   }
-  
-  return admin;
 }
 
 // Get the Firestore instance, initializing Firebase if necessary

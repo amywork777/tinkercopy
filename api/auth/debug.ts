@@ -34,13 +34,13 @@ interface UserDebugInfo {
 }
 
 /**
- * Debugging endpoint to verify Firebase configuration and auth status
+ * Debug endpoint to check if a user exists in Firebase and has correct subscription data
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set appropriate CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
@@ -52,92 +52,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  try {
-    // Get environment info
-    const envInfo = {
-      projectId: process.env.FIREBASE_PROJECT_ID || 'not set',
-      hasPrivateKey: process.env.FIREBASE_PRIVATE_KEY ? 'yes (length: ' + process.env.FIREBASE_PRIVATE_KEY.length + ')' : 'no',
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL || 'not set',
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'not set',
-      apiRunning: true
-    };
+  // Support both GET and POST methods
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ success: false, message: 'Method not allowed' });
+  }
 
-    // Check if we can access Firestore
-    let firestoreStatus = 'unknown';
-    let userCount = 0;
-    let latestUsers: UserDebugInfo[] = [];
-    
-    try {
-      const db = admin.firestore();
-      const usersRef = db.collection('users');
-      
-      // Try to get a list of up to 5 users
-      const snapshot = await usersRef.limit(5).get();
-      userCount = snapshot.size;
-      
-      // Get latest 5 users with creation time
-      const allUsersSnapshot = await usersRef
-        .orderBy('createdAt', 'desc')
-        .limit(5)
-        .get();
-      
-      latestUsers = allUsersSnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          email: data.email || 'no email',
-          createdAt: data.createdAt ? 
-            (typeof data.createdAt.toDate === 'function' ? 
-              data.createdAt.toDate().toISOString() : 
-              'timestamp not convertible') : 
-            'no timestamp',
-          isPro: data.isPro || false,
-          trialActive: data.trialActive || false
-        };
+  try {
+    // Get userId from query params (GET) or request body (POST)
+    const userId = req.method === 'GET' 
+      ? req.query.userId as string 
+      : req.body.userId as string;
+
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing required parameter: userId' 
       });
-      
-      firestoreStatus = 'connected';
-    } catch (firestoreError) {
-      console.error('Firestore access error:', firestoreError);
-      firestoreStatus = `error: ${firestoreError.message}`;
     }
-    
-    // Check if we can access Authentication
-    let authStatus = 'unknown';
-    let authUserCount = 0;
-    
+
+    // Get Firebase Auth user
+    console.log(`Looking up Firebase Auth user with ID: ${userId}`);
+    let authUser = null;
     try {
-      const auth = admin.auth();
-      const userResult = await auth.listUsers(5);
-      authUserCount = userResult.users.length;
-      authStatus = 'connected';
-    } catch (authError) {
-      console.error('Auth access error:', authError);
-      authStatus = `error: ${authError.message}`;
+      authUser = await admin.auth().getUser(userId);
+      console.log(`Firebase Auth user found: ${authUser.uid}`);
+    } catch (error) {
+      console.error(`Error fetching Firebase Auth user: ${error}`);
     }
     
-    // Return debug info
+    // Get Firestore user data
+    console.log(`Looking up Firestore user with ID: ${userId}`);
+    const db = admin.firestore();
+    const userDoc = await db.collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      console.log(`No Firestore document found for user: ${userId}`);
+      return res.status(200).json({
+        success: false,
+        authUser: authUser || null,
+        firestoreUser: null,
+        message: 'User exists in Firebase Auth but not in Firestore'
+      });
+    }
+    
+    // Return user data
+    const userData = userDoc.data();
+    console.log(`Firestore user found: ${userId}`);
+    
     return res.status(200).json({
       success: true,
-      timestamp: new Date().toISOString(),
-      environment: envInfo,
-      firestore: {
-        status: firestoreStatus,
-        userCount,
-        latestUsers
-      },
-      auth: {
-        status: authStatus,
-        userCount: authUserCount
-      }
+      authUser: authUser ? {
+        uid: authUser.uid,
+        email: authUser.email,
+        displayName: authUser.displayName,
+        emailVerified: authUser.emailVerified,
+        creationTime: authUser.metadata.creationTime,
+        lastSignInTime: authUser.metadata.lastSignInTime
+      } : null,
+      firestoreUser: userData
     });
   } catch (error: any) {
-    console.error('Debug endpoint error:', error);
+    console.error('Error in debug endpoint:', error);
     return res.status(500).json({ 
       success: false, 
-      message: 'Error in debug endpoint',
-      error: error.message,
-      stack: error.stack
+      message: 'Error retrieving user data',
+      error: error.message
     });
   }
 } 

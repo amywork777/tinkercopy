@@ -68,7 +68,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
       
       // Get the user ID
-      const userId = user?.uid || '';
+      const userId = user?.id || '';
       
       // Simple approach - single API call with built-in fallback
       try {

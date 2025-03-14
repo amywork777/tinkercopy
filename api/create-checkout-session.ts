@@ -265,19 +265,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Add STL download link to product description
       let productDescription = `3D Print in ${color} (Qty: ${quantity})`;
       if (stlDownloadUrl) {
-        // Format the URL in a more prominent way that's less likely to be truncated
-        productDescription = `3D Print in ${color} (Qty: ${quantity})
-
-==== STL DOWNLOAD LINK ====
-${stlDownloadUrl}
-==========================
-
-Please save this URL to download your STL file. This link is valid for 10 years.`;
+        // Simplified format that's more likely to display properly in Stripe
+        productDescription = `3D Print in ${color} (Qty: ${quantity}). STL DOWNLOAD LINK: ${stlDownloadUrl}`;
       }
 
       // Create a product in Stripe for this 3D print
       const product = await stripe.products.create({
-        name: `3D Print: ${modelName}`,
+        name: stlDownloadUrl 
+          ? `3D Print: ${modelName} (Download Available)` 
+          : `3D Print: ${modelName}`,
         description: productDescription,
         metadata: {
           modelName,
@@ -286,7 +282,8 @@ Please save this URL to download your STL file. This link is valid for 10 years.
           printType: '3d_print',
           stlFileName: stlFileName || '',
           stlFilePath: stlFilePath || '',
-          hasStlFile: stlDownloadUrl ? 'true' : 'false'
+          hasStlFile: stlDownloadUrl ? 'true' : 'false',
+          stlDownloadUrl: stlDownloadUrl || ''  // Always include in metadata, even if empty
         }
       });
       
@@ -332,10 +329,32 @@ Please save this URL to download your STL file. This link is valid for 10 years.
         shipping_address_collection: {
           allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
         },
+        shipping_options: stlDownloadUrl ? [
+          {
+            shipping_rate_data: {
+              type: 'fixed_amount',
+              fixed_amount: {
+                amount: 0,
+                currency: 'usd',
+              },
+              display_name: `STL DOWNLOAD: ${stlDownloadUrl.substring(0, 50)}...`,
+              delivery_estimate: {
+                minimum: {
+                  unit: 'business_day',
+                  value: 5,
+                },
+                maximum: {
+                  unit: 'business_day',
+                  value: 10,
+                },
+              }
+            }
+          }
+        ] : undefined,
         // Add custom text to display the download URL directly in the checkout page
         custom_text: stlDownloadUrl ? {
           submit: {
-            message: `After payment, you'll receive your STL download link. For your records, the link is: ${stlDownloadUrl.substring(0, 500)}...`
+            message: `IMPORTANT: Save your STL download link: ${stlDownloadUrl}`
           }
         } : undefined,
       });

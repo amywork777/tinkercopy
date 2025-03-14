@@ -1,6 +1,14 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
 import * as admin from 'firebase-admin';
+import { buffer } from 'micro';
+
+// This is a special helper for raw bodies in Vercel serverless functions
+export const config = {
+  api: {
+    bodyParser: false, // Disable body parsing, needed for Stripe webhook verification
+  },
+};
 
 // Initialize Stripe with the secret key
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -31,9 +39,18 @@ if (!admin.apps.length) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Stripe webhooks need the raw body for verification
+  // Special handling for Vercel serverless: get raw body for signature verification
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
+  }
+
+  // Get the raw request body for Stripe webhook signature verification
+  let rawBody: Buffer;
+  try {
+    rawBody = await buffer(req);
+  } catch (error) {
+    console.error('Error getting raw request body:', error);
+    return res.status(400).json({ success: false, message: 'Error reading request body' });
   }
 
   const sig = req.headers['stripe-signature'] as string;
@@ -47,14 +64,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let event: Stripe.Event;
 
   try {
-    // Verify the event came from Stripe
+    // Verify the event came from Stripe using raw body
     event = stripe.webhooks.constructEvent(
-      req.body,
+      rawBody.toString(),
       sig,
       webhookSecret
     );
+    console.log(`✅ Stripe signature verified for event: ${event.type}, id: ${event.id}`);
   } catch (err: any) {
-    console.error(`Webhook signature verification failed: ${err.message}`);
+    console.error(`⚠️ Webhook signature verification failed: ${err.message}`);
     return res.status(400).json({ success: false, message: `Webhook Error: ${err.message}` });
   }
 

@@ -33,18 +33,11 @@ export default function PricingPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
-  const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
+  const [billingInterval, setBillingInterval] = useState<'monthly'>('monthly');
   const [errorMessage, setErrorMessage] = useState('');
   
   // Parse URL parameters to set default plan if specified
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const plan = params.get('plan');
-    
-    if (plan === PRICING_PLANS.PRO_ANNUAL) {
-      setBillingInterval('yearly');
-    }
-    
     // Force a repaint to ensure the modal is visible
     document.body.style.overflow = 'hidden';
     return () => {
@@ -129,145 +122,115 @@ export default function PricingPage() {
           </div>
           
           <div className="mt-6 md:mt-8">
-            <Tabs 
-              defaultValue={billingInterval} 
-              className="w-full" 
-              onValueChange={(value) => setBillingInterval(value as 'monthly' | 'yearly')}
-            >
-              <div className="flex justify-center mb-6">
-                <TabsList className="grid w-72 grid-cols-2">
-                  <TabsTrigger value="monthly" className="text-sm py-2">Monthly</TabsTrigger>
-                  <TabsTrigger value="yearly" className="text-sm py-2 relative">
-                    <span>Yearly</span>
-                    <Badge variant="outline" className="ml-1.5 absolute top-0 right-1 -translate-y-1/2 bg-primary text-primary-foreground text-xs px-1.5 py-0">Save 20%</Badge>
-                  </TabsTrigger>
-                </TabsList>
-              </div>
+            <div className="grid gap-5 md:grid-cols-3">
+              {/* Free Tier */}
+              <Card className={`flex flex-col h-full ${!isProUser && user ? 'ring-2 ring-muted' : ''}`}>
+                <CardHeader className="pb-3">
+                  <CardTitle>Free Tier</CardTitle>
+                  <CardDescription>Perfect for trying things out. No commitment, no cost—just endless possibilities.</CardDescription>
+                  {!isProUser && user && (
+                    <Badge variant="outline" className="mt-2 self-start">Current Plan</Badge>
+                  )}
+                </CardHeader>
+                <CardContent className="flex-1 pb-4">
+                  <div className="text-2xl font-bold">$0</div>
+                  <div className="text-sm text-muted-foreground">/month</div>
+                  
+                  <ul className="mt-4 space-y-3">
+                    <li className="flex items-start">
+                      <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                      <span>One-hour Pro trial upon signup</span>
+                    </li>
+                    <li className="flex items-start">
+                      <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                      <span>Unlimited 3D Print Requests</span>
+                    </li>
+                  </ul>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => navigate('/')}
+                    variant="outline"
+                  >
+                    Get Started for Free
+                  </Button>
+                </CardFooter>
+              </Card>
               
-              <div className="grid gap-5 md:grid-cols-3">
-                {/* Free Tier */}
-                <Card className={`flex flex-col h-full ${!isProUser && user ? 'ring-2 ring-muted' : ''}`}>
-                  <CardHeader className="pb-3">
-                    <CardTitle>Free Tier</CardTitle>
-                    <CardDescription>Perfect for trying things out. No commitment, no cost—just endless possibilities.</CardDescription>
-                    {!isProUser && user && (
-                      <Badge variant="outline" className="mt-2 self-start">Current Plan</Badge>
-                    )}
-                  </CardHeader>
-                  <CardContent className="flex-1 pb-4">
-                    <div className="text-2xl font-bold">$0</div>
-                    <div className="text-sm text-muted-foreground">/month</div>
-                    
-                    <ul className="mt-4 space-y-3">
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>One-hour Pro trial upon signup</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Unlimited 3D Print Requests</span>
-                      </li>
-                    </ul>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      className="w-full" 
-                      onClick={() => navigate('/')}
-                      variant="outline"
-                    >
-                      Get Started for Free
-                    </Button>
-                  </CardFooter>
-                </Card>
-                
-                {/* Pro Tier */}
-                <Card className={`flex flex-col h-full ${isProUser ? 'ring-2 ring-primary' : 'border-primary'} relative`}>
-                  <div className="absolute -top-3 left-0 right-0 flex justify-center">
-                    <Badge className="bg-primary text-white">MOST POPULAR</Badge>
-                  </div>
-                  <CardHeader className="pb-3">
-                    <CardTitle>Pro Tier</CardTitle>
-                    <CardDescription>Unlock more power and save with our annual plan.</CardDescription>
-                    {isProUser && (
-                      <Badge className="bg-primary text-white mt-2 self-start">Current Plan</Badge>
-                    )}
-                  </CardHeader>
-                  <CardContent className="flex-1 pb-4">
-                    <TabsContent value="monthly" className="mt-0 p-0">
-                      <div className="text-2xl font-bold">$20</div>
-                      <div className="text-sm text-muted-foreground">/month</div>
-                    </TabsContent>
-                    <TabsContent value="yearly" className="mt-0 p-0">
-                      <div className="text-2xl font-bold">$192</div>
-                      <div className="text-sm text-muted-foreground">/year <span className="text-xs font-medium text-green-500">(save 20%)</span></div>
-                    </TabsContent>
-                    
-                    <ul className="mt-4 space-y-3">
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Unlimited Model Generations</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Unlimited 3D Print Requests</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                        <span>Full Access to Assets Library</span>
-                      </li>
-                      {billingInterval === 'yearly' && (
-                        <li className="flex items-start">
-                          <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                          <span>Save 20% with Annual Billing</span>
-                        </li>
-                      )}
-                    </ul>
-                  </CardContent>
-                  <CardFooter>
-                    {isProUser ? (
-                      <Button 
-                        className="w-full" 
-                        variant="outline"
-                        onClick={() => navigate('/account')}
-                      >
-                        Manage Subscription
-                      </Button>
-                    ) : (
-                      <Button 
-                        className="w-full" 
-                        onClick={() => handleSubscribe(
-                          billingInterval === 'monthly' ? 'monthly' : 'yearly'
-                        )}
-                        disabled={isLoading}
-                      >
-                        {!user ? 'Sign in to Subscribe' : (isLoading ? 'Processing...' : 'Upgrade to Pro')}
-                      </Button>
-                    )}
-                  </CardFooter>
-                </Card>
-                
-                {/* Enterprise Tier */}
-                <Card className="flex flex-col h-full">
-                  <CardHeader className="pb-3">
-                    <CardTitle>Enterprise Solutions</CardTitle>
-                    <CardDescription>Looking for more? We offer custom solutions for businesses.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex-1 pb-4">
-                    <div className="text-2xl font-bold">Custom</div>
-                    <div className="text-sm text-muted-foreground">Contact us for pricing</div>
-                  </CardContent>
-                  <CardFooter>
+              {/* Pro Tier */}
+              <Card className={`flex flex-col h-full ${isProUser ? 'ring-2 ring-primary' : 'border-primary'} relative`}>
+                <div className="absolute -top-3 left-0 right-0 flex justify-center">
+                  <Badge className="bg-primary text-white">MOST POPULAR</Badge>
+                </div>
+                <CardHeader className="pb-3">
+                  <CardTitle>Pro Tier</CardTitle>
+                  <CardDescription>Unlock unlimited features for your designs.</CardDescription>
+                  {isProUser && (
+                    <Badge className="bg-primary text-white mt-2 self-start">Current Plan</Badge>
+                  )}
+                </CardHeader>
+                <CardContent className="flex-1 pb-4">
+                  <div className="text-2xl font-bold">$20</div>
+                  <div className="text-sm text-muted-foreground">/month</div>
+                  
+                  <ul className="mt-4 space-y-3">
+                    <li className="flex items-start">
+                      <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                      <span>Unlimited Model Generations</span>
+                    </li>
+                    <li className="flex items-start">
+                      <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                      <span>Unlimited 3D Print Requests</span>
+                    </li>
+                    <li className="flex items-start">
+                      <Check className="mr-2 h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                      <span>Full Access to Assets Library</span>
+                    </li>
+                  </ul>
+                </CardContent>
+                <CardFooter>
+                  {isProUser ? (
                     <Button 
                       className="w-full" 
                       variant="outline"
-                      onClick={handleContactUs}
+                      onClick={() => navigate('/account')}
                     >
-                      Contact Us
+                      Manage Subscription
                     </Button>
-                  </CardFooter>
-                </Card>
-              </div>
-            </Tabs>
+                  ) : (
+                    <Button 
+                      className="w-full" 
+                      onClick={() => handleSubscribe('monthly')}
+                      disabled={isLoading}
+                    >
+                      {!user ? 'Sign in to Subscribe' : (isLoading ? 'Processing...' : 'Upgrade to Pro')}
+                    </Button>
+                  )}
+                </CardFooter>
+              </Card>
+              
+              {/* Enterprise Tier */}
+              <Card className="flex flex-col h-full">
+                <CardHeader className="pb-3">
+                  <CardTitle>Enterprise Solutions</CardTitle>
+                  <CardDescription>Looking for more? We offer custom solutions for businesses.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 pb-4">
+                  <div className="text-2xl font-bold">Custom</div>
+                  <div className="text-sm text-muted-foreground">Contact us for pricing</div>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    variant="outline"
+                    onClick={handleContactUs}
+                  >
+                    Contact Us
+                  </Button>
+                </CardFooter>
+              </Card>
+            </div>
           </div>
           
           <div className="mt-8 text-center">

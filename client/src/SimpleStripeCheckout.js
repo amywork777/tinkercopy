@@ -9,13 +9,13 @@ const STRIPE_KEYS = {
   LIVE: {
     PUBLISHABLE_KEY: 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi',
     MONTHLY_PRICE: 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ', 
-    ANNUAL_PRICE: 'price_1QzyJNCLoBz9jXRlXE8bsC68'
+    // Annual price removed - only using monthly plan
   },
   // Test mode keys (from previous implementations)
   TEST: {
     PUBLISHABLE_KEY: 'pk_test_51QIaT9CLoBz9jXRlPLnbvmbMNLXKdHB3gNr3bQiaMKW2iaqZXiiYrgylWHwLI1bSM4QRYiCHUMT17YTrDim4gG2M00uXEYHwx0',
     MONTHLY_PRICE: 'price_1R1LlMCLoBz9jXRl3OQ5Q6kE',
-    ANNUAL_PRICE: 'price_1R1LmRCLoBz9jXRlQcOuRZJd'
+    // Annual price removed - only using monthly plan
   }
 };
 
@@ -24,7 +24,7 @@ const USE_TEST_MODE = false;
 
 /**
  * Creates a checkout session via the server and redirects to Stripe
- * @param {string} planType - 'monthly' or 'annual'
+ * @param {string} planType - 'monthly' or 'annual' (always uses monthly regardless of input)
  * @param {string} userEmail - User's email for prefilling
  * @param {string} userId - User ID for reference
  * @returns {Promise<void>}
@@ -32,10 +32,13 @@ const USE_TEST_MODE = false;
 export async function directStripeCheckout(planType, userEmail, userId) {
   console.log('Starting checkout with simplified approach...');
   
+  // Always use monthly plan
+  const actualPlanType = 'monthly';
+  
   try {
     // FIRST ATTEMPT: Use the direct checkout page (most reliable)
     const directCheckoutUrl = new URL('/direct-checkout', window.location.origin);
-    directCheckoutUrl.searchParams.append('plan', planType);
+    directCheckoutUrl.searchParams.append('plan', actualPlanType);
     
     // Add optional parameters if available
     if (userEmail) directCheckoutUrl.searchParams.append('email', userEmail);
@@ -50,7 +53,7 @@ export async function directStripeCheckout(planType, userEmail, userId) {
     // FALLBACK: Try the simple checkout endpoint
     try {
       const simpleCheckoutUrl = new URL('/simple-checkout', window.location.origin);
-      simpleCheckoutUrl.searchParams.append('plan', planType);
+      simpleCheckoutUrl.searchParams.append('plan', actualPlanType);
       
       console.log('Redirecting to simple checkout:', simpleCheckoutUrl.toString());
       window.location.href = simpleCheckoutUrl.toString();

@@ -15,7 +15,6 @@ export const APP_NAME = 'FishCAD';
 export const PRICING_PLANS = {
   FREE: 'free',
   PRO_MONTHLY: 'pro-monthly',
-  PRO_ANNUAL: 'pro-annual',
   TRIAL: 'trial',
   ENTERPRISE: 'enterprise',
 };

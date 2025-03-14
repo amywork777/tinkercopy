@@ -299,7 +299,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           Welcome, {user.displayName}!
           {user.isPro && (
             <p className="text-xs font-semibold text-primary">
-              PRO {user.subscriptionPlan === 'annual' ? 'ANNUAL' : 'MONTHLY'} SUBSCRIPTION ACTIVE
+              PRO SUBSCRIPTION ACTIVE
             </p>
           )}
         </div>

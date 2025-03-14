@@ -16,7 +16,6 @@ if (!isProductionKey) {
 const DEFAULT_DOMAIN = process.env.DOMAIN || 'https://fishcad.com';
 const STRIPE_PRICES = {
   MONTHLY: process.env.STRIPE_PRICE_MONTHLY || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ',
-  ANNUAL: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
 };
 
 // Log the price IDs being used
@@ -54,32 +53,17 @@ router.post('/create-checkout-session', async (req, res) => {
   try {
     const { priceId, userId, email, domain, origin } = req.body;
     
-    if (!priceId || !userId) {
-      console.log('Missing required parameters:', { priceId, userId });
+    if (!userId) {
+      console.log('Missing required parameters: userId');
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     
-    console.log(`Creating checkout session for user ${userId} with price ${priceId}`);
+    console.log(`Creating checkout session for user ${userId}`);
     console.log(`Request from domain: ${domain}, origin: ${origin || 'none'}`);
     
-    // Verify this is a valid production price ID (starting with price_1) 
-    // and use fallback if necessary
-    let finalPriceId = priceId;
-    if (!priceId.startsWith('price_1')) {
-      console.warn(`WARNING: Invalid price ID format: ${priceId}, using fallback`);
-      // Check if it matches a known plan type
-      if (priceId.includes('month') || priceId === 'monthly') {
-        finalPriceId = STRIPE_PRICES.MONTHLY;
-        console.log(`Using monthly price fallback: ${finalPriceId}`);
-      } else if (priceId.includes('year') || priceId === 'annual' || priceId === 'yearly') {
-        finalPriceId = STRIPE_PRICES.ANNUAL;
-        console.log(`Using annual price fallback: ${finalPriceId}`);
-      } else {
-        // Default to monthly
-        finalPriceId = STRIPE_PRICES.MONTHLY;
-        console.log(`Using default monthly price: ${finalPriceId}`);
-      }
-    }
+    // Always use monthly price ID regardless of what was requested
+    const finalPriceId = STRIPE_PRICES.MONTHLY;
+    console.log(`Using monthly price: ${finalPriceId}`);
     
     // Log that we'll create a production checkout
     console.log(`Creating PRODUCTION checkout with price ID: ${finalPriceId}`);
@@ -214,7 +198,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                 subscriptionStatus: subscription.status,
                 subscriptionEndDate: new Date(subscription.current_period_end * 1000),
                 modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
-                subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
+                subscriptionPlan: 'monthly', // Only monthly plan is available
                 lastUpdated: new Date(),
                 trialActive: false
               });
@@ -241,7 +225,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           subscriptionEndDate: new Date(subscription.current_period_end * 1000),
           modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
           // Keep track of the subscription plan
-          subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
+          subscriptionPlan: 'monthly', // Only monthly plan is available
           // Clear any trial status
           trialActive: false,
           // Add timestamp for when this update occurred
@@ -276,8 +260,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           isPro: isActive,
           subscriptionStatus: subscription.status,
           subscriptionEndDate: new Date(subscription.current_period_end * 1000),
-          // Update plan if it changed
-          subscriptionPlan: subscription.items.data[0].price.id === STRIPE_PRICES.ANNUAL ? 'annual' : 'monthly',
+          // Update plan
+          subscriptionPlan: 'monthly', // Only monthly plan is available
           // Clear any trial status if they have a paid subscription
           trialActive: false
         });

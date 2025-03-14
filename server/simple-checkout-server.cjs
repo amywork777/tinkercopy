@@ -3012,14 +3012,13 @@ app.get('/simple-checkout', async (req, res) => {
 
 // Direct checkout web page
 app.get('/direct-checkout', async (req, res) => {
-  const { plan = 'monthly' } = req.query;
+  // Always use monthly plan regardless of what is requested
+  const plan = 'monthly';
   
-  // Get the price ID for the plan
-  const priceId = plan === 'monthly' 
-    ? process.env.STRIPE_PRICE_MONTHLY 
-    : process.env.STRIPE_PRICE_ANNUAL;
+  // Get the price ID for the plan (only monthly available)
+  const priceId = process.env.STRIPE_PRICE_MONTHLY;
   
-  const priceLabel = plan === 'monthly' ? '$20 monthly' : '$192 annually';
+  const priceLabel = '$20 monthly';
   const publicKey = process.env.STRIPE_PUBLISHABLE_KEY;
   
   // Send an HTML page with a direct checkout button
@@ -3072,7 +3071,7 @@ app.get('/direct-checkout', async (req, res) => {
     </head>
     <body>
       <h1>FishCAD Pro Subscription</h1>
-      <p>You're subscribing to the FishCAD Pro ${plan} plan</p>
+      <p>You're subscribing to the FishCAD Pro monthly plan</p>
       <div class="price">${priceLabel}</div>
       
       <button class="btn" id="checkout-button">Subscribe Now</button>

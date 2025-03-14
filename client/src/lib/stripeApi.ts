@@ -48,7 +48,6 @@ console.log(`API URL configured as: ${API_URL}`);
 const STRIPE_PROD_KEYS = {
   PUBLISHABLE_KEY: 'pk_live_51QIaT9CLoBz9jXRlVEQ99Q6V4UiRSYy8ZS49MelsW8EfX1mEijh3K5JQEe5iysIL31cGtf2IsTVIyV1mivoUHCUI00aPpz3GMi',
   MONTHLY_PRICE: 'price_1R1jGiCLoBz9jXRlB1uLgvE9', // Pro Monthly
-  ANNUAL_PRICE: 'price_1R1jGgCLoBz9jXRluMN6PsNw'  // Pro Yearly
 };
 
 // Export the publishable key directly
@@ -58,13 +57,11 @@ export const PUBLISHABLE_KEY = STRIPE_PROD_KEYS.PUBLISHABLE_KEY;
 export const STRIPE_KEYS = {
   PUBLISHABLE_KEY: STRIPE_PROD_KEYS.PUBLISHABLE_KEY,
   MONTHLY_PRICE: STRIPE_PROD_KEYS.MONTHLY_PRICE,
-  ANNUAL_PRICE: STRIPE_PROD_KEYS.ANNUAL_PRICE
 };
 
 // Export STRIPE_PRICES directly for consistent access
 export const STRIPE_PRICES = {
   MONTHLY: STRIPE_PROD_KEYS.MONTHLY_PRICE,
-  ANNUAL: STRIPE_PROD_KEYS.ANNUAL_PRICE
 };
 
 // Helper to add cache-busting parameter

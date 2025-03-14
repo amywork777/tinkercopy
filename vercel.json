@@ -23,6 +23,16 @@
       "methods": ["POST", "OPTIONS"]
     },
     {
+      "src": "/api/auth/setup-trial",
+      "dest": "/api/auth/setup-trial.ts",
+      "methods": ["POST", "OPTIONS"]
+    },
+    {
+      "src": "/api/auth/check-trial",
+      "dest": "/api/auth/check-trial.ts",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
       "src": "/api/checkout",
       "dest": "/api/checkout.ts"
     },

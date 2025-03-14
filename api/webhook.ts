@@ -39,8 +39,22 @@ if (!admin.apps.length) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Special handling for Vercel serverless: get raw body for signature verification
+  // Debug: Log the request information
+  console.log(`Webhook received: ${req.method} ${req.url}`);
+  console.log(`Headers: ${JSON.stringify(req.headers)}`);
+  
+  // Special handling for OPTIONS requests (CORS)
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, stripe-signature');
+    res.status(200).end();
+    return;
+  }
+  
+  // Only allow POST for webhooks
   if (req.method !== 'POST') {
+    console.error(`Invalid method: ${req.method}`);
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
@@ -48,6 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let rawBody: Buffer;
   try {
     rawBody = await buffer(req);
+    console.log(`Raw body received, length: ${rawBody.length} bytes`);
   } catch (error) {
     console.error('Error getting raw request body:', error);
     return res.status(400).json({ success: false, message: 'Error reading request body' });
@@ -86,6 +101,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
         console.log(`Processing completed checkout session: ${session.id}`);
+        console.log(`Session metadata:`, session.metadata);
+        console.log(`Session mode: ${session.mode}`);
         
         // Only handle subscription checkouts
         if (session.mode !== 'subscription') {
@@ -103,17 +120,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const subscription = await stripe.subscriptions.retrieve(
           typeof session.subscription === 'string' ? session.subscription : session.subscription.id
         );
+        console.log(`Retrieved subscription: ${subscription.id}, status: ${subscription.status}`);
         
         // Get user ID from session metadata or customer metadata
         let userId = session.metadata?.userId;
+        console.log(`Initial userId from session metadata: ${userId || 'not found'}`);
         
         // If no user ID in session metadata, try to get it from customer metadata
         if (!userId && session.customer) {
+          console.log(`Looking up customer metadata for customer: ${session.customer}`);
           const customer = await stripe.customers.retrieve(
             typeof session.customer === 'string' ? session.customer : session.customer.id
           ) as Stripe.Customer;
           
           userId = customer.metadata?.userId;
+          console.log(`UserId from customer metadata: ${userId || 'not found'}`);
         }
         
         if (!userId) {
@@ -125,10 +146,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         // Get subscription plan info
         const priceId = subscription.items.data[0].price.id;
-        const isPremiumPlan = true; // All subscription plans are premium
+        
+        // Log the update we're about to make
+        console.log(`Setting user to isPro=true, with subscription ID ${subscription.id}, status ${subscription.status}`);
         
         // Update user subscription status in Firestore
-        await db.collection('users').doc(userId).set({
+        const userDocRef = db.collection('users').doc(userId);
+        const updateData = {
           isPro: true,
           stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
           stripeSubscriptionId: subscription.id,
@@ -137,9 +161,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           subscriptionPlan: priceId,
           modelsRemainingThisMonth: 999999, // Effectively unlimited
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        };
         
-        console.log(`User ${userId} subscription updated with status: ${subscription.status}`);
+        console.log(`Updating Firestore document for user ${userId} with:`, updateData);
+        
+        // Check if the user exists first
+        const userDoc = await userDocRef.get();
+        if (!userDoc.exists) {
+          console.log(`User ${userId} doesn't exist in Firestore, creating new document`);
+          await userDocRef.set(updateData);
+        } else {
+          console.log(`User ${userId} exists in Firestore, updating document`);
+          await userDocRef.update(updateData);
+        }
+        
+        console.log(`✅ User ${userId} subscription updated with status: ${subscription.status}`);
         break;
       }
       
@@ -152,6 +188,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? subscription.customer 
           : subscription.customer.id;
         
+        console.log(`Looking up user with Stripe customer ID: ${customerId}`);
+        
         // Find user by customer ID
         const usersRef = db.collection('users');
         const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
@@ -163,20 +201,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         const userDoc = snapshot.docs[0];
         const userId = userDoc.id;
+        console.log(`Found user: ${userId}`);
         
         // Check if subscription is active
         const isActive = ['active', 'trialing'].includes(subscription.status);
+        console.log(`Subscription status: ${subscription.status}, isActive: ${isActive}`);
         
-        // Update the user's subscription status
-        await usersRef.doc(userId).set({
+        // Prepare the update data
+        const updateData = {
           isPro: isActive,
           subscriptionStatus: subscription.status,
           subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
           modelsRemainingThisMonth: isActive ? 999999 : 2, // Unlimited if active, limited if not
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        };
         
-        console.log(`User ${userId} subscription updated with status: ${subscription.status}`);
+        console.log(`Updating user with:`, updateData);
+        
+        // Update the user's subscription status
+        await usersRef.doc(userId).update(updateData);
+        
+        console.log(`✅ User ${userId} subscription updated with status: ${subscription.status}`);
         break;
       }
       
@@ -189,6 +234,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? subscription.customer 
           : subscription.customer.id;
         
+        console.log(`Looking up user with Stripe customer ID: ${customerId}`);
+        
         // Find user by customer ID
         const usersRef = db.collection('users');
         const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
@@ -200,16 +247,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         const userDoc = snapshot.docs[0];
         const userId = userDoc.id;
+        console.log(`Found user: ${userId}`);
         
-        // Downgrade user to free tier
-        await usersRef.doc(userId).set({
+        // Prepare update data for downgrade
+        const updateData = {
           isPro: false,
           subscriptionStatus: 'canceled',
           modelsRemainingThisMonth: 2, // Free tier limit
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        };
         
-        console.log(`User ${userId} subscription canceled`);
+        console.log(`Downgrading user to free tier:`, updateData);
+        
+        // Downgrade user to free tier
+        await usersRef.doc(userId).update(updateData);
+        
+        console.log(`✅ User ${userId} subscription canceled`);
         break;
       }
       
@@ -218,9 +271,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Return a 200 response to acknowledge receipt of the event
-    return res.json({ received: true });
+    console.log('Webhook processed successfully');
+    return res.status(200).json({ received: true, success: true });
   } catch (error: any) {
     console.error(`Error processing webhook: ${error.message}`);
+    console.error(error.stack);
     return res.status(500).json({ success: false, message: error.message });
   }
 } 

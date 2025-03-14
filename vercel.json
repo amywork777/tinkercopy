@@ -18,6 +18,11 @@
   ],
   "routes": [
     {
+      "src": "/api/webhook",
+      "dest": "/api/webhook.ts",
+      "methods": ["POST", "OPTIONS"]
+    },
+    {
       "src": "/api/checkout",
       "dest": "/api/checkout.ts"
     },

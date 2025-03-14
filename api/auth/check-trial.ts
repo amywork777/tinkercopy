@@ -14,7 +14,8 @@ if (!admin.apps.length) {
         projectId: process.env.FIREBASE_PROJECT_ID || '',
         privateKey: privateKey,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      })
+      }),
+      storageBucket: 'taiyaki-test1.firebasestorage.app'
     });
     
     console.log('Firebase Admin SDK initialized in check-trial endpoint');

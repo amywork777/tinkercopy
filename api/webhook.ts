@@ -29,7 +29,7 @@ if (!admin.apps.length) {
         privateKey: privateKey,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
       }),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.appspot.com'
+      storageBucket: 'taiyaki-test1.firebasestorage.app'
     });
     
     console.log('Firebase Admin SDK initialized in webhook handler');

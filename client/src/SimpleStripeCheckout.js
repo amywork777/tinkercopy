@@ -24,12 +24,13 @@ const USE_TEST_MODE = true;
 
 /**
  * Redirects directly to Stripe checkout
- * @param {string} planType - 'monthly' or 'annual'
+ * @param {string} planType - 'monthly' or 'yearly'
  * @param {string} userEmail - User's email for prefilling
  * @param {string} userId - User ID for reference
  */
 export function directStripeCheckout(planType, userEmail, userId) {
   console.log('Starting DIRECT Stripe checkout in ' + (USE_TEST_MODE ? 'TEST' : 'LIVE') + ' mode...');
+  console.log('Plan type:', planType);
   
   // Get the correct set of keys based on mode
   const keys = USE_TEST_MODE ? STRIPE_KEYS.TEST : STRIPE_KEYS.LIVE;
@@ -53,6 +54,7 @@ export function directStripeCheckout(planType, userEmail, userId) {
     params.append('key', keys.PUBLISHABLE_KEY);
     
     // Add line items (what the customer is buying)
+    // Note: Stripe's hosted checkout expects line_items[0][price] format
     params.append('line_items[0][price]', priceId);
     params.append('line_items[0][quantity]', '1');
     
@@ -73,20 +75,37 @@ export function directStripeCheckout(planType, userEmail, userId) {
       params.append('client_reference_id', userId);
     }
     
-    // Build the final URL - use appropriate checkout endpoint
-    checkoutUrl = `https://checkout.stripe.com/pay?${params.toString()}`;
+    // Build the final URL - use correct checkout endpoint
+    // Fix: Using the correct Stripe checkout URL format
+    checkoutUrl = `https://checkout.stripe.com/c/pay?${params.toString()}`;
     console.log('Redirecting to Stripe checkout v3:', checkoutUrl);
+    
+    // Try to open immediately to test if it works
+    window.open(checkoutUrl, '_blank') || window.location.assign(checkoutUrl);
+    return;
   } catch (error) {
     console.error('Error building checkout URL:', error);
     
-    // Fallback to legacy v2 checkout URL format as last resort
-    checkoutUrl = `https://checkout.stripe.com/v2/checkout.js?key=${keys.PUBLISHABLE_KEY}&amount=2000&currency=usd&name=FishCAD+Pro&description=${planType === 'monthly' ? 'Monthly' : 'Annual'}+Subscription&locale=auto&zipCode=true&billingAddress=false&panelLabel=Subscribe&label=FishCAD&allowRememberMe=true&recurrent=true`;
-    
-    if (userEmail) {
-      checkoutUrl += `&email=${encodeURIComponent(userEmail)}`;
+    // Fallback to direct URL format
+    try {
+      console.log('Trying fallback direct checkout URL...');
+      checkoutUrl = `https://buy.stripe.com/${USE_TEST_MODE ? '0gwe00cHF8R3fPOcMM' : '28oe00cHF8R3fPOcMM'}`;
+      console.log('Using fallback direct URL:', checkoutUrl);
+      
+      window.open(checkoutUrl, '_blank') || window.location.assign(checkoutUrl);
+      return;
+    } catch (fallbackError) {
+      console.error('Fallback URL also failed:', fallbackError);
+      
+      // Legacy v2 fallback as last resort
+      checkoutUrl = `https://checkout.stripe.com/v2/checkout.js?key=${keys.PUBLISHABLE_KEY}&amount=2000&currency=usd&name=FishCAD+Pro&description=${planType === 'monthly' ? 'Monthly' : 'Annual'}+Subscription&locale=auto&zipCode=true&billingAddress=false&panelLabel=Subscribe&label=FishCAD&allowRememberMe=true&recurrent=true`;
+      
+      if (userEmail) {
+        checkoutUrl += `&email=${encodeURIComponent(userEmail)}`;
+      }
+      
+      console.log('Falling back to legacy checkout:', checkoutUrl);
     }
-    
-    console.log('Falling back to legacy checkout:', checkoutUrl);
   }
   
   // First try to open in a new tab

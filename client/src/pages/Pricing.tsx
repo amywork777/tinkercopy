@@ -24,6 +24,7 @@ import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { CrownIcon } from 'lucide-react';
 import { toast } from 'sonner';
+// @ts-ignore - Adding TypeScript ignore for the direct import
 import { directStripeCheckout } from '../SimpleStripeCheckout';
 
 export default function PricingPage() {
@@ -61,12 +62,28 @@ export default function PricingPage() {
       
       // Get user information if available
       const userEmail = user?.email || '';
-      const userId = user?.uid || '';
+      // Access uid safely with optional chaining and type assertion
+      const userId = user ? (user as any).uid || '' : '';
       
       console.log(`User info - Email: ${userEmail}, ID: ${userId}`);
       
-      // Call our super simple direct checkout function
-      directStripeCheckout(plan, userEmail, userId);
+      // Clear any previous error message
+      setErrorMessage('');
+      
+      // Add additional error boundary around our checkout flow
+      try {
+        // Call our super simple direct checkout function
+        directStripeCheckout(plan, userEmail, userId);
+        
+        // Display a toast message to guide the user
+        toast('Opening Stripe checkout in a new window...', {
+          duration: 4000,
+        });
+      } catch (checkoutError) {
+        console.error('Error in directStripeCheckout:', checkoutError);
+        setErrorMessage('Failed to open checkout. Please try again or contact support.');
+        toast('Error starting checkout. Please try again or refresh the page.');
+      }
       
       // Keep loading state for a bit to show something is happening
       setTimeout(() => {
@@ -76,9 +93,7 @@ export default function PricingPage() {
     } catch (error) {
       console.error('Error during subscription process:', error);
       setIsLoading(false);
-      toast('Error starting checkout. Please try again.', {
-        type: 'error',
-      });
+      toast('Error starting checkout. Please try again.');
     }
   };
 

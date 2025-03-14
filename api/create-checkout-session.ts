@@ -182,7 +182,69 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
       
+      if (!userId) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Missing userId parameter',
+          message: 'The userId parameter is required for subscription checkout'
+        });
+      }
+      
       console.log(`Creating subscription checkout with priceId: ${priceId}, userId: ${userId || 'not provided'}`);
+      
+      // First, try to look up existing customer
+      let customerId: string | undefined = undefined;
+      
+      if (userId && firebaseStorage) {
+        try {
+          // Get Firestore database
+          const db = admin.firestore();
+          
+          // Try to get user document
+          const userDoc = await db.collection('users').doc(userId).get();
+          
+          if (userDoc.exists && userDoc.data()?.stripeCustomerId) {
+            customerId = userDoc.data()?.stripeCustomerId;
+            console.log(`Found existing Stripe customer ID for user ${userId}: ${customerId}`);
+          }
+        } catch (error) {
+          console.error('Error looking up user in Firestore:', error);
+          // Continue without customerId
+        }
+      }
+      
+      // If no customer found, create a new one
+      if (!customerId && email) {
+        try {
+          const customer = await stripe.customers.create({
+            email,
+            metadata: {
+              userId, // Store userId in customer metadata
+            },
+          });
+          customerId = customer.id;
+          console.log(`Created new Stripe customer for user ${userId}: ${customerId}`);
+          
+          // Save the customer ID to Firestore if available
+          if (userId && firebaseStorage) {
+            try {
+              const db = admin.firestore();
+              await db.collection('users').doc(userId).set({
+                email,
+                stripeCustomerId: customerId,
+                updatedAt: new Date().toISOString(),
+              }, { merge: true });
+              console.log(`Updated user ${userId} in Firestore with Stripe customer ID`);
+            } catch (error) {
+              console.error('Error updating user in Firestore:', error);
+              // Continue without updating Firestore
+            }
+          }
+        } catch (error) {
+          console.error('Error creating Stripe customer:', error);
+          // Continue without customerId - will use customer_email instead
+        }
+      }
       
       // Create the session for subscription
       const session = await stripe.checkout.sessions.create({
@@ -191,12 +253,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         mode: 'subscription',
         success_url: `${host}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${host}/pricing`,
+        customer: customerId,
         client_reference_id: userId || undefined,
-        customer_email: email || undefined,
+        customer_email: !customerId ? email : undefined, // Only use customer_email if we don't have a customerId
         metadata: {
-          userId: userId || '',
+          userId: userId || '', // Important for webhook processing
           checkoutType: 'subscription'
-        }
+        },
+        subscription_data: {
+          metadata: {
+            userId: userId || '', // Important to store userId on the subscription itself
+          },
+        },
       });
       
       console.log('Created checkout session:', session.id);

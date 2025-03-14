@@ -15,7 +15,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import { Check, X } from 'lucide-react';
+import { Check, X, Tag } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,35 @@ import { createCheckoutSession, STRIPE_PRICES } from '../lib/stripeApi';
 // TODO: Remove this import as we're using STRIPE_PRICES from SimpleStripeCheckout
 // import { config } from '../lib/config';
 
+// Input component for promo code
+const PromoCodeInput = ({ 
+  promoCode, 
+  setPromoCode, 
+  disabled 
+}: { 
+  promoCode: string; 
+  setPromoCode: (code: string) => void; 
+  disabled: boolean 
+}) => {
+  return (
+    <div className="flex items-center mt-4">
+      <div className="relative w-full">
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+          <Tag className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <input
+          type="text"
+          className="bg-background border border-input rounded-md py-2 pl-10 pr-3 w-full text-sm focus:ring-2 focus:ring-primary focus:border-primary"
+          placeholder="Promo code (if you have one)"
+          value={promoCode}
+          onChange={(e) => setPromoCode(e.target.value.trim())}
+          disabled={disabled}
+        />
+      </div>
+    </div>
+  );
+};
+
 export default function PricingPage() {
   const { user } = useAuth();
   const { subscription } = useSubscription();
@@ -35,6 +64,7 @@ export default function PricingPage() {
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [promoCode, setPromoCode] = useState('');
   
   // Parse URL parameters to set default plan if specified
   useEffect(() => {
@@ -65,7 +95,12 @@ export default function PricingPage() {
       
       // Simple, direct checkout approach
       try {
-        const { url } = await createCheckoutSession(priceId, userId, userEmail);
+        const { url } = await createCheckoutSession(
+          priceId, 
+          userId, 
+          userEmail,
+          promoCode || undefined
+        );
         
         if (url) {
           console.log('Redirecting to checkout URL:', url);
@@ -212,20 +247,27 @@ export default function PricingPage() {
                         Manage Subscription
                       </Button>
                     ) : (
-                      <Button 
-                        className="w-full" 
-                        onClick={() => handleSubscribe()}
-                        disabled={isLoading}
-                      >
-                        {isLoading ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>Subscribe</>
-                        )}
-                      </Button>
+                      <div className="w-full space-y-3">
+                        <PromoCodeInput 
+                          promoCode={promoCode}
+                          setPromoCode={setPromoCode}
+                          disabled={isLoading}
+                        />
+                        <Button 
+                          className="w-full" 
+                          onClick={() => handleSubscribe()}
+                          disabled={isLoading}
+                        >
+                          {isLoading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>Subscribe</>
+                          )}
+                        </Button>
+                      </div>
                     )}
                   </CardFooter>
                 </Card>

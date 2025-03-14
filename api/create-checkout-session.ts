@@ -164,7 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // SUBSCRIPTION CHECKOUT
     if (type === 'subscription') {
-      const { priceId: rawPriceId, userId, email, plan } = req.body;
+      const { priceId: rawPriceId, userId, email, plan, promoCode } = req.body;
       
       // Handle different ways of providing the price ID
       let priceId = rawPriceId;
@@ -246,8 +246,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
       
-      // Create the session for subscription
-      const session = await stripe.checkout.sessions.create({
+      // Create checkout session options
+      const sessionOptions: Stripe.Checkout.SessionCreateParams = {
         payment_method_types: ['card'],
         line_items: [{ price: priceId, quantity: 1 }],
         mode: 'subscription',
@@ -265,7 +265,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             userId: userId || '', // Important to store userId on the subscription itself
           },
         },
-      });
+        // Enable promotion codes on the checkout page
+        allow_promotion_codes: true,
+      };
+      
+      // If a specific promo code was provided, apply it directly
+      if (promoCode) {
+        try {
+          console.log(`Applying promotion code: ${promoCode}`);
+          
+          // Validate that the promotion code exists
+          const promotionCodes = await stripe.promotionCodes.list({
+            code: promoCode,
+            active: true,
+          });
+          
+          if (promotionCodes.data.length > 0) {
+            const promotionCodeId = promotionCodes.data[0].id;
+            console.log(`Found valid promotion code: ${promotionCodeId}`);
+            
+            // Add the promotion code to the session
+            sessionOptions.discounts = [{ promotion_code: promotionCodeId }];
+          } else {
+            console.log(`Promotion code not found or not active: ${promoCode}`);
+          }
+        } catch (error) {
+          console.error(`Error applying promotion code ${promoCode}:`, error);
+          // Continue without the promotion code
+        }
+      }
+      
+      // Create the session for subscription
+      const session = await stripe.checkout.sessions.create(sessionOptions);
       
       console.log('Created checkout session:', session.id);
       

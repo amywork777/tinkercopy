@@ -12,13 +12,15 @@ export const STRIPE_PRICES = {
 export const createCheckoutSession = async (
   priceId: string,
   userId: string,
-  email: string
+  email: string,
+  promoCode?: string
 ): Promise<{ url: string }> => {
   try {
     console.log('Creating checkout session with:', {
       priceId,
       userId,
-      email
+      email,
+      promoCode: promoCode || 'none'
     });
 
     const response = await fetch(`${API_URL}/create-checkout-session`, {
@@ -30,6 +32,7 @@ export const createCheckoutSession = async (
         priceId,
         userId,
         email,
+        promoCode,
         type: 'subscription' // Flag to indicate this is a subscription checkout
       }),
     });

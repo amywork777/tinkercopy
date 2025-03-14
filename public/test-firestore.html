@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firestore Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .success {
+      color: green;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <h1>Firestore Connectivity Test</h1>
+  
+  <div class="card">
+    <h2>Test Server-Side Firestore</h2>
+    <p>Click the button below to test the server-side Firestore connection:</p>
+    <button id="testServerFirestore">Test Server Firestore</button>
+    <div id="serverResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>Test Client-Side Firebase</h2>
+    <p>Click the button below to test the client-side Firebase connection:</p>
+    <button id="testClientFirebase">Test Client Firebase</button>
+    <div id="clientResult"></div>
+  </div>
+
+  <script type="module">
+    // Import the Firebase SDK
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.4.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.4.0/firebase-firestore.js";
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyD5jEQV3jxCVHn4t5Ruopklmjyt0ZfL3M8",
+      authDomain: "taiyaki-test1.firebaseapp.com",
+      projectId: "taiyaki-test1",
+      storageBucket: "taiyaki-test1.firebasestorage.app",
+      messagingSenderId: "815257559066",
+      appId: "1:815257559066:web:0972b748161292aca0b1a3",
+      measurementId: "G-FJ8C8CZJJ2"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Add event listener for server test button
+    document.getElementById('testServerFirestore').addEventListener('click', async () => {
+      const serverResult = document.getElementById('serverResult');
+      serverResult.innerHTML = '<p>Testing server-side Firestore connection...</p>';
+      
+      try {
+        const response = await fetch('/api/test-firestore');
+        const data = await response.json();
+        
+        if (data.success) {
+          serverResult.innerHTML = `
+            <p class="success">✅ Server-side Firestore connection is working!</p>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        } else {
+          serverResult.innerHTML = `
+            <p class="error">❌ Server-side Firestore connection failed.</p>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        }
+      } catch (error) {
+        serverResult.innerHTML = `
+          <p class="error">❌ Error testing server-side Firestore:</p>
+          <pre>${error.message}</pre>
+        `;
+      }
+    });
+
+    // Add event listener for client test button
+    document.getElementById('testClientFirebase').addEventListener('click', async () => {
+      const clientResult = document.getElementById('clientResult');
+      clientResult.innerHTML = '<p>Testing client-side Firebase connection...</p>';
+      
+      try {
+        // Create a test document
+        const testData = {
+          message: 'Client Firebase is working!',
+          timestamp: new Date()
+        };
+        
+        // Add the document to a test collection
+        const docRef = await addDoc(collection(db, 'client-firestore-test'), testData);
+        
+        // Read the document back
+        const docSnapshot = await getDoc(docRef);
+        
+        if (docSnapshot.exists()) {
+          const data = docSnapshot.data();
+          
+          // Clean up - delete the test document
+          await deleteDoc(docRef);
+          
+          clientResult.innerHTML = `
+            <p class="success">✅ Client-side Firebase connection is working!</p>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        } else {
+          clientResult.innerHTML = `
+            <p class="error">❌ Document doesn't exist after creation.</p>
+          `;
+        }
+      } catch (error) {
+        clientResult.innerHTML = `
+          <p class="error">❌ Error testing client-side Firebase:</p>
+          <pre>${error.message}</pre>
+        `;
+      }
+    });
+  </script>
+</body>
+</html> 

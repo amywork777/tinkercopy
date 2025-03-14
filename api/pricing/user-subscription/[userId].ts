@@ -1,29 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
 import * as admin from 'firebase-admin';
-
-// Initialize Firebase Admin SDK if not already initialized
-if (!admin.apps.length) {
-  try {
-    // Try to load service account from environment variable
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-      : undefined;
-    
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      }),
-      storageBucket: 'taiyaki-test1.firebasestorage.app'
-    });
-    
-    console.log('Firebase Admin SDK initialized in user-subscription endpoint');
-  } catch (error) {
-    console.error('Error initializing Firebase:', error);
-  }
-}
+import { getFirebaseAdmin, getFirestore } from '../../../lib/firebase-admin.js';
 
 // Initialize Stripe - Fix: Add null check and default to empty string
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
@@ -77,7 +55,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log(`Fetching subscription for user: ${userId}`);
     
     // Step 1: First check Firestore directly
-    const db = admin.firestore();
+    // Use Firebase Admin from req object if available (for local development)
+    // or get a new instance using our centralized function
+    let adminInstance = (req as any).firebaseAdmin || getFirebaseAdmin();
+    let db = (req as any).firestore || getFirestore();
+    
     const userDoc = await db.collection('users').doc(userId).get();
     
     if (userDoc.exists) {
@@ -139,7 +121,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               subscriptionEndDate: subscriptionEndDate,
               subscriptionPlan: priceId,
               modelsRemainingThisMonth: 999999, // Effectively unlimited
-              updatedAt: admin.firestore.Timestamp.fromDate(new Date())
+              updatedAt: adminInstance.firestore.Timestamp.fromDate(new Date())
             };
             
             console.log(`Updating user document with subscription data:`, updateData);
@@ -213,7 +195,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             subscriptionEndDate: subscriptionEndDate,
             subscriptionPlan: priceId,
             modelsRemainingThisMonth: 999999, // Effectively unlimited
-            updatedAt: admin.firestore.Timestamp.fromDate(new Date())
+            updatedAt: adminInstance.firestore.Timestamp.fromDate(new Date())
           };
           
           console.log('Creating or updating user document with subscription data');
@@ -239,7 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // No subscription found - return free tier defaults
     console.log('No subscription found for user, returning free tier defaults');
     return res.json(freeTierDefaults);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching user subscription:', error);
     return res.status(500).json({
       success: false,

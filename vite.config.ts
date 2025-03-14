@@ -12,8 +12,8 @@ export default defineConfig(async ({ mode }) => {
   // Log the environment and mode
   console.log(`Configuring Vite with mode: ${mode}`);
   
-  // Determine API proxy target from environment or default
-  const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://localhost:3005';
+  // Determine API proxy target from environment or use our API server port
+  const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://localhost:4001';
   console.log(`Configuring Vite with API proxy target: ${apiProxyTarget}`);
   
   return {
@@ -86,7 +86,7 @@ export default defineConfig(async ({ mode }) => {
         usePolling: true,
         interval: 100,
       },
-      // Configure proxy to forward API requests to the backend
+      // Configure proxy to forward API requests to the API server
       proxy: {
         // Handle API requests including those for Stripe and file uploads
         "/api": {

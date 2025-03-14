@@ -1,7 +1,66 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
-import { getFirebaseAdmin, getFirestore } from '../utils/firebase-admin';
+import * as admin from 'firebase-admin';
 import { buffer } from 'micro';
+
+// PRODUCTION HOTFIX: Direct Firebase initialization for Vercel deployment
+// This ensures the API works even if utils/firebase-admin.ts is missing
+let firebaseInitialized = false;
+
+// Initialize Firebase Admin if needed
+function initializeFirebaseDirectly() {
+  if (!firebaseInitialized && !admin.apps.length) {
+    try {
+      // Try to load service account from environment variable
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+        : undefined;
+      
+      // Add validation for required environment variables
+      if (!privateKey) {
+        console.error('Firebase private key is missing or invalid');
+      }
+      
+      if (!process.env.FIREBASE_PROJECT_ID) {
+        console.error('Firebase project ID is missing');
+      }
+      
+      if (!process.env.FIREBASE_CLIENT_EMAIL) {
+        console.error('Firebase client email is missing');
+      }
+      
+      const credential = admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID || '',
+        privateKey: privateKey || '',
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+      });
+      
+      admin.initializeApp({
+        credential: credential,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+      });
+      
+      firebaseInitialized = true;
+      console.log('Firebase Admin SDK initialized directly in webhook handler');
+    } catch (error) {
+      console.error('Error initializing Firebase directly:', error);
+      throw error;
+    }
+  } else if (firebaseInitialized) {
+    console.log('Using existing Firebase Admin SDK instance');
+  } else if (admin.apps.length) {
+    firebaseInitialized = true;
+    console.log('Using existing Firebase Admin app');
+  }
+  
+  return admin;
+}
+
+// Get the Firestore instance, initializing Firebase if necessary
+function getFirestoreDirectly() {
+  const adminInstance = initializeFirebaseDirectly();
+  return adminInstance.firestore();
+}
 
 // Define interfaces for type safety
 interface UserData {
@@ -89,10 +148,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ success: false, message: `Webhook Error: ${err.message}` });
   }
 
-  // Get Firebase Admin and Firestore instances
+  // Get Firebase Admin and Firestore instances directly
   try {
-    const admin = getFirebaseAdmin();
-    const db = getFirestore();
+    const adminSdk = initializeFirebaseDirectly();
+    const db = getFirestoreDirectly();
     
     console.log(`Processing webhook event: ${event.type}, id: ${event.id}`);
 
@@ -176,7 +235,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           subscriptionEndDate: endDate.toISOString(),
           subscriptionPlan: priceId,
           modelsRemainingThisMonth: 999999, // Effectively unlimited
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
         };
         
         console.log(`Updating Firestore document for user ${userId} with:`, JSON.stringify(updateData));
@@ -202,7 +261,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             
             await userDocRef.set({
               ...updateData,
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
               email: customerEmail
             });
           } else {
@@ -252,7 +311,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           break;
         }
         
-        const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
         
         try {
@@ -275,7 +333,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             : null;
             
           const updateData: any = {
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp(),
             subscriptionStatus: subscription.status,
             isPro: isPro,
           };
@@ -320,7 +378,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           break;
         }
         
-        const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
         
         try {
@@ -328,7 +385,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await userRef.update({
             isPro: false,
             subscriptionStatus: 'canceled',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
           });
           
           console.log(`Updated subscription status for user ${userId} to canceled, isPro=false`);
@@ -349,4 +406,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('Error processing webhook:', error);
     return res.status(500).json({ success: false, message: 'Error processing webhook' });
   }
-} 
+}

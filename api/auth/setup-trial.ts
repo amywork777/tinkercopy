@@ -1,5 +1,70 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { getFirebaseAdmin, getFirestore, getAuth } from '../../utils/firebase-admin';
+import * as admin from 'firebase-admin';
+
+// PRODUCTION HOTFIX: Direct Firebase initialization for Vercel deployment
+// This ensures the API works even if utils/firebase-admin.ts is missing
+let firebaseInitialized = false;
+
+// Initialize Firebase Admin if needed
+function initializeFirebaseDirectly() {
+  if (!firebaseInitialized && !admin.apps.length) {
+    try {
+      // Try to load service account from environment variable
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+        : undefined;
+      
+      // Add validation for required environment variables
+      if (!privateKey) {
+        console.error('Firebase private key is missing or invalid');
+      }
+      
+      if (!process.env.FIREBASE_PROJECT_ID) {
+        console.error('Firebase project ID is missing');
+      }
+      
+      if (!process.env.FIREBASE_CLIENT_EMAIL) {
+        console.error('Firebase client email is missing');
+      }
+      
+      const credential = admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID || '',
+        privateKey: privateKey || '',
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+      });
+      
+      admin.initializeApp({
+        credential: credential,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+      });
+      
+      firebaseInitialized = true;
+      console.log('Firebase Admin SDK initialized directly in setup-trial endpoint');
+    } catch (error) {
+      console.error('Error initializing Firebase directly:', error);
+      throw error;
+    }
+  } else if (firebaseInitialized) {
+    console.log('Using existing Firebase Admin SDK instance');
+  } else if (admin.apps.length) {
+    firebaseInitialized = true;
+    console.log('Using existing Firebase Admin app');
+  }
+  
+  return admin;
+}
+
+// Get the Firestore instance, initializing Firebase if necessary
+function getFirestoreDirectly() {
+  const adminInstance = initializeFirebaseDirectly();
+  return adminInstance.firestore();
+}
+
+// Get the Auth instance, initializing Firebase if necessary
+function getAuthDirectly() {
+  const adminInstance = initializeFirebaseDirectly();
+  return adminInstance.auth();
+}
 
 /**
  * Sets up a one-hour free trial for a newly registered user
@@ -46,10 +111,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Initialize Firebase using our utility functions
-    const admin = getFirebaseAdmin();
-    const db = getFirestore();
-    const auth = getAuth();
+    // Initialize Firebase directly
+    const adminSdk = initializeFirebaseDirectly();
+    const db = getFirestoreDirectly();
+    const auth = getAuthDirectly();
 
     // Verify the Firebase ID token if provided (extra security)
     if (idToken) {
@@ -98,8 +163,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const userData = {
       uid: userId,
       email: email,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
+      updatedAt: adminSdk.firestore.FieldValue.serverTimestamp(),
       isPro: true, // Temporarily pro during trial
       trialActive: true,
       trialEndDate: trialEndDate.toISOString(),

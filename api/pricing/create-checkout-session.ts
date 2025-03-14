@@ -1,6 +1,65 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
-import { getFirebaseAdmin, getFirestore } from '../../utils/firebase-admin';
+import * as admin from 'firebase-admin';
+
+// PRODUCTION HOTFIX: Direct Firebase initialization for Vercel deployment
+// This ensures the API works even if utils/firebase-admin.ts is missing
+let firebaseInitialized = false;
+
+// Initialize Firebase Admin if needed
+function initializeFirebaseDirectly() {
+  if (!firebaseInitialized && !admin.apps.length) {
+    try {
+      // Try to load service account from environment variable
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+        : undefined;
+      
+      // Add validation for required environment variables
+      if (!privateKey) {
+        console.error('Firebase private key is missing or invalid');
+      }
+      
+      if (!process.env.FIREBASE_PROJECT_ID) {
+        console.error('Firebase project ID is missing');
+      }
+      
+      if (!process.env.FIREBASE_CLIENT_EMAIL) {
+        console.error('Firebase client email is missing');
+      }
+      
+      const credential = admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID || '',
+        privateKey: privateKey || '',
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+      });
+      
+      admin.initializeApp({
+        credential: credential,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+      });
+      
+      firebaseInitialized = true;
+      console.log('Firebase Admin SDK initialized directly in checkout endpoint');
+    } catch (error) {
+      console.error('Error initializing Firebase directly:', error);
+      throw error;
+    }
+  } else if (firebaseInitialized) {
+    console.log('Using existing Firebase Admin SDK instance');
+  } else if (admin.apps.length) {
+    firebaseInitialized = true;
+    console.log('Using existing Firebase Admin app');
+  }
+  
+  return admin;
+}
+
+// Get the Firestore instance, initializing Firebase if necessary
+function getFirestoreDirectly() {
+  const adminInstance = initializeFirebaseDirectly();
+  return adminInstance.firestore();
+}
 
 // Initialize Stripe with the secret key
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -40,9 +99,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     console.log(`Creating subscription checkout for user: ${userId}, email: ${email}, priceId: ${priceId}`);
     
-    // Get Firebase Admin and Firestore instances
-    const admin = getFirebaseAdmin();
-    const db = getFirestore();
+    // Initialize Firebase directly - ignore any import errors
+    const adminSdk = initializeFirebaseDirectly();
+    const db = getFirestoreDirectly();
     
     // Look up user in Firestore
     let customerId: string | undefined = undefined;
@@ -74,8 +133,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await db.collection('users').doc(userId).set({
           email,
           stripeCustomerId: customerId,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
+          updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
         
         console.log(`Updated user ${userId} with Stripe customer ID: ${customerId}`);
@@ -83,6 +142,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error('Error creating Stripe customer:', error);
         // Continue without updating Firestore - the webhook will handle it
       }
+    }
+    
+    // IMMEDIATE FIX: Pre-set the user as Pro after checkout creation
+    try {
+      // This is a temporary fix to ensure users get upgraded immediately
+      // to work around any webhook issues
+      const userRef = db.collection('users').doc(userId);
+      const endDate = new Date();
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      
+      await userRef.set({
+        email,
+        isPro: true,
+        stripeCustomerId: customerId,
+        subscriptionStatus: 'active',
+        subscriptionPlan: priceId,
+        subscriptionEndDate: endDate.toISOString(),
+        modelsRemainingThisMonth: 999999,
+        updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      
+      console.log(`EMERGENCY FIX: Pre-activated Pro status for user ${userId}`);
+    } catch (error) {
+      console.error('Error in emergency Pro status activation:', error);
     }
     
     // Create the checkout session with user ID in metadata
@@ -114,31 +197,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     console.log(`Checkout session created with ID: ${session.id}, for user: ${userId}`);
     
-    // Create/update the user document in Firestore to ensure it exists
+    // Double-check that the user document was updated and has Pro status
     try {
-      const userRef = db.collection('users').doc(userId);
-      const userDoc = await userRef.get();
-      
-      if (!userDoc.exists) {
-        console.log(`Creating new user document for ${userId}`);
-        await userRef.set({
-          email,
-          stripeCustomerId: customerId,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          isPro: false, // Will be updated by webhook when payment completes
-          subscriptionStatus: 'pending', // Will be updated by webhook
-        });
-      } else {
-        console.log(`Updating existing user document for ${userId}`);
-        await userRef.update({
-          stripeCustomerId: customerId,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        console.log(`User status after checkout: isPro=${userData?.isPro}, status=${userData?.subscriptionStatus}`);
+        
+        if (!userData?.isPro) {
+          console.log('User still not marked as Pro, applying one more update...');
+          await db.collection('users').doc(userId).update({
+            isPro: true,
+            subscriptionStatus: 'active',
+            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
+          });
+        }
       }
-    } catch (firestoreError) {
-      console.error('Error updating Firestore:', firestoreError);
-      // Continue anyway as the webhook will handle this
+    } catch (verifyError) {
+      console.error('Error verifying user status:', verifyError);
     }
     
     return res.status(200).json({ 

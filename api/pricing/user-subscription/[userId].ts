@@ -1,6 +1,65 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
-import { getFirebaseAdmin, getFirestore } from '../../../utils/firebase-admin';
+import * as admin from 'firebase-admin';
+
+// PRODUCTION HOTFIX: Direct Firebase initialization for Vercel deployment
+// This ensures the API works even if utils/firebase-admin.ts is missing
+let firebaseInitialized = false;
+
+// Initialize Firebase Admin if needed
+function initializeFirebaseDirectly() {
+  if (!firebaseInitialized && !admin.apps.length) {
+    try {
+      // Try to load service account from environment variable
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+        : undefined;
+      
+      // Add validation for required environment variables
+      if (!privateKey) {
+        console.error('Firebase private key is missing or invalid');
+      }
+      
+      if (!process.env.FIREBASE_PROJECT_ID) {
+        console.error('Firebase project ID is missing');
+      }
+      
+      if (!process.env.FIREBASE_CLIENT_EMAIL) {
+        console.error('Firebase client email is missing');
+      }
+      
+      const credential = admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID || '',
+        privateKey: privateKey || '',
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+      });
+      
+      admin.initializeApp({
+        credential: credential,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+      });
+      
+      firebaseInitialized = true;
+      console.log('Firebase Admin SDK initialized directly in user-subscription endpoint');
+    } catch (error) {
+      console.error('Error initializing Firebase directly:', error);
+      throw error;
+    }
+  } else if (firebaseInitialized) {
+    console.log('Using existing Firebase Admin SDK instance');
+  } else if (admin.apps.length) {
+    firebaseInitialized = true;
+    console.log('Using existing Firebase Admin app');
+  }
+  
+  return admin;
+}
+
+// Get the Firestore instance, initializing Firebase if necessary
+function getFirestoreDirectly() {
+  const adminInstance = initializeFirebaseDirectly();
+  return adminInstance.firestore();
+}
 
 // Initialize Stripe - Fix: Add null check and default to empty string
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
@@ -53,9 +112,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     console.log(`Fetching subscription for user: ${userId}`);
     
-    // Initialize Firebase and Firestore using our utility functions
-    const admin = getFirebaseAdmin();
-    const db = getFirestore();
+    // Initialize Firebase and Firestore directly
+    const adminSdk = initializeFirebaseDirectly();
+    const db = getFirestoreDirectly();
     
     const userDoc = await db.collection('users').doc(userId).get();
     
@@ -116,7 +175,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               subscriptionEndDate: subscriptionEndDate,
               subscriptionPlan: priceId,
               modelsRemainingThisMonth: 999999, // Effectively unlimited
-              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
             };
             
             console.log(`Updating user document with subscription data:`, JSON.stringify(updateData));
@@ -196,7 +255,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             subscriptionEndDate: subscriptionEndDate,
             subscriptionPlan: priceId,
             modelsRemainingThisMonth: 999999, // Effectively unlimited
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
           };
           
           console.log('Creating or updating user document with subscription data');
@@ -237,4 +296,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error: error.message || 'Failed to fetch subscription information'
     });
   }
-} 
+}

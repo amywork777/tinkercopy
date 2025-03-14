@@ -27,35 +27,6 @@ import { createCheckoutSession, STRIPE_PRICES } from '../lib/stripeApi';
 // TODO: Remove this import as we're using STRIPE_PRICES from SimpleStripeCheckout
 // import { config } from '../lib/config';
 
-// Input component for promo code
-const PromoCodeInput = ({ 
-  promoCode, 
-  setPromoCode, 
-  disabled 
-}: { 
-  promoCode: string; 
-  setPromoCode: (code: string) => void; 
-  disabled: boolean 
-}) => {
-  return (
-    <div className="flex items-center mt-4">
-      <div className="relative w-full">
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-          <Tag className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <input
-          type="text"
-          className="bg-background border border-input rounded-md py-2 pl-10 pr-3 w-full text-sm focus:ring-2 focus:ring-primary focus:border-primary"
-          placeholder="Promo code (if you have one)"
-          value={promoCode}
-          onChange={(e) => setPromoCode(e.target.value.trim())}
-          disabled={disabled}
-        />
-      </div>
-    </div>
-  );
-};
-
 export default function PricingPage() {
   const { user } = useAuth();
   const { subscription } = useSubscription();
@@ -248,11 +219,6 @@ export default function PricingPage() {
                       </Button>
                     ) : (
                       <div className="w-full space-y-3">
-                        <PromoCodeInput 
-                          promoCode={promoCode}
-                          setPromoCode={setPromoCode}
-                          disabled={isLoading}
-                        />
                         <Button 
                           className="w-full" 
                           onClick={() => handleSubscribe()}

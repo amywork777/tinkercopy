@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { 
   signInWithGoogle, 
   signOut as firebaseSignOut, 
-  onAuthStateChange 
+  onAuthStateChange,
+  getCurrentUser 
 } from '@/lib/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -48,6 +49,60 @@ const formatUser = (firebaseUser: FirebaseUser): User => {
   };
 };
 
+// Function to setup free trial for new users
+const setupFreeTrial = async (userId: string, email: string): Promise<void> => {
+  if (!userId || !email) {
+    console.error('Missing user info for trial setup');
+    return;
+  }
+  
+  try {
+    // Get the ID token for verification on the server
+    const firebaseUser = getCurrentUser();
+    let idToken = '';
+    
+    if (firebaseUser) {
+      idToken = await firebaseUser.getIdToken();
+    }
+    
+    // Call the setup-trial endpoint
+    const response = await fetch('/api/auth/setup-trial', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId,
+        email,
+        idToken
+      }),
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      
+      if (data.success) {
+        // Only show welcome message if trial was newly activated
+        if (data.message === 'One-hour free trial activated successfully') {
+          const trialEndTime = new Date(data.trialEndDate);
+          const formattedTime = trialEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          
+          toast.success(
+            `Welcome! You have a 1-hour Pro trial until ${formattedTime}`,
+            { duration: 6000 }
+          );
+        }
+      } else {
+        console.error('Failed to setup trial:', data.message);
+      }
+    } else {
+      console.error('Failed to setup trial, API returned:', response.status);
+    }
+  } catch (error) {
+    console.error('Error setting up free trial:', error);
+  }
+};
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,6 +117,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const formattedUser = formatUser(firebaseUser);
         setUser(formattedUser);
         setIsAuthenticated(true);
+        
+        // Set up free trial for the user if needed
+        if (firebaseUser.email) {
+          setupFreeTrial(firebaseUser.uid, firebaseUser.email);
+        }
       } else {
         setUser(null);
         setIsAuthenticated(false);

@@ -2199,36 +2199,19 @@ app.get('/api/pricing/user-subscription/:userId', async (req, res) => {
       Original isPro value type: ${typeof userData.isPro} value: ${userData.isPro}
     `);
     
-    // If user is on trial, check if it has expired
+    // Check if this is a trial user and if the trial has expired
     if (trialActive && userData.trialEndDate) {
-      // Convert Firebase Timestamp to JavaScript Date
-      let trialEndDate;
-      
-      // Handle different Timestamp formats
-      if (userData.trialEndDate._seconds !== undefined) {
-        // It's a Firestore Timestamp object from the server
-        trialEndDate = new Date(userData.trialEndDate._seconds * 1000);
-        console.log(`Parsed trialEndDate from _seconds: ${trialEndDate}`);
-      } else if (userData.trialEndDate.seconds !== undefined) {
-        // It's a Firestore Timestamp object from the client
-        trialEndDate = new Date(userData.trialEndDate.seconds * 1000);
-        console.log(`Parsed trialEndDate from seconds: ${trialEndDate}`);
-      } else if (userData.trialEndDate.toDate) {
-        // It's a Firestore Timestamp with toDate method
-        trialEndDate = userData.trialEndDate.toDate();
-        console.log(`Used toDate method: ${trialEndDate}`);
-      } else {
-        // Assume it's already a date string or timestamp
-        trialEndDate = new Date(userData.trialEndDate);
-        console.log(`Created date from value: ${trialEndDate}`);
-      }
-      
       const now = new Date();
-      console.log(`Current time: ${now}, Trial end time: ${trialEndDate}`);
-      console.log(`Trial expired? ${now > trialEndDate ? 'YES' : 'NO'}`);
+      const trialEndDate = new Date(userData.trialEndDate);
       
-      // IMPORTANT: Force the correct behavior for testing non-pro users
-      const forceNonPro = true; // Set to true to force all users to be non-pro for testing
+      console.log(`Trial status check for ${userId}:
+        Current time: ${now.toISOString()}
+        Trial end time: ${trialEndDate.toISOString()}
+        Time remaining: ${(trialEndDate.getTime() - now.getTime()) / 1000 / 60} minutes
+      `);
+      
+      // Set to true to force all users to be non-pro for testing
+      const forceNonPro = false;
       
       if (now > trialEndDate || forceNonPro) {
         console.log(`Trial has expired for user ${userId} ${forceNonPro ? '(FORCED)' : ''}`);
@@ -2244,7 +2227,9 @@ app.get('/api/pricing/user-subscription/:userId', async (req, res) => {
           trialActive: false,
           subscriptionStatus: 'none',
           subscriptionPlan: 'free',
-          modelsRemainingThisMonth: 2 // Reset to free tier
+          modelsRemainingThisMonth: 2, // Reset to free tier
+          trialEndDate: null,  // Clear the trial end date
+          updatedAt: new Date() // Add timestamp for the update
         });
         console.log(`Updated user ${userId} - trial expired, downgraded to free`);
       }

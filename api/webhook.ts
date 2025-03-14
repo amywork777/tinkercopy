@@ -166,16 +166,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.log(`Updating Firestore document for user ${userId} with:`, updateData);
         
         // Check if the user exists first
-        const userDoc = await userDocRef.get();
-        if (!userDoc.exists) {
-          console.log(`User ${userId} doesn't exist in Firestore, creating new document`);
-          await userDocRef.set(updateData);
-        } else {
-          console.log(`User ${userId} exists in Firestore, updating document`);
-          await userDocRef.update(updateData);
+        try {
+          const userDoc = await userDocRef.get();
+          if (!userDoc.exists) {
+            console.log(`User ${userId} doesn't exist in Firestore, creating new document`);
+            await userDocRef.set({
+              ...updateData,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              email: (typeof session.customer === 'string') ? 
+                ((await stripe.customers.retrieve(session.customer)) as Stripe.Customer).email || '' : 
+                (session.customer as Stripe.Customer)?.email || ''
+            });
+          } else {
+            console.log(`User ${userId} exists in Firestore, updating document`);
+            await userDocRef.update(updateData);
+            
+            // Double-check that the update was applied
+            const updatedDoc = await userDocRef.get();
+            const updatedData = updatedDoc.data();
+            if (!updatedData?.isPro || updatedData?.subscriptionStatus !== subscription.status) {
+              console.error(`Update may not have been applied correctly. Current data:`, updatedData);
+              // Try to update again with a different approach
+              await userDocRef.set(updateData, { merge: true });
+            }
+          }
+          
+          console.log(`✅ User ${userId} subscription updated with status: ${subscription.status}`);
+        } catch (firestoreError) {
+          console.error(`Error updating Firestore for user ${userId}:`, firestoreError);
+          // Try alternative update method
+          try {
+            await userDocRef.set(updateData, { merge: true });
+            console.log(`✅ Alternative update method successful for user ${userId}`);
+          } catch (fallbackError) {
+            console.error(`Fallback update also failed:`, fallbackError);
+          }
         }
-        
-        console.log(`✅ User ${userId} subscription updated with status: ${subscription.status}`);
         break;
       }
       
@@ -196,6 +222,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         if (snapshot.empty) {
           console.error(`No user found with Stripe customer ID: ${customerId}`);
+          
+          // Try to get userId from subscription metadata as a fallback
+          const userId = subscription.metadata?.userId;
+          if (userId) {
+            console.log(`Found userId in subscription metadata: ${userId}`);
+            
+            // Check if this user exists in Firestore
+            const userDoc = await usersRef.doc(userId).get();
+            if (userDoc.exists) {
+              console.log(`User document exists for ${userId}, updating with new subscription data`);
+              // Check if subscription is active
+              const isActive = ['active', 'trialing'].includes(subscription.status);
+              console.log(`Subscription status: ${subscription.status}, isActive: ${isActive}`);
+              
+              // Update with subscription data
+              const updateData = {
+                isPro: isActive,
+                stripeCustomerId: customerId,
+                stripeSubscriptionId: subscription.id,
+                subscriptionStatus: subscription.status,
+                subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+                subscriptionPlan: subscription.items.data[0].price.id,
+                modelsRemainingThisMonth: isActive ? 999999 : 2, // Unlimited if active, limited if not
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              };
+              
+              await usersRef.doc(userId).set(updateData, { merge: true });
+              console.log(`✅ Updated user ${userId} with subscription data from metadata`);
+            } else {
+              console.error(`User document not found for userId ${userId} from metadata`);
+            }
+          } else {
+            console.error(`No userId found in subscription metadata`);
+          }
+          
           break;
         }
         
@@ -210,18 +271,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Prepare the update data
         const updateData = {
           isPro: isActive,
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscription.id,
           subscriptionStatus: subscription.status,
           subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+          subscriptionPlan: subscription.items.data[0].price.id,
           modelsRemainingThisMonth: isActive ? 999999 : 2, // Unlimited if active, limited if not
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
         
-        console.log(`Updating user with:`, updateData);
+        console.log(`Updating user ${userId} with:`, updateData);
         
-        // Update the user's subscription status
-        await usersRef.doc(userId).update(updateData);
+        // Update the user's subscription status with a merge to ensure we don't lose data
+        await usersRef.doc(userId).set(updateData, { merge: true });
         
         console.log(`✅ User ${userId} subscription updated with status: ${subscription.status}`);
+        
+        // Double-check that the update was applied
+        const updatedDoc = await usersRef.doc(userId).get();
+        const updatedData = updatedDoc.data();
+        if (!updatedData?.isPro === isActive || updatedData?.subscriptionStatus !== subscription.status) {
+          console.error(`Update may not have been applied correctly. Current data:`, updatedData);
+          // Try to update again
+          await usersRef.doc(userId).set(updateData, { merge: true });
+        }
+        
         break;
       }
       

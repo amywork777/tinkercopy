@@ -122,15 +122,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cancel_url: `${req.headers.origin || 'https://www.fishcad.com'}/pricing`,
       metadata: {
         userId, // IMPORTANT: Store user ID in session metadata for webhook
+        source: 'pricing_page'
       },
       subscription_data: {
         metadata: {
           userId, // Store user ID in subscription metadata as well
-        },
+          source: 'pricing_page'
+        }
+        // No trial by default
       },
+      allow_promotion_codes: true, // Allow promotion codes 
     });
     
-    console.log(`Checkout session created with ID: ${session.id}`);
+    console.log(`Checkout session created with ID: ${session.id}, for user: ${userId}`);
+    
+    // Create/update the user document in Firestore to ensure it exists
+    try {
+      const userRef = db.collection('users').doc(userId);
+      const userDoc = await userRef.get();
+      
+      if (!userDoc.exists) {
+        console.log(`Creating new user document for ${userId}`);
+        await userRef.set({
+          email,
+          stripeCustomerId: customerId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isPro: false, // Will be updated by webhook when payment completes
+          subscriptionStatus: 'pending', // Will be updated by webhook
+        });
+      } else {
+        console.log(`Updating existing user document for ${userId}`);
+        await userRef.update({
+          stripeCustomerId: customerId,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    } catch (firestoreError) {
+      console.error('Error updating Firestore:', firestoreError);
+      // Continue anyway as the webhook will handle this
+    }
     
     return res.status(200).json({ 
       success: true,

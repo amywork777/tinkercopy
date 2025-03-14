@@ -25,8 +25,10 @@ if (!admin.apps.length) {
   }
 }
 
+// Initialize Stripe - Fix: Add null check and default to empty string
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16' as any,
 });
 
@@ -110,13 +112,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             limit: 1
           });
           
-          if (subscriptions.data.length > 0) {
+          // Fix: Add null check for subscription data
+          if (subscriptions && subscriptions.data && subscriptions.data.length > 0) {
             const subscription = subscriptions.data[0];
             console.log(`Found active subscription for customer: ${subscription.id}`);
             
+            // Fix: Add null checks for subscription and items data
             // Calculate subscription end date
-            const subscriptionEndDate = new Date(subscription.current_period_end * 1000).toISOString();
-            const priceId = subscription.items.data[0].price.id;
+            const subscriptionEndDate = subscription.current_period_end ? 
+              new Date(subscription.current_period_end * 1000).toISOString() : 
+              new Date().toISOString();
+            
+            // Fix: Add null check for items data
+            const priceId = subscription.items && 
+                           subscription.items.data && 
+                           subscription.items.data.length > 0 && 
+                           subscription.items.data[0].price ? 
+              subscription.items.data[0].price.id : 
+              'unknown';
             
             // Update user document with subscription info
             const updateData = {
@@ -158,7 +171,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         limit: 1
       });
       
-      if (customers.data.length > 0) {
+      // Fix: Add null check for customers data
+      if (customers && customers.data && customers.data.length > 0) {
         const customer = customers.data[0];
         console.log(`Found Stripe customer by metadata: ${customer.id}`);
         
@@ -169,13 +183,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           limit: 1
         });
         
-        if (subscriptions.data.length > 0) {
+        // Fix: Add null check for subscriptions data
+        if (subscriptions && subscriptions.data && subscriptions.data.length > 0) {
           const subscription = subscriptions.data[0];
           console.log(`Found active subscription: ${subscription.id}`);
           
+          // Fix: Add null checks for subscription properties
           // Calculate subscription end date
-          const subscriptionEndDate = new Date(subscription.current_period_end * 1000).toISOString();
-          const priceId = subscription.items.data[0].price.id;
+          const subscriptionEndDate = subscription.current_period_end ? 
+            new Date(subscription.current_period_end * 1000).toISOString() : 
+            new Date().toISOString();
+          
+          // Fix: Add null check for items data
+          const priceId = subscription.items && 
+                         subscription.items.data && 
+                         subscription.items.data.length > 0 && 
+                         subscription.items.data[0].price ? 
+            subscription.items.data[0].price.id : 
+            'unknown';
           
           // Create or update user document with subscription info
           const updateData = {

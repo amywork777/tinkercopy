@@ -9,12 +9,19 @@ if (!admin.apps.length) {
       ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
       : undefined;
     
+    // Fix: Add null checks and make sure admin credential is valid
+    if (!privateKey) {
+      console.error('Firebase private key is missing or invalid');
+    }
+    
+    const credential = admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID || '',
+      privateKey: privateKey || '',
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+    });
+    
     admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      }),
+      credential: credential,
       storageBucket: 'taiyaki-test1.firebasestorage.app'
     });
     
@@ -79,6 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const userDoc = await userRef.get();
     
     if (userDoc.exists) {
+      // Fix: Add null check and default to empty object
       const userData = userDoc.data() || {};
       
       // Check if user already has pro status or active trial

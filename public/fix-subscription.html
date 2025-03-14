@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Subscription Tool</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    h1 {
+      color: #2563eb;
+      margin-bottom: 1rem;
+    }
+    .card {
+      background-color: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    input, button {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+      font-size: 16px;
+    }
+    button {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    pre {
+      background-color: #f1f5f9;
+      padding: 15px;
+      border-radius: 4px;
+      overflow: auto;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .success {
+      background-color: #dcfce7;
+      border: 1px solid #86efac;
+      color: #166534;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 20px;
+    }
+    .error {
+      background-color: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 20px;
+    }
+    .hidden {
+      display: none;
+    }
+    .loader {
+      border: 5px solid #f3f3f3;
+      border-top: 5px solid #2563eb;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Fix Subscription Tool</h1>
+  
+  <div class="card">
+    <h2>Enter Your Details</h2>
+    <input type="text" id="userId" placeholder="Your Firebase User ID" />
+    <input type="email" id="email" placeholder="Your Email Address" />
+    <label>
+      <input type="checkbox" id="forceUpgrade" checked />
+      Force upgrade to Pro (recommended)
+    </label>
+    <button id="fixSubscription">Fix My Subscription</button>
+    
+    <div id="loader" class="loader hidden"></div>
+    <div id="result" class="hidden"></div>
+  </div>
+  
+  <div class="card">
+    <h2>How It Works</h2>
+    <p>This tool will:</p>
+    <ol>
+      <li>Check if you already have a Stripe Customer ID</li>
+      <li>Look for active subscriptions associated with your account</li>
+      <li>If found, it will update your Firebase user record with the Pro status</li>
+      <li>If no subscription is found but "Force upgrade" is selected, it will upgrade your account anyway</li>
+    </ol>
+    <p><strong>Note:</strong> You can find your Firebase User ID in your account settings or by checking the URL when viewing your profile.</p>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const fixButton = document.getElementById('fixSubscription');
+      const resultDiv = document.getElementById('result');
+      const loader = document.getElementById('loader');
+      
+      fixButton.addEventListener('click', async function() {
+        const userId = document.getElementById('userId').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const forceUpgrade = document.getElementById('forceUpgrade').checked;
+        
+        if (!userId || !email) {
+          resultDiv.className = 'error';
+          resultDiv.textContent = 'Please enter both User ID and Email.';
+          resultDiv.classList.remove('hidden');
+          return;
+        }
+        
+        // Show loader, hide result
+        loader.classList.remove('hidden');
+        resultDiv.classList.add('hidden');
+        fixButton.disabled = true;
+        
+        try {
+          const response = await fetch('/api/fix-subscription', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId: userId,
+              email: email,
+              fixType: forceUpgrade ? 'force' : 'check'
+            }),
+          });
+          
+          const data = await response.json();
+          
+          // Hide loader
+          loader.classList.add('hidden');
+          
+          if (data.success) {
+            resultDiv.className = 'success';
+            if (data.fixApplied) {
+              resultDiv.innerHTML = `<strong>Success!</strong> Your account has been upgraded to Pro status.<br><br>
+              <pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } else {
+              resultDiv.innerHTML = `<strong>Info:</strong> ${data.message}<br><br>
+              <pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+          } else {
+            resultDiv.className = 'error';
+            resultDiv.innerHTML = `<strong>Error:</strong> ${data.message}<br><br>
+            <pre>${JSON.stringify(data, null, 2)}</pre>`;
+          }
+          
+          resultDiv.classList.remove('hidden');
+        } catch (error) {
+          loader.classList.add('hidden');
+          resultDiv.className = 'error';
+          resultDiv.textContent = `Error: ${error.message}. Please try again.`;
+          resultDiv.classList.remove('hidden');
+        } finally {
+          fixButton.disabled = false;
+        }
+      });
+    });
+  </script>
+</body>
+</html> 

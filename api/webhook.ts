@@ -3,6 +3,22 @@ import { Stripe } from 'stripe';
 import * as admin from 'firebase-admin';
 import { buffer } from 'micro';
 
+// Define interfaces for type safety
+interface UserData {
+  uid?: string;
+  email?: string;
+  isPro?: boolean;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  subscriptionStatus?: string;
+  subscriptionEndDate?: string;
+  subscriptionPlan?: string;
+  modelsRemainingThisMonth?: number;
+  createdAt?: admin.firestore.FieldValue;
+  updatedAt?: admin.firestore.FieldValue;
+  [key: string]: any; // Allow additional properties
+}
+
 // This is a special helper for raw bodies in Vercel serverless functions
 export const config = {
   api: {
@@ -11,7 +27,8 @@ export const config = {
 };
 
 // Initialize Stripe with the secret key
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
+const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16' as any,
 });
 
@@ -23,12 +40,27 @@ if (!admin.apps.length) {
       ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
       : undefined;
     
+    // Add validation for required environment variables
+    if (!privateKey) {
+      console.error('Firebase private key is missing or invalid');
+    }
+    
+    if (!process.env.FIREBASE_PROJECT_ID) {
+      console.error('Firebase project ID is missing');
+    }
+    
+    if (!process.env.FIREBASE_CLIENT_EMAIL) {
+      console.error('Firebase client email is missing');
+    }
+    
+    const credential = admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID || '',
+      privateKey: privateKey || '',
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+    });
+    
     admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      }),
+      credential: credential,
       storageBucket: 'taiyaki-test1.firebasestorage.app'
     });
     
@@ -41,7 +73,6 @@ if (!admin.apps.length) {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Debug: Log the request information
   console.log(`Webhook received: ${req.method} ${req.url}`);
-  console.log(`Headers: ${JSON.stringify(req.headers)}`);
   
   // Special handling for OPTIONS requests (CORS)
   if (req.method === 'OPTIONS') {
@@ -101,8 +132,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
         console.log(`Processing completed checkout session: ${session.id}`);
-        console.log(`Session metadata:`, session.metadata);
-        console.log(`Session mode: ${session.mode}`);
         
         // Only handle subscription checkouts
         if (session.mode !== 'subscription') {
@@ -117,9 +146,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         
         // Fetch more details about the subscription
-        const subscription = await stripe.subscriptions.retrieve(
-          typeof session.subscription === 'string' ? session.subscription : session.subscription.id
-        );
+        const subscriptionId = typeof session.subscription === 'string' 
+          ? session.subscription 
+          : session.subscription.id;
+          
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         console.log(`Retrieved subscription: ${subscription.id}, status: ${subscription.status}`);
         
         // Get user ID from session metadata or customer metadata
@@ -129,9 +160,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // If no user ID in session metadata, try to get it from customer metadata
         if (!userId && session.customer) {
           console.log(`Looking up customer metadata for customer: ${session.customer}`);
-          const customer = await stripe.customers.retrieve(
-            typeof session.customer === 'string' ? session.customer : session.customer.id
-          ) as Stripe.Customer;
+          const customerId = typeof session.customer === 'string' 
+            ? session.customer 
+            : session.customer.id;
+            
+          const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
           
           userId = customer.metadata?.userId;
           console.log(`UserId from customer metadata: ${userId || 'not found'}`);
@@ -144,20 +177,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         console.log(`Updating subscription status for user: ${userId}`);
         
-        // Get subscription plan info
-        const priceId = subscription.items.data[0].price.id;
+        // Get subscription plan info - add null checks
+        const priceId = subscription.items.data && 
+                       subscription.items.data.length > 0 && 
+                       subscription.items.data[0].price ? 
+          subscription.items.data[0].price.id : 
+          'unknown';
+        
+        // Get customer ID - add null checks
+        const customerId = typeof session.customer === 'string' 
+          ? session.customer 
+          : session.customer?.id;
+          
+        // Calculate end date - add null checks
+        const endDate = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000)
+          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
         
         // Log the update we're about to make
         console.log(`Setting user to isPro=true, with subscription ID ${subscription.id}, status ${subscription.status}`);
         
         // Update user subscription status in Firestore
         const userDocRef = db.collection('users').doc(userId);
-        const updateData = {
+        const updateData: UserData = {
           isPro: true,
-          stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
+          stripeCustomerId: customerId,
           stripeSubscriptionId: subscription.id,
           subscriptionStatus: subscription.status,
-          subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+          subscriptionEndDate: endDate.toISOString(),
           subscriptionPlan: priceId,
           modelsRemainingThisMonth: 999999, // Effectively unlimited
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -170,12 +217,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const userDoc = await userDocRef.get();
           if (!userDoc.exists) {
             console.log(`User ${userId} doesn't exist in Firestore, creating new document`);
+            
+            // Get customer email - add null checks
+            let customerEmail = '';
+            if (typeof session.customer === 'string') {
+              try {
+                const customerData = await stripe.customers.retrieve(session.customer) as Stripe.Customer;
+                customerEmail = customerData.email || '';
+              } catch (error) {
+                console.error('Error retrieving customer email:', error);
+              }
+            } else if (session.customer) {
+              customerEmail = (session.customer as Stripe.Customer)?.email || '';
+            }
+            
             await userDocRef.set({
               ...updateData,
               createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              email: (typeof session.customer === 'string') ? 
-                ((await stripe.customers.retrieve(session.customer)) as Stripe.Customer).email || '' : 
-                (session.customer as Stripe.Customer)?.email || ''
+              email: customerEmail
             });
           } else {
             console.log(`User ${userId} exists in Firestore, updating document`);
@@ -184,7 +243,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Double-check that the update was applied
             const updatedDoc = await userDocRef.get();
             const updatedData = updatedDoc.data();
-            if (!updatedData?.isPro || updatedData?.subscriptionStatus !== subscription.status) {
+            if (updatedData && (!updatedData.isPro || updatedData.subscriptionStatus !== subscription.status)) {
               console.error(`Update may not have been applied correctly. Current data:`, updatedData);
               // Try to update again with a different approach
               await userDocRef.set(updateData, { merge: true });
@@ -209,7 +268,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const subscription = event.data.object as Stripe.Subscription;
         console.log(`Processing subscription update: ${subscription.id}`);
         
-        // Get customer ID
+        // Get customer ID - add null checks
         const customerId = typeof subscription.customer === 'string' 
           ? subscription.customer 
           : subscription.customer.id;
@@ -236,14 +295,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               const isActive = ['active', 'trialing'].includes(subscription.status);
               console.log(`Subscription status: ${subscription.status}, isActive: ${isActive}`);
               
+              // Get price ID - add null checks
+              const priceId = subscription.items.data && 
+                             subscription.items.data.length > 0 && 
+                             subscription.items.data[0].price ? 
+                subscription.items.data[0].price.id : 
+                'unknown';
+                
+              // Calculate end date - add null checks
+              const endDate = subscription.current_period_end
+                ? new Date(subscription.current_period_end * 1000)
+                : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
+              
               // Update with subscription data
-              const updateData = {
+              const updateData: UserData = {
                 isPro: isActive,
                 stripeCustomerId: customerId,
                 stripeSubscriptionId: subscription.id,
                 subscriptionStatus: subscription.status,
-                subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
-                subscriptionPlan: subscription.items.data[0].price.id,
+                subscriptionEndDate: endDate.toISOString(),
+                subscriptionPlan: priceId,
                 modelsRemainingThisMonth: isActive ? 999999 : 2, // Unlimited if active, limited if not
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
               };
@@ -268,14 +339,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const isActive = ['active', 'trialing'].includes(subscription.status);
         console.log(`Subscription status: ${subscription.status}, isActive: ${isActive}`);
         
+        // Get price ID - add null checks  
+        const priceId = subscription.items.data && 
+                       subscription.items.data.length > 0 && 
+                       subscription.items.data[0].price ? 
+          subscription.items.data[0].price.id : 
+          'unknown';
+          
+        // Calculate end date - add null checks
+        const endDate = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000)
+          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
+        
         // Prepare the update data
-        const updateData = {
+        const updateData: UserData = {
           isPro: isActive,
           stripeCustomerId: customerId,
           stripeSubscriptionId: subscription.id,
           subscriptionStatus: subscription.status,
-          subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
-          subscriptionPlan: subscription.items.data[0].price.id,
+          subscriptionEndDate: endDate.toISOString(),
+          subscriptionPlan: priceId,
           modelsRemainingThisMonth: isActive ? 999999 : 2, // Unlimited if active, limited if not
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -290,7 +373,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Double-check that the update was applied
         const updatedDoc = await usersRef.doc(userId).get();
         const updatedData = updatedDoc.data();
-        if (!updatedData?.isPro === isActive || updatedData?.subscriptionStatus !== subscription.status) {
+        if (updatedData && (!updatedData.isPro === isActive || updatedData.subscriptionStatus !== subscription.status)) {
           console.error(`Update may not have been applied correctly. Current data:`, updatedData);
           // Try to update again
           await usersRef.doc(userId).set(updateData, { merge: true });
@@ -303,7 +386,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const subscription = event.data.object as Stripe.Subscription;
         console.log(`Processing subscription deletion: ${subscription.id}`);
         
-        // Get customer ID
+        // Get customer ID - add null checks
         const customerId = typeof subscription.customer === 'string' 
           ? subscription.customer 
           : subscription.customer.id;
@@ -324,7 +407,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.log(`Found user: ${userId}`);
         
         // Prepare update data for downgrade
-        const updateData = {
+        const updateData: UserData = {
           isPro: false,
           subscriptionStatus: 'canceled',
           modelsRemainingThisMonth: 2, // Free tier limit

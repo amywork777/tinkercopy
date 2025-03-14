@@ -62,7 +62,7 @@ export default function PricingPage() {
       
       // Get user information if available
       const userEmail = user?.email || '';
-      const userId = user?.uid || '';
+      const userId = user?.id || '';
       
       console.log(`User info - Email: ${userEmail}, ID: ${userId}`);
       

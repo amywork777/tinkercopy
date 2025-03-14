@@ -1,7 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
-import * as admin from 'firebase-admin';
-import { getFirebaseAdmin, getFirestore } from '../../../lib/firebase-admin.js';
+import { getFirebaseAdmin, getFirestore } from '../../../utils/firebase-admin';
 
 // Initialize Stripe - Fix: Add null check and default to empty string
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
@@ -54,11 +53,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     console.log(`Fetching subscription for user: ${userId}`);
     
-    // Step 1: First check Firestore directly
-    // Use Firebase Admin from req object if available (for local development)
-    // or get a new instance using our centralized function
-    let adminInstance = (req as any).firebaseAdmin || getFirebaseAdmin();
-    let db = (req as any).firestore || getFirestore();
+    // Initialize Firebase and Firestore using our utility functions
+    const admin = getFirebaseAdmin();
+    const db = getFirestore();
     
     const userDoc = await db.collection('users').doc(userId).get();
     
@@ -94,18 +91,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             limit: 1
           });
           
-          // Fix: Add null check for subscription data
           if (subscriptions && subscriptions.data && subscriptions.data.length > 0) {
             const subscription = subscriptions.data[0];
             console.log(`Found active subscription for customer: ${subscription.id}`);
             
-            // Fix: Add null checks for subscription and items data
             // Calculate subscription end date
             const subscriptionEndDate = subscription.current_period_end ? 
               new Date(subscription.current_period_end * 1000).toISOString() : 
               new Date().toISOString();
             
-            // Fix: Add null check for items data
+            // Get price ID with null checks
             const priceId = subscription.items && 
                            subscription.items.data && 
                            subscription.items.data.length > 0 && 
@@ -121,11 +116,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               subscriptionEndDate: subscriptionEndDate,
               subscriptionPlan: priceId,
               modelsRemainingThisMonth: 999999, // Effectively unlimited
-              updatedAt: adminInstance.firestore.Timestamp.fromDate(new Date())
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
             };
             
-            console.log(`Updating user document with subscription data:`, updateData);
-            await userDoc.ref.update(updateData);
+            console.log(`Updating user document with subscription data:`, JSON.stringify(updateData));
+            
+            try {
+              await userDoc.ref.update(updateData);
+              console.log(`Successfully updated user document with subscription data`);
+            } catch (updateError) {
+              console.error('Error updating user document:', updateError);
+              // Try an alternative update method
+              await db.collection('users').doc(userId).set(updateData, { merge: true });
+              console.log(`Successfully updated user document using set with merge`);
+            }
             
             // Return updated subscription data
             return res.json({
@@ -153,7 +157,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         limit: 1
       });
       
-      // Fix: Add null check for customers data
       if (customers && customers.data && customers.data.length > 0) {
         const customer = customers.data[0];
         console.log(`Found Stripe customer by metadata: ${customer.id}`);
@@ -165,18 +168,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           limit: 1
         });
         
-        // Fix: Add null check for subscriptions data
         if (subscriptions && subscriptions.data && subscriptions.data.length > 0) {
           const subscription = subscriptions.data[0];
           console.log(`Found active subscription: ${subscription.id}`);
           
-          // Fix: Add null checks for subscription properties
           // Calculate subscription end date
           const subscriptionEndDate = subscription.current_period_end ? 
             new Date(subscription.current_period_end * 1000).toISOString() : 
             new Date().toISOString();
           
-          // Fix: Add null check for items data
+          // Get price ID with null checks
           const priceId = subscription.items && 
                          subscription.items.data && 
                          subscription.items.data.length > 0 && 
@@ -195,11 +196,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             subscriptionEndDate: subscriptionEndDate,
             subscriptionPlan: priceId,
             modelsRemainingThisMonth: 999999, // Effectively unlimited
-            updatedAt: adminInstance.firestore.Timestamp.fromDate(new Date())
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
           };
           
           console.log('Creating or updating user document with subscription data');
-          await db.collection('users').doc(userId).set(updateData, { merge: true });
+          
+          try {
+            await db.collection('users').doc(userId).set(updateData, { merge: true });
+            console.log(`Successfully created/updated user document with subscription data`);
+          } catch (updateError) {
+            console.error('Error creating/updating user document:', updateError);
+            // Throw the error so we can see it in the logs
+            throw updateError;
+          }
           
           // Return subscription data
           return res.json({

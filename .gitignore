@@ -75,3 +75,4 @@ yarn-error.log*
 # Firebase credentials
 server/firebase-service-account.json
 server/.env
+.vercel

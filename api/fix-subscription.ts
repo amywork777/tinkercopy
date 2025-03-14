@@ -1,59 +1,12 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import * as admin from 'firebase-admin';
+import { Stripe } from 'stripe';
+import { getFirebaseAdmin, getFirestore } from '../utils/firebase-admin';
 
-// Define interfaces for type safety
-interface UserData {
-  isPro?: boolean;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-  subscriptionStatus?: string;
-  subscriptionEndDate?: string;
-  subscriptionPlan?: string;
-  modelsRemainingThisMonth?: number;
-  [key: string]: any; // Allow additional properties
-}
+// Initialize Stripe with the secret key
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2023-10-16' as any,
+});
 
-interface StripeSubscription {
-  id: string;
-  status: string;
-  current_period_end: number;
-  items: {
-    data: Array<{
-      price: {
-        id: string;
-      }
-    }>
-  };
-  [key: string]: any; // Allow additional properties
-}
-
-// Initialize Firebase Admin SDK if not already initialized
-if (!admin.apps.length) {
-  try {
-    // Try to load service account from environment variable
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-      : undefined;
-    
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      }),
-      storageBucket: 'taiyaki-test1.firebasestorage.app'
-    });
-    
-    console.log('Firebase Admin SDK initialized in fix-subscription endpoint');
-  } catch (error) {
-    console.error('Error initializing Firebase:', error);
-  }
-}
-
-/**
- * API endpoint to fix a user's subscription status
- * This is an emergency fix for users who have paid but their account is not upgraded
- */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set appropriate CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -70,247 +23,282 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, message: 'Method not allowed' });
+  // Check authentication/admin status (simplified for this tool)
+  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+  const expectedApiKey = process.env.ADMIN_API_KEY || 'admin-fishcad-2024';
+  
+  if (apiKey !== expectedApiKey) {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'Unauthorized. This endpoint requires authentication.' 
+    });
   }
 
-  try {
-    const { userId, email, idToken, fixType = 'check' } = req.body;
-
-    if (!userId || !email) {
+  // Handle different request types
+  if (req.method === 'GET') {
+    // GET - lookup subscription data
+    const { userId, email, checkOnly } = req.query;
+    
+    if (!userId && !email) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Missing required parameters: userId and email are required' 
+        message: 'Missing required parameters. Either userId or email must be provided.' 
       });
     }
-
-    // Verify the Firebase ID token if provided (for security)
-    if (idToken) {
-      try {
-        await admin.auth().verifyIdToken(idToken);
-      } catch (tokenError) {
-        console.error('Error verifying ID token:', tokenError);
-        return res.status(403).json({ 
+    
+    try {
+      const admin = getFirebaseAdmin();
+      const db = getFirestore();
+      
+      let userDoc;
+      
+      // Try to find user by ID
+      if (userId) {
+        const userRef = db.collection('users').doc(userId as string);
+        userDoc = await userRef.get();
+      }
+      
+      // If not found by ID and email is provided, try to find by email
+      if (!userDoc?.exists && email) {
+        const usersRef = db.collection('users');
+        const querySnapshot = await usersRef.where('email', '==', email).limit(1).get();
+        
+        if (!querySnapshot.empty) {
+          userDoc = querySnapshot.docs[0];
+        }
+      }
+      
+      if (!userDoc?.exists) {
+        return res.status(404).json({ 
           success: false, 
-          message: 'Invalid authentication token' 
+          message: 'User not found in database' 
         });
       }
-    }
-
-    // Get Firestore instance
-    const db = admin.firestore();
-    const userRef = db.collection('users').doc(userId);
-    
-    // Check if user exists in Firestore
-    const userDoc = await userRef.get();
-    
-    if (!userDoc.exists) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found in database' 
-      });
-    }
-    
-    const userData = userDoc.data() as UserData;
-    console.log(`Found user ${userId} in Firestore:`, userData);
-    
-    // Initialize Stripe
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    let stripeCustomerId = userData?.stripeCustomerId;
-    let subscription: StripeSubscription | null = null;
-    
-    // If user doesn't have a Stripe customer ID, try to find one
-    if (!stripeCustomerId) {
-      try {
-        // Search by metadata
-        const customers = await stripe.customers.search({
-          query: `metadata['userId']:'${userId}'`,
-          limit: 1
-        });
-        
-        if (customers.data.length > 0) {
-          stripeCustomerId = customers.data[0].id;
-          console.log(`Found Stripe customer ID for user ${userId}: ${stripeCustomerId}`);
+      
+      const userData = userDoc.data();
+      
+      // Check Stripe for customer/subscription info
+      let stripeCustomerId = userData?.stripeCustomerId;
+      let stripeData = null;
+      
+      if (stripeCustomerId) {
+        try {
+          // Get customer data from Stripe
+          const customer = await stripe.customers.retrieve(stripeCustomerId) as Stripe.Customer;
           
-          // Update the user record with the customer ID
-          await userRef.update({
-            stripeCustomerId: stripeCustomerId,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-        } else {
-          // Try searching by email
-          const emailCustomers = await stripe.customers.list({
-            email: email,
-            limit: 1
-          });
-          
-          if (emailCustomers.data.length > 0) {
-            stripeCustomerId = emailCustomers.data[0].id;
-            console.log(`Found Stripe customer by email for user ${userId}: ${stripeCustomerId}`);
-            
-            // Update the customer metadata in Stripe
-            await stripe.customers.update(stripeCustomerId, {
-              metadata: { userId: userId }
-            });
-            
-            // Update the user record with the customer ID
-            await userRef.update({
-              stripeCustomerId: stripeCustomerId,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-          }
-        }
-      } catch (stripeError) {
-        console.error('Error searching for Stripe customer:', stripeError);
-      }
-    }
-    
-    // If we now have a stripeCustomerId, check for subscriptions
-    if (stripeCustomerId) {
-      try {
-        // Check for active subscriptions
-        const subscriptions = await stripe.subscriptions.list({
-          customer: stripeCustomerId,
-          status: 'active',
-          limit: 1
-        });
-        
-        if (subscriptions.data.length > 0) {
-          subscription = subscriptions.data[0] as StripeSubscription;
-          console.log(`Found active subscription for user ${userId}: ${subscription.id}`);
-          
-          // If user is not Pro but has an active subscription, or if forceUpdate is true
-          if (!userData.isPro || fixType === 'force') {
-            console.log(`Upgrading user ${userId} to Pro status`);
-            
-            // Calculate subscription end date
-            const endDate = new Date(subscription.current_period_end * 1000);
-            
-            // Update the user's subscription status
-            const updateData = {
-              isPro: true,
-              stripeCustomerId: stripeCustomerId,
-              stripeSubscriptionId: subscription.id,
-              subscriptionStatus: subscription.status,
-              subscriptionEndDate: endDate.toISOString(),
-              subscriptionPlan: subscription.items.data[0].price.id,
-              modelsRemainingThisMonth: 999999, // Effectively unlimited
-              updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            };
-            
-            // Update the user document
-            await userRef.update(updateData);
-            
-            // Fetch updated user data
-            const updatedDoc = await userRef.get();
-            
-            return res.status(200).json({
-              success: true,
-              message: 'User upgraded to Pro status successfully',
-              userData: updatedDoc.data(),
-              fixApplied: true
-            });
+          // Get subscription data if available
+          let subscription = null;
+          if (userData?.stripeSubscriptionId) {
+            try {
+              subscription = await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
+            } catch (subError) {
+              console.error('Error retrieving subscription:', subError);
+            }
           } else {
-            return res.status(200).json({
-              success: true,
-              message: 'User already has Pro status',
-              userData: userData,
-              fixApplied: false
+            // Try to find subscriptions by customer
+            const subscriptions = await stripe.subscriptions.list({
+              customer: stripeCustomerId,
+              limit: 1
             });
+            
+            if (subscriptions.data.length > 0) {
+              subscription = subscriptions.data[0];
+            }
           }
-        } else {
-          // No active subscriptions found
-          console.log(`No active subscriptions found for Stripe customer: ${stripeCustomerId}`);
           
-          // If this is a force upgrade request, upgrade the user anyway
-          if (fixType === 'force') {
-            console.log(`Force upgrading user ${userId} to Pro status`);
-            
-            // Calculate subscription end date (1 year from now)
-            const endDate = new Date();
-            endDate.setFullYear(endDate.getFullYear() + 1);
-            
-            // Update the user's subscription status
-            const updateData = {
-              isPro: true,
-              stripeCustomerId: stripeCustomerId,
-              subscriptionStatus: 'active',
-              subscriptionEndDate: endDate.toISOString(),
-              subscriptionPlan: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
-              modelsRemainingThisMonth: 999999, // Effectively unlimited
-              updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            };
-            
-            // Update the user document
-            await userRef.update(updateData);
-            
-            // Fetch updated user data
-            const updatedDoc = await userRef.get();
-            
-            return res.status(200).json({
-              success: true,
-              message: 'User force upgraded to Pro status',
-              userData: updatedDoc.data(),
-              fixApplied: true
-            });
-          } else {
-            return res.status(200).json({
-              success: false,
-              message: 'No active subscription found for this user',
-              userData: userData,
-              fixApplied: false
-            });
-          }
+          stripeData = {
+            customer,
+            subscription
+          };
+        } catch (stripeError) {
+          console.error('Error retrieving Stripe data:', stripeError);
         }
-      } catch (stripeError) {
-        console.error('Error checking for subscriptions:', stripeError);
       }
-    }
-    
-    // If no Stripe customer ID was found or if we reach this point
-    if (fixType === 'force') {
-      console.log(`Force upgrading user ${userId} to Pro status without Stripe info`);
-      
-      // Calculate subscription end date (1 year from now)
-      const endDate = new Date();
-      endDate.setFullYear(endDate.getFullYear() + 1);
-      
-      // Update the user's subscription status
-      const updateData = {
-        isPro: true,
-        subscriptionStatus: 'active',
-        subscriptionEndDate: endDate.toISOString(),
-        subscriptionPlan: process.env.STRIPE_PRICE_ANNUAL || 'price_1QzyJNCLoBz9jXRlXE8bsC68',
-        modelsRemainingThisMonth: 999999, // Effectively unlimited
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-      
-      // Update the user document
-      await userRef.update(updateData);
-      
-      // Fetch updated user data
-      const updatedDoc = await userRef.get();
       
       return res.status(200).json({
         success: true,
-        message: 'User force upgraded to Pro status without Stripe info',
-        userData: updatedDoc.data(),
-        fixApplied: true
+        user: {
+          id: userDoc.id,
+          ...userData,
+        },
+        stripe: stripeData
+      });
+    } catch (error) {
+      console.error('Error retrieving user data:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Error retrieving user data',
+        error: error.message
+      });
+    }
+  } else if (req.method === 'POST') {
+    // POST - update subscription status
+    const { userId, action, subscriptionId, customerId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing required parameter: userId' 
       });
     }
     
-    return res.status(200).json({
-      success: false,
-      message: 'No subscription found and no force upgrade requested',
-      userData: userData,
-      fixApplied: false
-    });
-  } catch (error: any) {
-    console.error('Error fixing subscription:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Error fixing subscription',
-      error: error.message
-    });
+    if (!action) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing required parameter: action' 
+      });
+    }
+    
+    try {
+      const admin = getFirebaseAdmin();
+      const db = getFirestore();
+      const userRef = db.collection('users').doc(userId);
+      const userDoc = await userRef.get();
+      
+      if (!userDoc.exists) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'User not found in database' 
+        });
+      }
+      
+      const userData = userDoc.data();
+      
+      // Handle different actions
+      switch (action) {
+        case 'set_pro': {
+          // Manually set user to pro
+          const endDate = new Date();
+          endDate.setDate(endDate.getDate() + 30); // Default to 30 days
+          
+          const updateData = {
+            isPro: true,
+            subscriptionStatus: 'active',
+            subscriptionPlan: 'manually_activated',
+            subscriptionEndDate: endDate.toISOString(),
+            modelsRemainingThisMonth: 999999,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          };
+          
+          await userRef.update(updateData);
+          
+          return res.status(200).json({
+            success: true,
+            message: 'User successfully set to Pro status',
+            user: {
+              id: userDoc.id,
+              ...userData,
+              ...updateData
+            }
+          });
+        }
+        
+        case 'sync_stripe': {
+          // Sync with Stripe data
+          if (!subscriptionId) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'Missing required parameter for sync_stripe action: subscriptionId' 
+            });
+          }
+          
+          try {
+            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+            
+            // Get customer ID either from request or subscription
+            const stripeCustomerId = customerId || 
+              (typeof subscription.customer === 'string' ? 
+                subscription.customer : 
+                subscription.customer.id);
+                
+            // Calculate end date
+            const endDate = subscription.current_period_end ? 
+              new Date(subscription.current_period_end * 1000) : 
+              new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+              
+            // Get price ID
+            const priceId = subscription.items.data && 
+              subscription.items.data.length > 0 && 
+              subscription.items.data[0].price ? 
+                subscription.items.data[0].price.id : 
+                'unknown';
+                
+            // Is subscription active?
+            const isActive = subscription.status === 'active' || 
+                             subscription.status === 'trialing';
+                            
+            const updateData = {
+              isPro: isActive,
+              stripeCustomerId,
+              stripeSubscriptionId: subscription.id,
+              subscriptionStatus: subscription.status,
+              subscriptionEndDate: endDate.toISOString(),
+              subscriptionPlan: priceId,
+              modelsRemainingThisMonth: isActive ? 999999 : 2,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+            
+            await userRef.update(updateData);
+            
+            return res.status(200).json({
+              success: true,
+              message: 'User subscription synchronized with Stripe',
+              user: {
+                id: userDoc.id,
+                ...userData,
+                ...updateData
+              },
+              stripe: subscription
+            });
+          } catch (stripeError) {
+            console.error('Error syncing with Stripe:', stripeError);
+            return res.status(500).json({ 
+              success: false, 
+              message: 'Error syncing with Stripe',
+              error: stripeError.message
+            });
+          }
+        }
+        
+        case 'reset': {
+          // Reset to free tier
+          const updateData = {
+            isPro: false,
+            subscriptionStatus: 'none',
+            subscriptionPlan: 'free',
+            subscriptionEndDate: null,
+            modelsRemainingThisMonth: 2,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          };
+          
+          await userRef.update(updateData);
+          
+          return res.status(200).json({
+            success: true,
+            message: 'User reset to free tier',
+            user: {
+              id: userDoc.id,
+              ...userData,
+              ...updateData
+            }
+          });
+        }
+        
+        default:
+          return res.status(400).json({ 
+            success: false, 
+            message: `Unknown action: ${action}` 
+          });
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Error updating user',
+        error: error.message
+      });
+    }
+  } else {
+    return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 } 

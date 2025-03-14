@@ -1,34 +1,11 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
-import * as admin from 'firebase-admin';
+import { getFirebaseAdmin, getFirestore } from '../../utils/firebase-admin';
 
 // Initialize Stripe with the secret key
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2023-10-16' as any,
 });
-
-// Initialize Firebase Admin SDK if not already initialized
-if (!admin.apps.length) {
-  try {
-    // Try to load service account from environment variable
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-      : undefined;
-    
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      }),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.appspot.com'
-    });
-    
-    console.log('Firebase Admin SDK initialized in pricing checkout');
-  } catch (error) {
-    console.error('Error initializing Firebase:', error);
-  }
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set appropriate CORS headers
@@ -63,8 +40,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     console.log(`Creating subscription checkout for user: ${userId}, email: ${email}, priceId: ${priceId}`);
     
-    // Get Firestore instance
-    const db = admin.firestore();
+    // Get Firebase Admin and Firestore instances
+    const admin = getFirebaseAdmin();
+    const db = getFirestore();
     
     // Look up user in Firestore
     let customerId: string | undefined = undefined;
@@ -96,8 +74,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await db.collection('users').doc(userId).set({
           email,
           stripeCustomerId: customerId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
         
         console.log(`Updated user ${userId} with Stripe customer ID: ${customerId}`);
@@ -107,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     
-    // Create the checkout session
+    // Create the checkout session with user ID in metadata
     const session = await stripe.checkout.sessions.create({
       customer: customerId || undefined,
       payment_method_types: ['card'],
@@ -146,8 +124,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await userRef.set({
           email,
           stripeCustomerId: customerId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           isPro: false, // Will be updated by webhook when payment completes
           subscriptionStatus: 'pending', // Will be updated by webhook
         });
@@ -155,7 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.log(`Updating existing user document for ${userId}`);
         await userRef.update({
           stripeCustomerId: customerId,
-          updatedAt: new Date().toISOString(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       }
     } catch (firestoreError) {

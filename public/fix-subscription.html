@@ -3,186 +3,373 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fix Subscription Tool</title>
+  <title>Subscription Manager</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-      line-height: 1.6;
-      max-width: 800px;
+      max-width: 1000px;
       margin: 0 auto;
       padding: 20px;
       color: #333;
     }
-    h1 {
-      color: #2563eb;
-      margin-bottom: 1rem;
+    h1, h2 {
+      color: #2c3e50;
     }
-    .card {
-      background-color: #f8fafc;
-      border-radius: 8px;
-      border: 1px solid #e2e8f0;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-    input, button {
-      display: block;
-      width: 100%;
-      padding: 10px;
+    .form-group {
       margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input[type="text"], input[type="email"], select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
       border-radius: 4px;
-      border: 1px solid #cbd5e1;
-      font-size: 16px;
+      box-sizing: border-box;
     }
     button {
-      background-color: #2563eb;
+      background-color: #3498db;
       color: white;
       border: none;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background-color 0.3s;
-    }
-    button:hover {
-      background-color: #1d4ed8;
-    }
-    pre {
-      background-color: #f1f5f9;
-      padding: 15px;
+      padding: 10px 15px;
       border-radius: 4px;
-      overflow: auto;
-      font-family: monospace;
+      cursor: pointer;
       font-size: 14px;
     }
-    .success {
-      background-color: #dcfce7;
-      border: 1px solid #86efac;
-      color: #166534;
-      padding: 15px;
-      border-radius: 4px;
-      margin-top: 20px;
+    button:hover {
+      background-color: #2980b9;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      background-color: #f9f9f9;
     }
     .error {
-      background-color: #fee2e2;
-      border: 1px solid #fca5a5;
-      color: #991b1b;
-      padding: 15px;
-      border-radius: 4px;
-      margin-top: 20px;
+      color: #e74c3c;
+      font-weight: bold;
     }
-    .hidden {
+    .success {
+      color: #27ae60;
+      font-weight: bold;
+    }
+    .actions {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow: auto;
+      max-height: 300px;
+    }
+    .tabbed {
+      display: flex;
+      margin-bottom: 10px;
+    }
+    .tab {
+      padding: 10px 20px;
+      border: 1px solid #ddd;
+      border-radius: 4px 4px 0 0;
+      cursor: pointer;
+      background-color: #f5f5f5;
+    }
+    .tab.active {
+      background-color: #3498db;
+      color: white;
+      border-color: #3498db;
+    }
+    .tab-content {
       display: none;
     }
-    .loader {
-      border: 5px solid #f3f3f3;
-      border-top: 5px solid #2563eb;
-      border-radius: 50%;
-      width: 30px;
-      height: 30px;
-      animation: spin 1s linear infinite;
-      margin: 20px auto;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+    .tab-content.active {
+      display: block;
     }
   </style>
 </head>
 <body>
-  <h1>Fix Subscription Tool</h1>
+  <h1>FishCAD Subscription Manager</h1>
+  <p>Use this tool to check and fix user subscription issues.</p>
   
-  <div class="card">
-    <h2>Enter Your Details</h2>
-    <input type="text" id="userId" placeholder="Your Firebase User ID" />
-    <input type="email" id="email" placeholder="Your Email Address" />
-    <label>
-      <input type="checkbox" id="forceUpgrade" checked />
-      Force upgrade to Pro (recommended)
-    </label>
-    <button id="fixSubscription">Fix My Subscription</button>
-    
-    <div id="loader" class="loader hidden"></div>
-    <div id="result" class="hidden"></div>
+  <div class="tabbed">
+    <div class="tab active" data-tab="lookup">User Lookup</div>
+    <div class="tab" data-tab="actions">Subscription Actions</div>
   </div>
   
-  <div class="card">
-    <h2>How It Works</h2>
-    <p>This tool will:</p>
-    <ol>
-      <li>Check if you already have a Stripe Customer ID</li>
-      <li>Look for active subscriptions associated with your account</li>
-      <li>If found, it will update your Firebase user record with the Pro status</li>
-      <li>If no subscription is found but "Force upgrade" is selected, it will upgrade your account anyway</li>
-    </ol>
-    <p><strong>Note:</strong> You can find your Firebase User ID in your account settings or by checking the URL when viewing your profile.</p>
-  </div>
-
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      const fixButton = document.getElementById('fixSubscription');
-      const resultDiv = document.getElementById('result');
-      const loader = document.getElementById('loader');
+  <div class="tab-content active" id="lookup-tab">
+    <div class="card">
+      <h2>Lookup User</h2>
+      <p>Enter a user ID or email to lookup subscription information.</p>
       
-      fixButton.addEventListener('click', async function() {
-        const userId = document.getElementById('userId').value.trim();
-        const email = document.getElementById('email').value.trim();
-        const forceUpgrade = document.getElementById('forceUpgrade').checked;
+      <div class="form-group">
+        <label for="userId">User ID</label>
+        <input type="text" id="userId" placeholder="Enter Firebase User ID">
+      </div>
+      
+      <div class="form-group">
+        <label for="userEmail">OR Email</label>
+        <input type="email" id="userEmail" placeholder="Enter user email">
+      </div>
+      
+      <div class="form-group">
+        <label for="apiKey">Admin API Key</label>
+        <input type="text" id="apiKey" placeholder="Enter admin API key">
+      </div>
+      
+      <button id="lookupBtn">Lookup User</button>
+    </div>
+    
+    <div id="result" style="display: none;">
+      <h2>User Information</h2>
+      <div id="userInfo" class="card"></div>
+      
+      <h2>Stripe Information</h2>
+      <div id="stripeInfo" class="card"></div>
+      
+      <div class="actions">
+        <button id="setPro">Set User to Pro</button>
+        <button id="resetFree">Reset to Free Tier</button>
+        <button id="syncStripe" style="display: none;">Sync with Stripe</button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="tab-content" id="actions-tab">
+    <div class="card">
+      <h2>Subscription Actions</h2>
+      <p>Perform actions on a user's subscription.</p>
+      
+      <div class="form-group">
+        <label for="actionUserId">User ID</label>
+        <input type="text" id="actionUserId" placeholder="Enter Firebase User ID">
+      </div>
+      
+      <div class="form-group">
+        <label for="action">Action</label>
+        <select id="action">
+          <option value="set_pro">Set to Pro</option>
+          <option value="reset">Reset to Free Tier</option>
+          <option value="sync_stripe">Sync with Stripe</option>
+        </select>
+      </div>
+      
+      <div id="stripeDetails" style="display: none;">
+        <div class="form-group">
+          <label for="subscriptionId">Subscription ID</label>
+          <input type="text" id="subscriptionId" placeholder="Enter Stripe Subscription ID">
+        </div>
         
-        if (!userId || !email) {
-          resultDiv.className = 'error';
-          resultDiv.textContent = 'Please enter both User ID and Email.';
-          resultDiv.classList.remove('hidden');
+        <div class="form-group">
+          <label for="customerId">Customer ID (optional)</label>
+          <input type="text" id="customerId" placeholder="Enter Stripe Customer ID">
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label for="actionApiKey">Admin API Key</label>
+        <input type="text" id="actionApiKey" placeholder="Enter admin API key">
+      </div>
+      
+      <button id="performAction">Perform Action</button>
+    </div>
+    
+    <div id="actionResult" style="display: none;" class="card">
+      <h2>Action Result</h2>
+      <pre id="actionResultContent"></pre>
+    </div>
+  </div>
+  
+  <script>
+    // Tab functionality
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        tab.classList.add('active');
+        document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+      });
+    });
+    
+    // Show/hide Stripe details based on action selection
+    document.getElementById('action').addEventListener('change', (e) => {
+      const stripeDetails = document.getElementById('stripeDetails');
+      stripeDetails.style.display = e.target.value === 'sync_stripe' ? 'block' : 'none';
+    });
+    
+    // Lookup user
+    document.getElementById('lookupBtn').addEventListener('click', async () => {
+      const userId = document.getElementById('userId').value.trim();
+      const email = document.getElementById('userEmail').value.trim();
+      const apiKey = document.getElementById('apiKey').value.trim();
+      
+      if ((!userId && !email) || !apiKey) {
+        alert('Please enter either a User ID or Email, and an API Key');
+        return;
+      }
+      
+      try {
+        const params = new URLSearchParams();
+        if (userId) params.append('userId', userId);
+        if (email) params.append('email', email);
+        params.append('apiKey', apiKey);
+        
+        const response = await fetch(`/api/fix-subscription?${params.toString()}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+          alert(`Error: ${data.message}`);
           return;
         }
         
-        // Show loader, hide result
-        loader.classList.remove('hidden');
-        resultDiv.classList.add('hidden');
-        fixButton.disabled = true;
+        // Display user info
+        const userInfo = document.getElementById('userInfo');
+        userInfo.innerHTML = `
+          <p><strong>User ID:</strong> ${data.user.id}</p>
+          <p><strong>Email:</strong> ${data.user.email || 'Not set'}</p>
+          <p><strong>Pro Status:</strong> ${data.user.isPro ? 'Pro' : 'Free'}</p>
+          <p><strong>Subscription Status:</strong> ${data.user.subscriptionStatus || 'None'}</p>
+          <p><strong>Subscription Plan:</strong> ${data.user.subscriptionPlan || 'None'}</p>
+          <p><strong>Subscription End Date:</strong> ${data.user.subscriptionEndDate || 'Not set'}</p>
+          <p><strong>Models Remaining:</strong> ${data.user.modelsRemainingThisMonth || 0}</p>
+          <p><strong>Stripe Customer ID:</strong> ${data.user.stripeCustomerId || 'Not set'}</p>
+          <p><strong>Stripe Subscription ID:</strong> ${data.user.stripeSubscriptionId || 'Not set'}</p>
+        `;
         
-        try {
-          const response = await fetch('/api/fix-subscription', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              userId: userId,
-              email: email,
-              fixType: forceUpgrade ? 'force' : 'check'
-            }),
-          });
+        // Display Stripe info
+        const stripeInfo = document.getElementById('stripeInfo');
+        if (data.stripe) {
+          const customer = data.stripe.customer;
+          const subscription = data.stripe.subscription;
           
-          const data = await response.json();
+          let html = '<h3>Customer</h3>';
+          html += `<p><strong>ID:</strong> ${customer.id}</p>`;
+          html += `<p><strong>Email:</strong> ${customer.email || 'Not set'}</p>`;
+          html += `<p><strong>Created:</strong> ${new Date(customer.created * 1000).toLocaleString()}</p>`;
           
-          // Hide loader
-          loader.classList.add('hidden');
-          
-          if (data.success) {
-            resultDiv.className = 'success';
-            if (data.fixApplied) {
-              resultDiv.innerHTML = `<strong>Success!</strong> Your account has been upgraded to Pro status.<br><br>
-              <pre>${JSON.stringify(data, null, 2)}</pre>`;
-            } else {
-              resultDiv.innerHTML = `<strong>Info:</strong> ${data.message}<br><br>
-              <pre>${JSON.stringify(data, null, 2)}</pre>`;
-            }
+          if (subscription) {
+            html += '<h3>Subscription</h3>';
+            html += `<p><strong>ID:</strong> ${subscription.id}</p>`;
+            html += `<p><strong>Status:</strong> ${subscription.status}</p>`;
+            html += `<p><strong>Current Period End:</strong> ${new Date(subscription.current_period_end * 1000).toLocaleString()}</p>`;
+            
+            // Show sync button for subscription
+            document.getElementById('syncStripe').style.display = 'block';
+            document.getElementById('syncStripe').dataset.subscriptionId = subscription.id;
           } else {
-            resultDiv.className = 'error';
-            resultDiv.innerHTML = `<strong>Error:</strong> ${data.message}<br><br>
-            <pre>${JSON.stringify(data, null, 2)}</pre>`;
+            html += '<p>No active subscription found</p>';
           }
           
-          resultDiv.classList.remove('hidden');
-        } catch (error) {
-          loader.classList.add('hidden');
-          resultDiv.className = 'error';
-          resultDiv.textContent = `Error: ${error.message}. Please try again.`;
-          resultDiv.classList.remove('hidden');
-        } finally {
-          fixButton.disabled = false;
+          stripeInfo.innerHTML = html;
+        } else {
+          stripeInfo.innerHTML = '<p>No Stripe information available</p>';
         }
+        
+        // Show result and store user ID for actions
+        document.getElementById('result').style.display = 'block';
+        document.querySelectorAll('.actions button').forEach(btn => {
+          btn.dataset.userId = data.user.id;
+        });
+        
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    });
+    
+    // Set Pro
+    document.getElementById('setPro').addEventListener('click', async () => {
+      performAction('set_pro', { userId: event.target.dataset.userId });
+    });
+    
+    // Reset Free
+    document.getElementById('resetFree').addEventListener('click', async () => {
+      performAction('reset', { userId: event.target.dataset.userId });
+    });
+    
+    // Sync Stripe
+    document.getElementById('syncStripe').addEventListener('click', async () => {
+      performAction('sync_stripe', { 
+        userId: event.target.dataset.userId,
+        subscriptionId: event.target.dataset.subscriptionId 
       });
     });
+    
+    // Perform action manually
+    document.getElementById('performAction').addEventListener('click', async () => {
+      const userId = document.getElementById('actionUserId').value.trim();
+      const action = document.getElementById('action').value;
+      const apiKey = document.getElementById('actionApiKey').value.trim();
+      
+      if (!userId || !apiKey) {
+        alert('Please enter a User ID and API Key');
+        return;
+      }
+      
+      const data = { userId, action };
+      
+      if (action === 'sync_stripe') {
+        const subscriptionId = document.getElementById('subscriptionId').value.trim();
+        const customerId = document.getElementById('customerId').value.trim();
+        
+        if (!subscriptionId) {
+          alert('Please enter a Subscription ID');
+          return;
+        }
+        
+        data.subscriptionId = subscriptionId;
+        if (customerId) data.customerId = customerId;
+      }
+      
+      performAction(action, data, apiKey);
+    });
+    
+    // Helper function to perform an action
+    async function performAction(action, data, apiKey) {
+      try {
+        // Use the API key from the form if not provided
+        const key = apiKey || document.getElementById('apiKey').value.trim();
+        
+        if (!key) {
+          alert('Please enter an API Key');
+          return;
+        }
+        
+        const response = await fetch('/api/fix-subscription', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': key
+          },
+          body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        // Show result
+        const actionResult = document.getElementById('actionResult');
+        const actionResultContent = document.getElementById('actionResultContent');
+        
+        actionResult.style.display = 'block';
+        actionResultContent.textContent = JSON.stringify(result, null, 2);
+        
+        // Switch to actions tab if not already there
+        document.querySelector('.tab[data-tab="actions"]').click();
+        
+        // Refresh user info if successful
+        if (result.success && document.getElementById('result').style.display !== 'none') {
+          document.getElementById('lookupBtn').click();
+        }
+        
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
   </script>
 </body>
 </html> 

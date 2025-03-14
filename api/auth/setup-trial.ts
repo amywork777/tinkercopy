@@ -1,35 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import * as admin from 'firebase-admin';
-
-// Initialize Firebase Admin SDK if not already initialized
-if (!admin.apps.length) {
-  try {
-    // Try to load service account from environment variable
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-      : undefined;
-    
-    // Fix: Add null checks and make sure admin credential is valid
-    if (!privateKey) {
-      console.error('Firebase private key is missing or invalid');
-    }
-    
-    const credential = admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID || '',
-      privateKey: privateKey || '',
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-    });
-    
-    admin.initializeApp({
-      credential: credential,
-      storageBucket: 'taiyaki-test1.firebasestorage.app'
-    });
-    
-    console.log('Firebase Admin SDK initialized in setup-trial endpoint');
-  } catch (error) {
-    console.error('Error initializing Firebase:', error);
-  }
-}
+import { getFirebaseAdmin, getFirestore, getAuth } from '../../utils/firebase-admin';
 
 /**
  * Sets up a one-hour free trial for a newly registered user
@@ -55,20 +25,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
+  console.log(`Setup trial request received: ${JSON.stringify(req.body)}`);
+
   try {
     const { userId, email, idToken } = req.body;
 
-    if (!userId || !email) {
+    if (!userId) {
+      console.error('Missing required userId parameter');
       return res.status(400).json({ 
         success: false, 
-        message: 'Missing required parameters: userId and email are required' 
+        message: 'Missing required parameter: userId is required' 
       });
     }
+
+    if (!email) {
+      console.error('Missing required email parameter');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing required parameter: email is required' 
+      });
+    }
+
+    // Initialize Firebase using our utility functions
+    const admin = getFirebaseAdmin();
+    const db = getFirestore();
+    const auth = getAuth();
 
     // Verify the Firebase ID token if provided (extra security)
     if (idToken) {
       try {
-        await admin.auth().verifyIdToken(idToken);
+        await auth.verifyIdToken(idToken);
+        console.log('ID token verified successfully');
       } catch (tokenError) {
         console.error('Error verifying ID token:', tokenError);
         return res.status(403).json({ 
@@ -78,8 +65,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Get Firestore instance
-    const db = admin.firestore();
     const userRef = db.collection('users').doc(userId);
     
     // Check if user already exists in Firestore
@@ -124,13 +109,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lastResetDate: new Date().toISOString().substring(0, 7),
     };
     
-    // Create or update the user document
-    if (userDoc.exists) {
-      await userRef.update(userData);
-      console.log(`Updated existing user ${userId} with trial information`);
-    } else {
-      await userRef.set(userData);
-      console.log(`Created new user ${userId} with trial information`);
+    try {
+      // Create or update the user document
+      if (userDoc.exists) {
+        await userRef.update(userData);
+        console.log(`Updated existing user ${userId} with trial information`);
+      } else {
+        await userRef.set(userData);
+        console.log(`Created new user ${userId} with trial information`);
+      }
+      
+      // Double-check that the update was applied
+      const updatedDoc = await userRef.get();
+      if (!updatedDoc.exists) {
+        console.error(`Failed to create user document for ${userId}`);
+        throw new Error('Failed to create user document');
+      }
+      
+      const updatedData = updatedDoc.data();
+      console.log(`User data after update: ${JSON.stringify(updatedData)}`);
+    } catch (dbError) {
+      console.error('Error writing to Firestore:', dbError);
+      throw dbError;
     }
     
     return res.status(200).json({

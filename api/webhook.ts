@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Stripe } from 'stripe';
-import * as admin from 'firebase-admin';
+import { getFirebaseAdmin, getFirestore } from '../utils/firebase-admin';
 import { buffer } from 'micro';
 
 // Define interfaces for type safety
@@ -14,8 +14,8 @@ interface UserData {
   subscriptionEndDate?: string;
   subscriptionPlan?: string;
   modelsRemainingThisMonth?: number;
-  createdAt?: admin.firestore.FieldValue;
-  updatedAt?: admin.firestore.FieldValue;
+  createdAt?: any; // using any for flexibility with server timestamps
+  updatedAt?: any;
   [key: string]: any; // Allow additional properties
 }
 
@@ -31,44 +31,6 @@ const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
 const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16' as any,
 });
-
-// Initialize Firebase Admin SDK if not already initialized
-if (!admin.apps.length) {
-  try {
-    // Try to load service account from environment variable
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-      : undefined;
-    
-    // Add validation for required environment variables
-    if (!privateKey) {
-      console.error('Firebase private key is missing or invalid');
-    }
-    
-    if (!process.env.FIREBASE_PROJECT_ID) {
-      console.error('Firebase project ID is missing');
-    }
-    
-    if (!process.env.FIREBASE_CLIENT_EMAIL) {
-      console.error('Firebase client email is missing');
-    }
-    
-    const credential = admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID || '',
-      privateKey: privateKey || '',
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-    });
-    
-    admin.initializeApp({
-      credential: credential,
-      storageBucket: 'taiyaki-test1.firebasestorage.app'
-    });
-    
-    console.log('Firebase Admin SDK initialized in webhook handler');
-  } catch (error) {
-    console.error('Error initializing Firebase:', error);
-  }
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Debug: Log the request information
@@ -107,6 +69,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ success: false, message: 'Webhook secret not configured' });
   }
 
+  if (!sig) {
+    console.error('Missing stripe-signature header');
+    return res.status(400).json({ success: false, message: 'Missing signature header' });
+  }
+
   let event: Stripe.Event;
 
   try {
@@ -122,11 +89,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ success: false, message: `Webhook Error: ${err.message}` });
   }
 
-  // Get Firestore instance
-  const db = admin.firestore();
-  console.log(`Processing webhook event: ${event.type}, id: ${event.id}`);
-
+  // Get Firebase Admin and Firestore instances
   try {
+    const admin = getFirebaseAdmin();
+    const db = getFirestore();
+    
+    console.log(`Processing webhook event: ${event.type}, id: ${event.id}`);
+
     // Handle the event based on its type
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -195,7 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
         
         // Log the update we're about to make
-        console.log(`Setting user to isPro=true, with subscription ID ${subscription.id}, status ${subscription.status}`);
+        console.log(`Setting user ${userId} to isPro=true, with subscription ID ${subscription.id}, status ${subscription.status}`);
         
         // Update user subscription status in Firestore
         const userDocRef = db.collection('users').doc(userId);
@@ -210,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
         
-        console.log(`Updating Firestore document for user ${userId} with:`, updateData);
+        console.log(`Updating Firestore document for user ${userId} with:`, JSON.stringify(updateData));
         
         // Check if the user exists first
         try {
@@ -250,135 +219,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
           
-          console.log(`✅ User ${userId} subscription updated with status: ${subscription.status}`);
+          console.log(`✅ Successfully updated subscription status for user ${userId}`);
         } catch (firestoreError) {
-          console.error(`Error updating Firestore for user ${userId}:`, firestoreError);
-          // Try alternative update method
-          try {
-            await userDocRef.set(updateData, { merge: true });
-            console.log(`✅ Alternative update method successful for user ${userId}`);
-          } catch (fallbackError) {
-            console.error(`Fallback update also failed:`, fallbackError);
-          }
+          console.error(`⚠️ Error updating Firestore for user ${userId}:`, firestoreError);
         }
         break;
       }
       
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
-        console.log(`Processing subscription update: ${subscription.id}`);
+        console.log(`Processing subscription update: ${subscription.id}, status: ${subscription.status}`);
         
-        // Get customer ID - add null checks
-        const customerId = typeof subscription.customer === 'string' 
-          ? subscription.customer 
-          : subscription.customer.id;
+        // Get user ID from subscription metadata
+        let userId = subscription.metadata?.userId;
         
-        console.log(`Looking up user with Stripe customer ID: ${customerId}`);
-        
-        // Find user by customer ID
-        const usersRef = db.collection('users');
-        const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
-        
-        if (snapshot.empty) {
-          console.error(`No user found with Stripe customer ID: ${customerId}`);
-          
-          // Try to get userId from subscription metadata as a fallback
-          const userId = subscription.metadata?.userId;
-          if (userId) {
-            console.log(`Found userId in subscription metadata: ${userId}`);
+        // If no user ID in subscription metadata, try to get it from customer metadata
+        if (!userId && subscription.customer) {
+          const customerId = typeof subscription.customer === 'string' 
+            ? subscription.customer 
+            : subscription.customer.id;
             
-            // Check if this user exists in Firestore
-            const userDoc = await usersRef.doc(userId).get();
-            if (userDoc.exists) {
-              console.log(`User document exists for ${userId}, updating with new subscription data`);
-              // Check if subscription is active
-              const isActive = ['active', 'trialing'].includes(subscription.status);
-              console.log(`Subscription status: ${subscription.status}, isActive: ${isActive}`);
-              
-              // Get price ID - add null checks
-              const priceId = subscription.items.data && 
-                             subscription.items.data.length > 0 && 
-                             subscription.items.data[0].price ? 
-                subscription.items.data[0].price.id : 
-                'unknown';
-                
-              // Calculate end date - add null checks
-              const endDate = subscription.current_period_end
-                ? new Date(subscription.current_period_end * 1000)
-                : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
-              
-              // Update with subscription data
-              const updateData: UserData = {
-                isPro: isActive,
-                stripeCustomerId: customerId,
-                stripeSubscriptionId: subscription.id,
-                subscriptionStatus: subscription.status,
-                subscriptionEndDate: endDate.toISOString(),
-                subscriptionPlan: priceId,
-                modelsRemainingThisMonth: isActive ? 999999 : 2, // Unlimited if active, limited if not
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-              };
-              
-              await usersRef.doc(userId).set(updateData, { merge: true });
-              console.log(`✅ Updated user ${userId} with subscription data from metadata`);
-            } else {
-              console.error(`User document not found for userId ${userId} from metadata`);
-            }
-          } else {
-            console.error(`No userId found in subscription metadata`);
+          try {
+            const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+            userId = customer.metadata?.userId;
+          } catch (error) {
+            console.error('Error retrieving customer:', error);
           }
-          
+        }
+        
+        if (!userId) {
+          console.error('No user ID found in subscription or customer metadata');
           break;
         }
         
-        const userDoc = snapshot.docs[0];
-        const userId = userDoc.id;
-        console.log(`Found user: ${userId}`);
+        const db = getFirestore();
+        const userRef = db.collection('users').doc(userId);
         
-        // Check if subscription is active
-        const isActive = ['active', 'trialing'].includes(subscription.status);
-        console.log(`Subscription status: ${subscription.status}, isActive: ${isActive}`);
-        
-        // Get price ID - add null checks  
-        const priceId = subscription.items.data && 
-                       subscription.items.data.length > 0 && 
-                       subscription.items.data[0].price ? 
-          subscription.items.data[0].price.id : 
-          'unknown';
+        try {
+          // Get current user data
+          const userDoc = await userRef.get();
+          if (!userDoc.exists) {
+            console.error(`User ${userId} not found in Firestore`);
+            break;
+          }
           
-        // Calculate end date - add null checks
-        const endDate = subscription.current_period_end
-          ? new Date(subscription.current_period_end * 1000)
-          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
-        
-        // Prepare the update data
-        const updateData: UserData = {
-          isPro: isActive,
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: subscription.id,
-          subscriptionStatus: subscription.status,
-          subscriptionEndDate: endDate.toISOString(),
-          subscriptionPlan: priceId,
-          modelsRemainingThisMonth: isActive ? 999999 : 2, // Unlimited if active, limited if not
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-        
-        console.log(`Updating user ${userId} with:`, updateData);
-        
-        // Update the user's subscription status with a merge to ensure we don't lose data
-        await usersRef.doc(userId).set(updateData, { merge: true });
-        
-        console.log(`✅ User ${userId} subscription updated with status: ${subscription.status}`);
-        
-        // Double-check that the update was applied
-        const updatedDoc = await usersRef.doc(userId).get();
-        const updatedData = updatedDoc.data();
-        if (updatedData && (!updatedData.isPro === isActive || updatedData.subscriptionStatus !== subscription.status)) {
-          console.error(`Update may not have been applied correctly. Current data:`, updatedData);
-          // Try to update again
-          await usersRef.doc(userId).set(updateData, { merge: true });
+          const userData = userDoc.data() || {};
+          
+          // Update status based on subscription status
+          const isPro = subscription.status === 'active' || 
+                        subscription.status === 'trialing';
+                        
+          // Calculate end date
+          const endDate = subscription.current_period_end
+            ? new Date(subscription.current_period_end * 1000)
+            : null;
+            
+          const updateData: any = {
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            subscriptionStatus: subscription.status,
+            isPro: isPro,
+          };
+          
+          if (endDate) {
+            updateData.subscriptionEndDate = endDate.toISOString();
+          }
+          
+          // Update Firestore
+          await userRef.update(updateData);
+          console.log(`Updated subscription status for user ${userId} to ${subscription.status}, isPro=${isPro}`);
+          
+        } catch (firestoreError) {
+          console.error('Error updating user subscription status:', firestoreError);
         }
-        
         break;
       }
       
@@ -386,53 +298,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const subscription = event.data.object as Stripe.Subscription;
         console.log(`Processing subscription deletion: ${subscription.id}`);
         
-        // Get customer ID - add null checks
-        const customerId = typeof subscription.customer === 'string' 
-          ? subscription.customer 
-          : subscription.customer.id;
+        // Get user ID from subscription metadata
+        let userId = subscription.metadata?.userId;
         
-        console.log(`Looking up user with Stripe customer ID: ${customerId}`);
+        // If no user ID in subscription metadata, try to get it from customer metadata
+        if (!userId && subscription.customer) {
+          const customerId = typeof subscription.customer === 'string' 
+            ? subscription.customer 
+            : subscription.customer.id;
+            
+          try {
+            const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+            userId = customer.metadata?.userId;
+          } catch (error) {
+            console.error('Error retrieving customer:', error);
+          }
+        }
         
-        // Find user by customer ID
-        const usersRef = db.collection('users');
-        const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
-        
-        if (snapshot.empty) {
-          console.error(`No user found with Stripe customer ID: ${customerId}`);
+        if (!userId) {
+          console.error('No user ID found in subscription or customer metadata');
           break;
         }
         
-        const userDoc = snapshot.docs[0];
-        const userId = userDoc.id;
-        console.log(`Found user: ${userId}`);
+        const db = getFirestore();
+        const userRef = db.collection('users').doc(userId);
         
-        // Prepare update data for downgrade
-        const updateData: UserData = {
-          isPro: false,
-          subscriptionStatus: 'canceled',
-          modelsRemainingThisMonth: 2, // Free tier limit
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-        
-        console.log(`Downgrading user to free tier:`, updateData);
-        
-        // Downgrade user to free tier
-        await usersRef.doc(userId).update(updateData);
-        
-        console.log(`✅ User ${userId} subscription canceled`);
+        try {
+          // Update subscription status
+          await userRef.update({
+            isPro: false,
+            subscriptionStatus: 'canceled',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          console.log(`Updated subscription status for user ${userId} to canceled, isPro=false`);
+        } catch (firestoreError) {
+          console.error('Error updating user subscription status:', firestoreError);
+        }
         break;
       }
       
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
-
-    // Return a 200 response to acknowledge receipt of the event
-    console.log('Webhook processed successfully');
-    return res.status(200).json({ received: true, success: true });
-  } catch (error: any) {
-    console.error(`Error processing webhook: ${error.message}`);
-    console.error(error.stack);
-    return res.status(500).json({ success: false, message: error.message });
+    
+    // Return a response to acknowledge receipt of the event
+    return res.status(200).json({ received: true, id: event.id });
+    
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    return res.status(500).json({ success: false, message: 'Error processing webhook' });
   }
 } 

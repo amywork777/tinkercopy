@@ -14,9 +14,10 @@ if (!getApps().length) {
       }),
       storageBucket: process.env.FIREBASE_STORAGE_BUCKET
     });
-    console.log('Firebase Admin initialized successfully');
+    console.log('Firebase Admin initialized successfully in setup-trial');
   } catch (error) {
     console.error('Firebase Admin initialization error:', error);
+    throw error; // Re-throw to prevent silent failures
   }
 }
 
@@ -29,7 +30,8 @@ const db = getFirestore();
  * This function is called from the client when a user completes registration
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  console.log('=== REQUEST START ===');
+  console.log('=== SETUP TRIAL REQUEST START ===');
+  console.log('Request headers:', req.headers);
   
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -42,6 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Log request body (redact sensitive info)
     console.log('Request body:', {
       ...req.body,
       idToken: req.body.idToken ? '[REDACTED]' : undefined
@@ -49,6 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { idToken, userId, email } = req.body;
 
+    // Validate required fields
     if (!idToken || !userId || !email) {
       console.error('Missing required fields:', { 
         hasToken: !!idToken, 
@@ -63,17 +67,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Verify token first
     console.log('Verifying token...');
-    const decodedToken = await auth.verifyIdToken(idToken);
-    console.log('Token verified for user:', decodedToken.uid);
+    let decodedToken;
+    try {
+      decodedToken = await auth.verifyIdToken(idToken);
+      console.log('Token verified for user:', decodedToken.uid);
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      return res.status(401).json({ error: 'Invalid token' });
+    }
 
     if (decodedToken.uid !== userId) {
       console.error('Token/User mismatch:', { tokenUid: decodedToken.uid, userId });
       return res.status(403).json({ error: 'Invalid user ID' });
     }
 
-    // Create/update user document
+    // Get user document reference
     console.log('Getting user document reference...');
     const userRef = db.collection('users').doc(userId);
+    
+    // Check if user already exists and has active trial
+    const existingDoc = await userRef.get();
+    if (existingDoc.exists) {
+      const userData = existingDoc.data();
+      if (userData?.isPro || userData?.trialActive) {
+        console.log('User already has pro access or active trial');
+        return res.status(200).json({
+          success: true,
+          message: 'User already has pro access',
+          isPro: userData.isPro,
+          trialActive: userData.trialActive
+        });
+      }
+    }
 
     const trialEndDate = new Date();
     trialEndDate.setHours(trialEndDate.getHours() + 1);
@@ -97,17 +122,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log('Writing user data:', { ...userData, uid: '[REDACTED]' });
     
-    await userRef.set(userData, { merge: true });
-    
-    // Verify the write
-    console.log('Verifying document write...');
-    const doc = await userRef.get();
-    if (!doc.exists) {
-      throw new Error('Failed to create user document');
+    try {
+      await userRef.set(userData, { merge: true });
+      
+      // Verify the write
+      console.log('Verifying document write...');
+      const doc = await userRef.get();
+      if (!doc.exists) {
+        throw new Error('Failed to create user document');
+      }
+      console.log('Document write verified:', doc.data());
+    } catch (error) {
+      console.error('Error writing to Firestore:', error);
+      throw error;
     }
 
-    console.log('User document created successfully');
-    console.log('=== REQUEST END ===');
+    console.log('=== SETUP TRIAL REQUEST END ===');
     
     return res.status(200).json({
       success: true,
@@ -116,12 +146,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (error: any) {
-    console.error('Error in handler:', error);
+    console.error('Error in setup-trial handler:', error);
     console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      name: error.name,
+      code: error.code,
+      message: error.message
+    });
     return res.status(500).json({ 
       error: 'Internal server error',
       message: error.message,
-      stack: error.stack
+      details: {
+        name: error.name,
+        code: error.code
+      }
     });
   }
 } 

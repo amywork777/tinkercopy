@@ -17,7 +17,8 @@ if (!getApps().length) {
     });
     console.log('Firebase Admin initialized successfully in user-subscription endpoint');
   } catch (error) {
-    console.error('Error initializing Firebase:', error);
+    console.error('Firebase Admin initialization error:', error);
+    throw error; // Re-throw to prevent silent failures
   }
 }
 
@@ -33,15 +34,20 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 // Default free tier values
 const freeTierDefaults = {
   isPro: false,
-  modelsRemainingThisMonth: 2, // Free tier limit
+  modelsRemainingThisMonth: 2,
   modelsGeneratedThisMonth: 0,
   downloadsThisMonth: 0,
   subscriptionStatus: 'none',
   subscriptionEndDate: null,
   subscriptionPlan: 'free',
+  trialActive: false,
+  trialEndDate: null
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  console.log('=== USER SUBSCRIPTION REQUEST START ===');
+  console.log('Request headers:', req.headers);
+  
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
@@ -53,65 +59,115 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Log request parameters
+    console.log('Request query:', req.query);
+    
     const userId = req.query.userId as string;
-
     if (!userId) {
+      console.error('Missing userId in request');
       return res.status(400).json({
-        error: 'Missing userId parameter'
+        error: 'Missing userId parameter',
+        details: {
+          query: req.query
+        }
       });
     }
 
+    console.log(`Getting subscription status for user: ${userId}`);
+
     // Get user data from Firestore
-    const userDoc = await db.collection('users').doc(userId).get();
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    // If user doesn't exist, return free tier defaults
     if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
+      console.log(`User ${userId} not found, returning free tier defaults`);
+      return res.status(200).json(freeTierDefaults);
     }
 
     const userData = userDoc.data();
+    console.log('Found user data:', {
+      ...userData,
+      uid: '[REDACTED]',
+      email: '[REDACTED]'
+    });
+
+    // Check if user has Stripe customer ID
     const stripeCustomerId = userData?.stripeCustomerId;
-
-    // If user has no Stripe customer ID, they have no subscription
     if (!stripeCustomerId) {
+      console.log(`User ${userId} has no Stripe customer ID, returning free tier status`);
       return res.status(200).json({
-        subscriptionStatus: 'none',
-        subscriptionPlan: 'free',
-        isPro: false
+        ...freeTierDefaults,
+        ...userData,
+        stripeCustomerId: null
       });
     }
 
-    // Get customer's subscriptions from Stripe
-    const subscriptions = await stripe.subscriptions.list({
-      customer: stripeCustomerId,
-      status: 'active',
-      expand: ['data.default_payment_method']
-    });
+    try {
+      // Get customer's subscriptions from Stripe
+      console.log(`Fetching Stripe subscriptions for customer: ${stripeCustomerId}`);
+      const subscriptions = await stripe.subscriptions.list({
+        customer: stripeCustomerId,
+        status: 'active',
+        expand: ['data.default_payment_method']
+      });
 
-    if (!subscriptions.data.length) {
+      if (!subscriptions.data.length) {
+        console.log(`No active subscriptions found for customer ${stripeCustomerId}`);
+        return res.status(200).json({
+          ...freeTierDefaults,
+          ...userData,
+          subscriptionStatus: 'none'
+        });
+      }
+
+      // Get the most recent active subscription
+      const subscription = subscriptions.data[0];
+      const price = subscription.items.data[0].price;
+
+      console.log('Found active subscription:', {
+        id: subscription.id,
+        status: subscription.status,
+        priceId: price.id
+      });
+
+      const response = {
+        subscriptionStatus: subscription.status,
+        subscriptionPlan: price.id,
+        isPro: true,
+        currentPeriodEnd: new Date(subscription.current_period_end * 1000).toISOString(),
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        ...userData
+      };
+
+      console.log('=== USER SUBSCRIPTION REQUEST END ===');
+      return res.status(200).json(response);
+
+    } catch (stripeError) {
+      console.error('Error fetching Stripe subscriptions:', stripeError);
+      // If Stripe fails, return user data without subscription info
       return res.status(200).json({
-        subscriptionStatus: 'none',
-        subscriptionPlan: 'free',
-        isPro: false
+        ...freeTierDefaults,
+        ...userData,
+        error: 'Failed to fetch subscription data'
       });
     }
-
-    // Get the most recent active subscription
-    const subscription = subscriptions.data[0];
-    const price = subscription.items.data[0].price;
-
-    return res.status(200).json({
-      subscriptionStatus: subscription.status,
-      subscriptionPlan: price.id,
-      isPro: true,
-      currentPeriodEnd: new Date(subscription.current_period_end * 1000).toISOString(),
-      cancelAtPeriodEnd: subscription.cancel_at_period_end
-    });
 
   } catch (error: any) {
-    console.error('Error getting user subscription:', error);
+    console.error('Error in user-subscription handler:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      name: error.name,
+      code: error.code,
+      message: error.message
+    });
     return res.status(500).json({
       error: 'Internal server error',
       message: error.message,
-      stack: error.stack
+      details: {
+        name: error.name,
+        code: error.code
+      }
     });
   }
 }

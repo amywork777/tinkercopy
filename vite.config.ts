@@ -5,6 +5,7 @@ import path, { dirname } from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { fileURLToPath } from "url";
 import { resolve } from 'path';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -14,6 +15,42 @@ function ensureResolvePlugin() {
   return {
     name: 'ensure-resolve',
     resolveId(id: string) {
+      // Special handling for zustand
+      if (id === 'zustand' || id.startsWith('zustand/')) {
+        try {
+          // First try the base package
+          const zustandBasePath = path.resolve(__dirname, 'node_modules/zustand');
+          if (id === 'zustand') {
+            // Try different possible entry points
+            const possibleEntries = [
+              path.join(zustandBasePath, 'dist/index.mjs'),
+              path.join(zustandBasePath, 'dist/index.js'),
+              path.join(zustandBasePath, 'index.mjs'),
+              path.join(zustandBasePath, 'index.js'),
+              path.join(zustandBasePath, 'esm/index.js'),
+              zustandBasePath // fallback to the package itself
+            ];
+            
+            for (const entry of possibleEntries) {
+              try {
+                if (fs.existsSync(entry)) {
+                  console.log(`VITE: Found zustand at ${entry}`);
+                  return entry;
+                }
+              } catch (e) {
+                // Continue to next path
+              }
+            }
+            
+            // If we couldn't find a specific file, return the package directory
+            console.log(`VITE: Using zustand base path: ${zustandBasePath}`);
+            return zustandBasePath;
+          }
+        } catch (e) {
+          console.error(`VITE: Failed to resolve zustand:`, e);
+        }
+      }
+      
       // Handle three.js special cases
       if (id.startsWith('three/examples/') || id.startsWith('three/addons/')) {
         const threeBasePath = path.resolve(__dirname, 'node_modules/three');
@@ -24,7 +61,7 @@ function ensureResolvePlugin() {
       }
       
       // Explicitly handle these modules to prevent resolution issues
-      if (['zustand', 'three', 'three-csg-ts', 'framer-motion'].includes(id)) {
+      if (['three', 'three-csg-ts', 'framer-motion'].includes(id)) {
         try {
           const resolvedPath = resolve(`./node_modules/${id}`);
           console.log(`VITE: Explicitly resolved ${id} to ${resolvedPath}`);
@@ -54,7 +91,13 @@ export default defineConfig({
       'three/examples/jsm/geometries/TextGeometry.js',
       'three/examples/jsm/utils/BufferGeometryUtils.js'
     ],
-    force: true
+    force: true,
+    esbuildOptions: {
+      // Node.js global to browser globalThis
+      define: {
+        global: 'globalThis'
+      },
+    }
   },
   plugins: [
     ensureResolvePlugin(),
@@ -74,7 +117,6 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "client", "src"),
       "@shared": path.resolve(__dirname, "shared"),
-      "zustand": path.resolve(__dirname, "node_modules/zustand/dist/index.mjs"),
       "three": path.resolve(__dirname, "node_modules/three"),
       "three-csg-ts": path.resolve(__dirname, "node_modules/three-csg-ts/lib/esm"),
       "framer-motion": path.resolve(__dirname, "node_modules/framer-motion/dist/framer-motion.js")
@@ -89,7 +131,9 @@ export default defineConfig({
     sourcemap: true,
     commonjsOptions: {
       include: [/node_modules/],
-      transformMixedEsModules: true
+      transformMixedEsModules: true,
+      requireReturnsDefault: 'auto',
+      extensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs']
     },
     rollupOptions: {
       input: {

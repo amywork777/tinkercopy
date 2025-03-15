@@ -103,95 +103,117 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Get userId from path parameter
     const { userId } = req.query;
     
+    console.log('1. Received request for user subscription:', {
+      userId,
+      queryParams: req.query,
+      headers: req.headers
+    });
+    
     if (!userId || typeof userId !== 'string') {
+      console.error('2. Invalid userId:', userId);
       return res.status(400).json({
         success: false,
         error: 'Missing or invalid userId parameter'
       });
     }
     
-    console.log(`Fetching subscription for user: ${userId}`);
+    console.log('3. Fetching subscription for user:', userId);
     
     // Initialize Firebase and Firestore directly
+    console.log('4. Initializing Firebase...');
     const adminSdk = initializeFirebaseDirectly();
     const db = getFirestoreDirectly();
     
+    console.log('5. Fetching user document...');
     const userDoc = await db.collection('users').doc(userId).get();
     
-    if (userDoc.exists) {
-      console.log('User found in Firestore, checking subscription status');
-      const userData = userDoc.data() || {};
+    if (!userDoc.exists) {
+      console.log('6. User document not found, returning free tier defaults');
+      return res.json({
+        ...freeTierDefaults,
+        success: true
+      });
+    }
+    
+    console.log('7. User found in Firestore, checking subscription status');
+    const userData = userDoc.data() || {};
+    console.log('8. User data:', userData);
+    
+    // If we already have subscription data in Firestore, return it
+    if (userData.subscriptionStatus && userData.subscriptionStatus !== 'none') {
+      console.log('9. User has subscription data in Firestore:', userData.subscriptionStatus);
       
-      // If we already have subscription data in Firestore, return it
-      if (userData.subscriptionStatus && userData.subscriptionStatus !== 'none') {
-        console.log(`User has subscription data in Firestore: ${userData.subscriptionStatus}`);
-        
-        // Return formatted subscription data
-        return res.json({
-          isPro: userData.isPro === true,
-          modelsRemainingThisMonth: userData.modelsRemainingThisMonth || 2,
-          modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
-          downloadsThisMonth: userData.downloadsThisMonth || 0,
-          subscriptionStatus: userData.subscriptionStatus,
-          subscriptionEndDate: userData.subscriptionEndDate,
-          subscriptionPlan: userData.subscriptionPlan || 'free',
+      // Return formatted subscription data
+      return res.json({
+        success: true,
+        isPro: userData.isPro === true,
+        modelsRemainingThisMonth: userData.modelsRemainingThisMonth || 2,
+        modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+        downloadsThisMonth: userData.downloadsThisMonth || 0,
+        subscriptionStatus: userData.subscriptionStatus,
+        subscriptionEndDate: userData.subscriptionEndDate,
+        subscriptionPlan: userData.subscriptionPlan || 'free',
+      });
+    }
+    
+    // If we have a Stripe customer ID but no subscription status, check with Stripe
+    if (userData.stripeCustomerId) {
+      console.log('10. User has Stripe customer ID:', userData.stripeCustomerId);
+      
+      try {
+        // Check for active subscriptions
+        console.log('11. Checking Stripe for active subscriptions...');
+        const subscriptions = await stripe.subscriptions.list({
+          customer: userData.stripeCustomerId,
+          status: 'active',
+          limit: 1
         });
-      }
-      
-      // If we have a Stripe customer ID but no subscription status, check with Stripe
-      if (userData.stripeCustomerId) {
-        console.log(`User has Stripe customer ID: ${userData.stripeCustomerId}, checking with Stripe`);
         
-        try {
-          // Check for active subscriptions
-          const subscriptions = await stripe.subscriptions.list({
-            customer: userData.stripeCustomerId,
-            status: 'active',
-            limit: 1
-          });
+        if (subscriptions && subscriptions.data && subscriptions.data.length > 0) {
+          const subscription = subscriptions.data[0];
+          console.log('12. Found active subscription:', subscription.id);
           
-          if (subscriptions && subscriptions.data && subscriptions.data.length > 0) {
-            const subscription = subscriptions.data[0];
-            console.log(`Found active subscription for customer: ${subscription.id}`);
-            
-            // Calculate subscription end date
-            const subscriptionEndDate = subscription.current_period_end ? 
-              new Date(subscription.current_period_end * 1000).toISOString() : 
-              new Date().toISOString();
-            
-            // Get price ID with null checks
-            const priceId = subscription.items && 
-                           subscription.items.data && 
-                           subscription.items.data.length > 0 && 
-                           subscription.items.data[0].price ? 
-              subscription.items.data[0].price.id : 
-              'unknown';
-            
-            // Update user document with subscription info
-            const updateData = {
-              isPro: true,
-              stripeSubscriptionId: subscription.id,
-              subscriptionStatus: subscription.status,
-              subscriptionEndDate: subscriptionEndDate,
-              subscriptionPlan: priceId,
-              modelsRemainingThisMonth: 999999, // Effectively unlimited
-              updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
-            };
-            
-            console.log(`Updating user document with subscription data:`, JSON.stringify(updateData));
-            
-            try {
-              await userDoc.ref.update(updateData);
-              console.log(`Successfully updated user document with subscription data`);
-            } catch (updateError) {
-              console.error('Error updating user document:', updateError);
-              // Try an alternative update method
-              await db.collection('users').doc(userId).set(updateData, { merge: true });
-              console.log(`Successfully updated user document using set with merge`);
-            }
+          // Calculate subscription end date
+          const subscriptionEndDate = subscription.current_period_end ? 
+            new Date(subscription.current_period_end * 1000).toISOString() : 
+            new Date().toISOString();
+          
+          // Get price ID with null checks
+          const priceId = subscription.items?.data?.[0]?.price?.id || 'unknown';
+          
+          // Update user document with subscription info
+          const updateData = {
+            isPro: true,
+            stripeSubscriptionId: subscription.id,
+            subscriptionStatus: subscription.status,
+            subscriptionEndDate: subscriptionEndDate,
+            subscriptionPlan: priceId,
+            modelsRemainingThisMonth: 999999,
+            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
+          };
+          
+          console.log('13. Updating user document with subscription data:', updateData);
+          
+          try {
+            await userDoc.ref.set(updateData, { merge: true });
+            console.log('14. Successfully updated user document');
             
             // Return updated subscription data
             return res.json({
+              success: true,
+              isPro: true,
+              modelsRemainingThisMonth: 999999,
+              modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+              downloadsThisMonth: userData.downloadsThisMonth || 0,
+              subscriptionStatus: subscription.status,
+              subscriptionEndDate: subscriptionEndDate,
+              subscriptionPlan: priceId,
+            });
+          } catch (updateError) {
+            console.error('15. Error updating user document:', updateError);
+            // Continue to return the subscription data even if update fails
+            return res.json({
+              success: true,
               isPro: true,
               modelsRemainingThisMonth: 999999,
               modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
@@ -201,99 +223,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               subscriptionPlan: priceId,
             });
           }
-        } catch (stripeError) {
-          console.error('Error checking subscription with Stripe:', stripeError);
-          // Continue to try other methods
         }
+      } catch (stripeError) {
+        console.error('16. Error checking subscription with Stripe:', stripeError);
       }
     }
     
-    // Step 2: Search for Stripe customer by user ID metadata
-    console.log('Searching for Stripe customer by user ID metadata');
-    try {
-      const customers = await stripe.customers.search({
-        query: `metadata['userId']:'${userId}'`,
-        limit: 1
-      });
-      
-      if (customers && customers.data && customers.data.length > 0) {
-        const customer = customers.data[0];
-        console.log(`Found Stripe customer by metadata: ${customer.id}`);
-        
-        // Get subscriptions for this customer
-        const subscriptions = await stripe.subscriptions.list({
-          customer: customer.id,
-          status: 'active',
-          limit: 1
-        });
-        
-        if (subscriptions && subscriptions.data && subscriptions.data.length > 0) {
-          const subscription = subscriptions.data[0];
-          console.log(`Found active subscription: ${subscription.id}`);
-          
-          // Calculate subscription end date
-          const subscriptionEndDate = subscription.current_period_end ? 
-            new Date(subscription.current_period_end * 1000).toISOString() : 
-            new Date().toISOString();
-          
-          // Get price ID with null checks
-          const priceId = subscription.items && 
-                         subscription.items.data && 
-                         subscription.items.data.length > 0 && 
-                         subscription.items.data[0].price ? 
-            subscription.items.data[0].price.id : 
-            'unknown';
-          
-          // Create or update user document with subscription info
-          const updateData = {
-            uid: userId,
-            email: customer.email || '',
-            isPro: true,
-            stripeCustomerId: customer.id,
-            stripeSubscriptionId: subscription.id,
-            subscriptionStatus: subscription.status,
-            subscriptionEndDate: subscriptionEndDate,
-            subscriptionPlan: priceId,
-            modelsRemainingThisMonth: 999999, // Effectively unlimited
-            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
-          };
-          
-          console.log('Creating or updating user document with subscription data');
-          
-          try {
-            await db.collection('users').doc(userId).set(updateData, { merge: true });
-            console.log(`Successfully created/updated user document with subscription data`);
-          } catch (updateError) {
-            console.error('Error creating/updating user document:', updateError);
-            // Throw the error so we can see it in the logs
-            throw updateError;
-          }
-          
-          // Return subscription data
-          return res.json({
-            isPro: true,
-            modelsRemainingThisMonth: 999999,
-            modelsGeneratedThisMonth: 0,
-            downloadsThisMonth: 0,
-            subscriptionStatus: subscription.status,
-            subscriptionEndDate: subscriptionEndDate,
-            subscriptionPlan: priceId,
-          });
-        }
-      }
-    } catch (stripeError) {
-      console.error('Error searching for Stripe customer:', stripeError);
-      // Continue to use free tier defaults
-    }
+    // If we get here, return free tier defaults
+    console.log('17. No active subscription found, returning free tier defaults');
+    return res.json({
+      success: true,
+      ...freeTierDefaults
+    });
     
-    // No subscription found - return free tier defaults
-    console.log('No subscription found for user, returning free tier defaults');
-    return res.json(freeTierDefaults);
-  } catch (error: any) {
-    console.error('Error fetching user subscription:', error);
+  } catch (error) {
+    console.error('18. Error processing request:', error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch subscription information'
+      error: 'Internal server error'
     });
   }
 }

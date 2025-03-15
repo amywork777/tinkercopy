@@ -71,7 +71,7 @@ function getAuthDirectly() {
  * This function is called from the client when a user completes registration
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Set appropriate CORS headers
+  // Set CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -90,127 +90,109 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
-  console.log(`Setup trial request received: ${JSON.stringify(req.body)}`);
-
   try {
-    const { userId, email, idToken } = req.body;
+    console.log('1. Received setup trial request:', {
+      method: req.method,
+      headers: req.headers,
+      body: req.body
+    });
 
-    if (!userId) {
-      console.error('Missing required userId parameter');
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Missing required parameter: userId is required' 
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      console.error('2. Missing idToken in request body');
+      return res.status(400).json({
+        success: false,
+        error: 'Missing idToken in request body'
       });
     }
 
-    if (!email) {
-      console.error('Missing required email parameter');
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Missing required parameter: email is required' 
-      });
-    }
-
-    // Initialize Firebase directly
+    console.log('3. Initializing Firebase Admin...');
     const adminSdk = initializeFirebaseDirectly();
+    const auth = adminSdk.auth();
     const db = getFirestoreDirectly();
-    const auth = getAuthDirectly();
 
-    // Verify the Firebase ID token if provided (extra security)
-    if (idToken) {
-      try {
-        await auth.verifyIdToken(idToken);
-        console.log('ID token verified successfully');
-      } catch (tokenError) {
-        console.error('Error verifying ID token:', tokenError);
-        return res.status(403).json({ 
-          success: false, 
-          message: 'Invalid authentication token' 
-        });
-      }
-    }
+    console.log('4. Verifying ID token...');
+    const decodedToken = await auth.verifyIdToken(idToken);
+    console.log('5. Token verified for user:', decodedToken.uid);
 
-    const userRef = db.collection('users').doc(userId);
+    const userRef = db.collection('users').doc(decodedToken.uid);
     
-    // Check if user already exists in Firestore
+    console.log('6. Checking if user document exists...');
     const userDoc = await userRef.get();
     
     if (userDoc.exists) {
-      // Fix: Add null check and default to empty object
-      const userData = userDoc.data() || {};
+      const userData = userDoc.data();
+      console.log('7. Found existing user data:', userData);
       
-      // Check if user already has pro status or active trial
-      if (userData.isPro === true || userData.trialActive === true) {
-        console.log(`User ${userId} already has Pro access or an active trial`);
-        return res.status(200).json({ 
-          success: true, 
-          message: 'User already has pro access or active trial',
-          status: userData.subscriptionStatus || 'unknown',
-          isPro: userData.isPro || false,
-          trialActive: userData.trialActive || false,
-          trialEndDate: userData.trialEndDate || null
+      // If user already has a subscription or trial, return early
+      if (userData?.subscriptionStatus && userData.subscriptionStatus !== 'none') {
+        console.log('8. User already has subscription:', userData.subscriptionStatus);
+        return res.json({
+          success: true,
+          message: 'User already has an active subscription'
+        });
+      }
+      
+      if (userData?.trialActive) {
+        console.log('9. User already has active trial');
+        return res.json({
+          success: true,
+          message: 'Trial already active'
         });
       }
     }
-    
-    // Calculate trial end time (one hour from now)
+
+    // Calculate trial end date (30 days from now)
     const trialEndDate = new Date();
-    trialEndDate.setHours(trialEndDate.getHours() + 1);
-    
-    console.log(`Setting up one-hour trial for user ${userId} until ${trialEndDate.toISOString()}`);
-    
-    // Set up user document with trial information
-    const userData = {
-      uid: userId,
-      email: email,
-      createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
-      updatedAt: adminSdk.firestore.FieldValue.serverTimestamp(),
-      isPro: true, // Temporarily pro during trial
+    trialEndDate.setDate(trialEndDate.getDate() + 30);
+
+    const updateData = {
+      uid: decodedToken.uid,
+      email: decodedToken.email,
       trialActive: true,
       trialEndDate: trialEndDate.toISOString(),
+      modelsRemainingThisMonth: 2,
+      modelsGeneratedThisMonth: 0,
+      downloadsThisMonth: 0,
       subscriptionStatus: 'trial',
       subscriptionPlan: 'trial',
-      modelsRemainingThisMonth: 999999, // Unlimited during trial
-      lastResetDate: new Date().toISOString().substring(0, 7),
+      createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
+      updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
     };
-    
+
+    console.log('10. Updating user document with trial data:', updateData);
+
     try {
-      // Create or update the user document
-      if (userDoc.exists) {
-        await userRef.update(userData);
-        console.log(`Updated existing user ${userId} with trial information`);
-      } else {
-        await userRef.set(userData);
-        console.log(`Created new user ${userId} with trial information`);
-      }
+      await userRef.set(updateData, { merge: true });
+      console.log('11. Successfully updated user document with trial data');
       
-      // Double-check that the update was applied
+      // Verify the update
       const updatedDoc = await userRef.get();
-      if (!updatedDoc.exists) {
-        console.error(`Failed to create user document for ${userId}`);
-        throw new Error('Failed to create user document');
-      }
+      console.log('12. Verified user document after update:', updatedDoc.data());
       
-      const updatedData = updatedDoc.data();
-      console.log(`User data after update: ${JSON.stringify(updatedData)}`);
-    } catch (dbError) {
-      console.error('Error writing to Firestore:', dbError);
-      throw dbError;
+      return res.json({
+        success: true,
+        message: 'Trial setup successful'
+      });
+    } catch (updateError: any) {
+      console.error('13. Error updating user document:', {
+        error: updateError.message,
+        code: updateError.code,
+        userId: decodedToken.uid
+      });
+      throw updateError;
     }
-    
-    return res.status(200).json({
-      success: true,
-      message: 'One-hour free trial activated successfully',
-      trialEndDate: trialEndDate.toISOString(),
-      isPro: true,
-      trialActive: true
-    });
   } catch (error: any) {
-    console.error('Error setting up trial:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Error setting up trial',
-      error: error.message
+    console.error('14. Error processing request:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: error.message
     });
   }
 } 

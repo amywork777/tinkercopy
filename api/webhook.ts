@@ -155,7 +155,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // Initialize Firestore early
           console.log('9. Initializing Firestore');
           const db = getFirestoreDirectly();
+          console.log('9a. Got Firestore instance:', !!db);
           const userRef = db.collection('users').doc(userId);
+          console.log('9b. Created document reference for user:', userId);
 
           // Get the customer
           console.log('10. Retrieving customer details');
@@ -172,8 +174,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           };
 
-          console.log('12. Updating initial customer info:', initialUpdate);
-          await userRef.set(initialUpdate, { merge: true });
+          console.log('12. Attempting to write initial customer info:', initialUpdate);
+          try {
+            await userRef.set(initialUpdate, { merge: true });
+            console.log('12a. Successfully wrote initial customer info');
+            
+            // Verify the write
+            const docAfterWrite = await userRef.get();
+            console.log('12b. Document after write:', docAfterWrite.exists ? docAfterWrite.data() : 'Document does not exist');
+          } catch (writeError) {
+            console.error('12c. Error writing to Firestore:', writeError);
+            throw writeError;
+          }
         } catch (error) {
           console.error('Error processing checkout session:', error);
           throw error;
@@ -192,12 +204,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           // Find user by Stripe customer ID
+          console.log('13. Getting Firestore instance');
           const db = getFirestoreDirectly();
+          console.log('13a. Got Firestore instance:', !!db);
+          
+          console.log('14. Querying for user with stripeCustomerId:', subscription.customer);
           const snapshot = await db
             .collection('users')
             .where('stripeCustomerId', '==', subscription.customer)
             .limit(1)
             .get();
+
+          console.log('14a. Query complete. Empty?', snapshot.empty);
 
           if (snapshot.empty) {
             console.error('No user found with customer ID:', subscription.customer);
@@ -205,22 +223,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           const userDoc = snapshot.docs[0];
+          console.log('15. Found user document:', userDoc.id);
+          
           const updateData = {
             isPro: true,
+            stripeCustomerId: subscription.customer,
             subscriptionId: subscription.id,
             subscriptionStatus: subscription.status,
             subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
             subscriptionPlan: subscription.items?.data?.[0]?.price?.id || 'pro',
             modelsRemainingThisMonth: 999999,
+            lastResetDate: new Date().toISOString().slice(0, 7), // Format: "YYYY-MM"
+            trialActive: false,
+            trialEndDate: null,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           };
 
-          console.log('Updating user subscription data:', updateData);
-          await userDoc.ref.set(updateData, { merge: true });
-
-          // Verify the update
-          const updatedDoc = await userDoc.ref.get();
-          console.log('Updated user data:', updatedDoc.data());
+          console.log('16. Attempting to update user subscription data:', updateData);
+          try {
+            await userDoc.ref.set(updateData, { merge: true });
+            console.log('16a. Successfully updated subscription data');
+            
+            // Verify the write
+            const docAfterWrite = await userDoc.ref.get();
+            console.log('16b. Document after write:', docAfterWrite.exists ? docAfterWrite.data() : 'Document does not exist');
+          } catch (writeError) {
+            console.error('16c. Error writing to Firestore:', writeError);
+            throw writeError;
+          }
         } catch (error) {
           console.error('Error processing subscription:', error);
           throw error;
@@ -248,6 +278,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               subscriptionStatus: 'none',
               subscriptionPlan: 'free',
               modelsRemainingThisMonth: 2,
+              lastResetDate: new Date().toISOString().slice(0, 7), // Format: "YYYY-MM"
+              trialActive: false,
+              trialEndDate: null,
+              subscriptionEndDate: null,
+              subscriptionId: null,
               updatedAt: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
           }

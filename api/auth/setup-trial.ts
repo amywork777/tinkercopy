@@ -137,29 +137,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Calculate trial end date (30 days from now)
+    // Calculate trial end date (one hour from now)
     const trialEndDate = new Date();
-    trialEndDate.setDate(trialEndDate.getDate() + 30);
+    trialEndDate.setHours(trialEndDate.getHours() + 1);
 
     const updateData = {
       uid: decodedToken.uid,
-      email: decodedToken.email,
+      email: decodedToken.email || '',
+      displayName: decodedToken.name || '',
+      isPro: true, // Pro access during trial
+      lastResetDate: new Date().toISOString().slice(0, 7), // Format: "YYYY-MM"
+      modelsRemainingThisMonth: 999999, // Unlimited during trial
+      photoURL: decodedToken.picture || '',
+      subscriptionEndDate: trialEndDate.toISOString(),
+      subscriptionPlan: 'trial',
+      subscriptionStatus: 'trial',
       trialActive: true,
       trialEndDate: trialEndDate.toISOString(),
-      modelsRemainingThisMonth: 2,
-      modelsGeneratedThisMonth: 0,
-      downloadsThisMonth: 0,
-      subscriptionStatus: 'trial',
-      subscriptionPlan: 'trial',
       createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
       updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
     };
 
-    console.log('10. Updating user document with trial data:', updateData);
+    console.log('10. Updating user document with initial data:', updateData);
 
     try {
-      await userRef.set(updateData, { merge: true });
-      console.log('11. Successfully updated user document with trial data');
+      await userRef.set(updateData);  // Remove merge:true to ensure clean document
+      console.log('11. Successfully created user document');
       
       // Verify the update
       const updatedDoc = await userRef.get();

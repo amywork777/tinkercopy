@@ -7,7 +7,7 @@ let firebaseInitialized = false;
 
 // Initialize Firebase Admin if needed
 function initializeFirebaseDirectly() {
-  if (!admin.apps || !admin.apps.length) {
+  if (!admin.apps.length) {
     try {
       // Try to load service account from environment variable
       const privateKey = process.env.FIREBASE_PRIVATE_KEY 
@@ -25,6 +25,19 @@ function initializeFirebaseDirectly() {
       if (!process.env.FIREBASE_CLIENT_EMAIL) {
         throw new Error('Firebase client email is missing');
       }
+
+      // Derive admin storage bucket from public bucket if not set
+      const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 
+        (process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET 
+          ? process.env.FIREBASE_PROJECT_ID + '.appspot.com'
+          : 'taiyaki-test1.appspot.com');
+
+      console.log('Initializing Firebase with:', {
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        hasPrivateKey: !!privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        storageBucket: storageBucket
+      });
       
       const credential = admin.credential.cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -34,15 +47,17 @@ function initializeFirebaseDirectly() {
       
       admin.initializeApp({
         credential: credential,
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'model-fusion-studio.appspot.com'
+        storageBucket: storageBucket
       });
       
       firebaseInitialized = true;
-      console.log('Firebase Admin SDK initialized directly in setup-trial endpoint');
+      console.log('Firebase Admin SDK initialized successfully');
     } catch (error) {
-      console.error('Error initializing Firebase directly:', error);
+      console.error('Error initializing Firebase:', error);
       throw error;
     }
+  } else {
+    console.log('Firebase Admin SDK already initialized');
   }
   
   return admin;
@@ -50,14 +65,28 @@ function initializeFirebaseDirectly() {
 
 // Get the Firestore instance, initializing Firebase if necessary
 function getFirestoreDirectly() {
-  const adminInstance = initializeFirebaseDirectly();
-  return adminInstance.firestore();
+  try {
+    const adminInstance = initializeFirebaseDirectly();
+    const db = adminInstance.firestore();
+    console.log('Successfully got Firestore instance');
+    return db;
+  } catch (error) {
+    console.error('Error getting Firestore instance:', error);
+    throw error;
+  }
 }
 
 // Get the Auth instance, initializing Firebase if necessary
 function getAuthDirectly() {
-  const adminInstance = initializeFirebaseDirectly();
-  return adminInstance.auth();
+  try {
+    const adminInstance = initializeFirebaseDirectly();
+    const auth = adminInstance.auth();
+    console.log('Successfully got Auth instance');
+    return auth;
+  } catch (error) {
+    console.error('Error getting Auth instance:', error);
+    throw error;
+  }
 }
 
 /**
@@ -101,10 +130,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    console.log('3. Initializing Firebase Admin...');
-    const adminSdk = initializeFirebaseDirectly();
-    const auth = adminSdk.auth();
+    console.log('3. Getting Firebase instances...');
     const db = getFirestoreDirectly();
+    const auth = getAuthDirectly();
 
     console.log('4. Verifying ID token...');
     const decodedToken = await auth.verifyIdToken(idToken);
@@ -154,26 +182,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       subscriptionStatus: 'trial',
       trialActive: true,
       trialEndDate: trialEndDate.toISOString(),
-      createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
-      updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    console.log('10. Updating user document with initial data:', updateData);
+    console.log('10. Creating user document with initial data:', updateData);
 
     try {
-      await userRef.set(updateData);  // Remove merge:true to ensure clean document
+      await userRef.set(updateData);
       console.log('11. Successfully created user document');
       
       // Verify the update
       const updatedDoc = await userRef.get();
+      if (!updatedDoc.exists) {
+        throw new Error('Document was not created');
+      }
       console.log('12. Verified user document after update:', updatedDoc.data());
       
       return res.json({
         success: true,
-        message: 'Trial setup successful'
+        message: 'Trial setup successful',
+        trialEndDate: trialEndDate.toISOString()
       });
     } catch (updateError: any) {
-      console.error('13. Error updating user document:', {
+      console.error('13. Error creating user document:', {
         error: updateError.message,
         code: updateError.code,
         userId: decodedToken.uid

@@ -1,11 +1,13 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import * as admin from 'firebase-admin';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-// Initialize Firebase Admin ONCE
-if (!admin.apps.length) {
+// Initialize Firebase Admin ONCE using modern ESM approach
+if (!getApps().length) {
   try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
+    initializeApp({
+      credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
@@ -17,6 +19,10 @@ if (!admin.apps.length) {
     console.error('Firebase Admin initialization error:', error);
   }
 }
+
+// Get service instances
+const auth = getAuth();
+const db = getFirestore();
 
 /**
  * Sets up a one-hour free trial for a newly registered user
@@ -57,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Verify token first
     console.log('Verifying token...');
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decodedToken = await auth.verifyIdToken(idToken);
     console.log('Token verified for user:', decodedToken.uid);
 
     if (decodedToken.uid !== userId) {
@@ -66,8 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Create/update user document
-    console.log('Getting Firestore instance...');
-    const db = admin.firestore();
+    console.log('Getting user document reference...');
     const userRef = db.collection('users').doc(userId);
 
     const trialEndDate = new Date();
@@ -86,8 +91,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       subscriptionEndDate: trialEndDate.toISOString(),
       modelsRemainingThisMonth: 999999,
       lastResetDate: new Date().toISOString().slice(0, 7),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
     };
 
     console.log('Writing user data:', { ...userData, uid: '[REDACTED]' });

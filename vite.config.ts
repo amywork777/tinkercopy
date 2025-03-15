@@ -14,6 +14,15 @@ function ensureResolvePlugin() {
   return {
     name: 'ensure-resolve',
     resolveId(id: string) {
+      // Handle three.js special cases
+      if (id.startsWith('three/examples/') || id.startsWith('three/addons/')) {
+        const threeBasePath = path.resolve(__dirname, 'node_modules/three');
+        const relativePath = id.replace('three/', '');
+        const fullPath = path.join(threeBasePath, relativePath);
+        console.log(`VITE: Resolving Three.js path ${id} to ${fullPath}`);
+        return fullPath;
+      }
+      
       // Explicitly handle these modules to prevent resolution issues
       if (['zustand', 'three', 'three-csg-ts', 'framer-motion'].includes(id)) {
         try {
@@ -24,6 +33,7 @@ function ensureResolvePlugin() {
           console.error(`VITE: Failed to resolve ${id}:`, e);
         }
       }
+      
       return null;
     }
   };
@@ -31,7 +41,19 @@ function ensureResolvePlugin() {
 
 export default defineConfig({
   optimizeDeps: {
-    include: ['zustand', 'three', 'three-csg-ts', 'framer-motion'],
+    include: [
+      'zustand', 
+      'three', 
+      'three-csg-ts', 
+      'framer-motion',
+      'three/examples/jsm/loaders/STLLoader.js',
+      'three/examples/jsm/exporters/STLExporter.js',
+      'three/examples/jsm/controls/OrbitControls.js',
+      'three/examples/jsm/loaders/SVGLoader.js',
+      'three/examples/jsm/loaders/FontLoader.js',
+      'three/examples/jsm/geometries/TextGeometry.js',
+      'three/examples/jsm/utils/BufferGeometryUtils.js'
+    ],
     force: true
   },
   plugins: [
@@ -53,8 +75,8 @@ export default defineConfig({
       "@": path.resolve(__dirname, "client", "src"),
       "@shared": path.resolve(__dirname, "shared"),
       "zustand": path.resolve(__dirname, "node_modules/zustand/dist/index.mjs"),
-      "three": path.resolve(__dirname, "node_modules/three/build/three.module.js"),
-      "three-csg-ts": path.resolve(__dirname, "node_modules/three-csg-ts/lib/esm/index.js"),
+      "three": path.resolve(__dirname, "node_modules/three"),
+      "three-csg-ts": path.resolve(__dirname, "node_modules/three-csg-ts/lib/esm"),
       "framer-motion": path.resolve(__dirname, "node_modules/framer-motion/dist/framer-motion.js")
     },
     dedupe: ['zustand', 'three', 'react', 'react-dom', 'framer-motion'],

@@ -9,6 +9,7 @@ let firebaseInitialized = false;
 function initializeFirebaseDirectly() {
   if (!admin.apps.length) {
     try {
+      console.log('Starting Firebase initialization...');
       // Try to load service account from environment variable
       const privateKey = process.env.FIREBASE_PRIVATE_KEY 
         ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
@@ -26,17 +27,15 @@ function initializeFirebaseDirectly() {
         throw new Error('Firebase client email is missing');
       }
 
-      // Derive admin storage bucket from public bucket if not set
-      const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 
-        (process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET 
-          ? process.env.FIREBASE_PROJECT_ID + '.appspot.com'
-          : 'taiyaki-test1.appspot.com');
+      // Use the storage bucket from environment variables
+      const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app';
 
-      console.log('Initializing Firebase with:', {
+      console.log('Firebase configuration:', {
         projectId: process.env.FIREBASE_PROJECT_ID,
         hasPrivateKey: !!privateKey,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        storageBucket: storageBucket
+        storageBucket: storageBucket,
+        privateKeyLength: privateKey?.length
       });
       
       const credential = admin.credential.cert({
@@ -45,6 +44,8 @@ function initializeFirebaseDirectly() {
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       });
       
+      console.log('Created admin credential, initializing app...');
+      
       admin.initializeApp({
         credential: credential,
         storageBucket: storageBucket
@@ -52,8 +53,18 @@ function initializeFirebaseDirectly() {
       
       firebaseInitialized = true;
       console.log('Firebase Admin SDK initialized successfully');
-    } catch (error) {
-      console.error('Error initializing Firebase:', error);
+
+      // Verify initialization by trying to access Firestore
+      const db = admin.firestore();
+      console.log('Firestore access verified');
+      
+      return admin;
+    } catch (error: any) {
+      console.error('Error initializing Firebase:', {
+        error: error.message,
+        stack: error.stack,
+        code: error.code
+      });
       throw error;
     }
   } else {
@@ -66,12 +77,29 @@ function initializeFirebaseDirectly() {
 // Get the Firestore instance, initializing Firebase if necessary
 function getFirestoreDirectly() {
   try {
+    console.log('Getting Firestore instance...');
     const adminInstance = initializeFirebaseDirectly();
     const db = adminInstance.firestore();
+    
+    // Verify Firestore connection
+    console.log('Testing Firestore connection...');
+    db.collection('_test_').doc('_test_').set({ test: true }, { merge: true })
+      .then(() => {
+        console.log('Firestore write test successful');
+        db.collection('_test_').doc('_test_').delete()
+          .then(() => console.log('Test document cleaned up'))
+          .catch((err: any) => console.error('Error cleaning up test document:', err));
+      })
+      .catch((err: any) => console.error('Firestore write test failed:', err));
+    
     console.log('Successfully got Firestore instance');
     return db;
-  } catch (error) {
-    console.error('Error getting Firestore instance:', error);
+  } catch (error: any) {
+    console.error('Error getting Firestore instance:', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code
+    });
     throw error;
   }
 }
@@ -79,12 +107,17 @@ function getFirestoreDirectly() {
 // Get the Auth instance, initializing Firebase if necessary
 function getAuthDirectly() {
   try {
+    console.log('Getting Auth instance...');
     const adminInstance = initializeFirebaseDirectly();
     const auth = adminInstance.auth();
     console.log('Successfully got Auth instance');
     return auth;
-  } catch (error) {
-    console.error('Error getting Auth instance:', error);
+  } catch (error: any) {
+    console.error('Error getting Auth instance:', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code
+    });
     throw error;
   }
 }
@@ -120,13 +153,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: req.body
     });
 
-    const { idToken } = req.body;
+    const { idToken, userId, email } = req.body;
 
-    if (!idToken) {
-      console.error('2. Missing idToken in request body');
+    if (!idToken || !userId || !email) {
+      console.error('2. Missing required fields in request body:', { 
+        hasIdToken: !!idToken,
+        hasUserId: !!userId,
+        hasEmail: !!email
+      });
       return res.status(400).json({
         success: false,
-        error: 'Missing idToken in request body'
+        error: 'Missing required fields in request body'
       });
     }
 
@@ -138,18 +175,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const decodedToken = await auth.verifyIdToken(idToken);
     console.log('5. Token verified for user:', decodedToken.uid);
 
-    const userRef = db.collection('users').doc(decodedToken.uid);
+    // Verify that the provided userId matches the token
+    if (decodedToken.uid !== userId) {
+      console.error('6. User ID mismatch:', {
+        providedUserId: userId,
+        tokenUserId: decodedToken.uid
+      });
+      return res.status(403).json({
+        success: false,
+        error: 'User ID mismatch'
+      });
+    }
+
+    // Verify that the provided email matches the token
+    if (decodedToken.email !== email) {
+      console.error('7. Email mismatch:', {
+        providedEmail: email,
+        tokenEmail: decodedToken.email
+      });
+      return res.status(403).json({
+        success: false,
+        error: 'Email mismatch'
+      });
+    }
+
+    const userRef = db.collection('users').doc(userId);
     
-    console.log('6. Checking if user document exists...');
+    console.log('8. Checking if user document exists...');
     const userDoc = await userRef.get();
     
     if (userDoc.exists) {
       const userData = userDoc.data();
-      console.log('7. Found existing user data:', userData);
+      console.log('9. Found existing user data:', userData);
       
       // If user already has a subscription or trial, return early
       if (userData?.subscriptionStatus && userData.subscriptionStatus !== 'none') {
-        console.log('8. User already has subscription:', userData.subscriptionStatus);
+        console.log('10. User already has subscription:', userData.subscriptionStatus);
         return res.json({
           success: true,
           message: 'User already has an active subscription'
@@ -157,7 +218,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       
       if (userData?.trialActive) {
-        console.log('9. User already has active trial');
+        console.log('11. User already has active trial');
         return res.json({
           success: true,
           message: 'Trial already active'
@@ -186,18 +247,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    console.log('10. Creating user document with initial data:', updateData);
+    console.log('12. Creating user document with initial data:', updateData);
 
     try {
       await userRef.set(updateData);
-      console.log('11. Successfully created user document');
+      console.log('13. Successfully created user document');
       
       // Verify the update
       const updatedDoc = await userRef.get();
       if (!updatedDoc.exists) {
         throw new Error('Document was not created');
       }
-      console.log('12. Verified user document after update:', updatedDoc.data());
+      console.log('14. Verified user document after update:', updatedDoc.data());
       
       return res.json({
         success: true,
@@ -205,7 +266,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         trialEndDate: trialEndDate.toISOString()
       });
     } catch (updateError: any) {
-      console.error('13. Error creating user document:', {
+      console.error('15. Error creating user document:', {
         error: updateError.message,
         code: updateError.code,
         userId: decodedToken.uid
@@ -213,7 +274,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw updateError;
     }
   } catch (error: any) {
-    console.error('14. Error processing request:', {
+    console.error('16. Error processing request:', {
       message: error.message,
       code: error.code,
       stack: error.stack

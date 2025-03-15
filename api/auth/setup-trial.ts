@@ -11,10 +11,10 @@ if (!getApps().length) {
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-      }),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+      })
+      // Remove storage bucket as it's not needed for Firestore operations
     });
-    console.log('Firebase Admin initialized successfully in setup-trial');
+    console.log('Firebase Admin initialized successfully in setup-trial with project:', process.env.FIREBASE_PROJECT_ID);
   } catch (error) {
     console.error('Firebase Admin initialization error:', error);
     throw error; // Re-throw to prevent silent failures
@@ -120,18 +120,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       updatedAt: FieldValue.serverTimestamp()
     };
 
-    console.log('Writing user data:', { ...userData, uid: '[REDACTED]' });
+    console.log('Writing user data to Firestore:', {
+      collection: 'users',
+      docId: userId,
+      data: { ...userData, uid: '[REDACTED]' }
+    });
     
     try {
+      // First attempt to write
       await userRef.set(userData, { merge: true });
       
-      // Verify the write
+      // Verify the write immediately
       console.log('Verifying document write...');
       const doc = await userRef.get();
       if (!doc.exists) {
-        throw new Error('Failed to create user document');
+        throw new Error('Failed to create user document - document does not exist after write');
       }
-      console.log('Document write verified:', doc.data());
+      
+      // Verify the data was written correctly
+      const writtenData = doc.data();
+      if (!writtenData || !writtenData.uid || !writtenData.email) {
+        throw new Error('Failed to create user document - missing required fields after write');
+      }
+      
+      console.log('Document write verified successfully:', {
+        exists: doc.exists,
+        hasUid: !!writtenData.uid,
+        hasEmail: !!writtenData.email,
+        isPro: writtenData.isPro,
+        trialActive: writtenData.trialActive
+      });
     } catch (error) {
       console.error('Error writing to Firestore:', error);
       throw error;

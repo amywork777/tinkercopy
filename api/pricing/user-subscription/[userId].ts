@@ -12,10 +12,10 @@ if (!getApps().length) {
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-      }),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+      })
+      // Remove storage bucket as it's not needed for Firestore operations
     });
-    console.log('Firebase Admin initialized successfully in user-subscription endpoint');
+    console.log('Firebase Admin initialized successfully in user-subscription with project:', process.env.FIREBASE_PROJECT_ID);
   } catch (error) {
     console.error('Firebase Admin initialization error:', error);
     throw error; // Re-throw to prevent silent failures
@@ -73,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    console.log(`Getting subscription status for user: ${userId}`);
+    console.log(`Getting subscription status for user: ${userId} from Firestore`);
 
     // Get user data from Firestore
     const userRef = db.collection('users').doc(userId);
@@ -81,12 +81,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // If user doesn't exist, return free tier defaults
     if (!userDoc.exists) {
-      console.log(`User ${userId} not found, returning free tier defaults`);
+      console.log(`User ${userId} not found in Firestore, returning free tier defaults`);
       return res.status(200).json(freeTierDefaults);
     }
 
     const userData = userDoc.data();
-    console.log('Found user data:', {
+    console.log('Found user data in Firestore:', {
       ...userData,
       uid: '[REDACTED]',
       email: '[REDACTED]'
@@ -114,6 +114,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (!subscriptions.data.length) {
         console.log(`No active subscriptions found for customer ${stripeCustomerId}`);
+        
+        // Update Firestore to reflect no active subscription
+        await userRef.set({
+          isPro: false,
+          subscriptionStatus: 'none',
+          subscriptionPlan: 'free',
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        
         return res.status(200).json({
           ...freeTierDefaults,
           ...userData,
@@ -131,13 +140,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         priceId: price.id
       });
 
-      const response = {
+      // Update Firestore with latest subscription status
+      const updateData = {
         subscriptionStatus: subscription.status,
         subscriptionPlan: price.id,
         isPro: true,
         currentPeriodEnd: new Date(subscription.current_period_end * 1000).toISOString(),
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        ...userData
+        updatedAt: new Date().toISOString()
+      };
+
+      console.log('Updating Firestore with subscription data:', updateData);
+      await userRef.set(updateData, { merge: true });
+
+      const response = {
+        ...userData,
+        ...updateData
       };
 
       console.log('=== USER SUBSCRIPTION REQUEST END ===');

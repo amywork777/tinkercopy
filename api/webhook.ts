@@ -3,64 +3,27 @@ import { Stripe } from 'stripe';
 import * as admin from 'firebase-admin';
 import { buffer } from 'micro';
 
-// PRODUCTION HOTFIX: Direct Firebase initialization for Vercel deployment
-// This ensures the API works even if utils/firebase-admin.ts is missing
-let firebaseInitialized = false;
-
-// Initialize Firebase Admin if needed
-function initializeFirebaseDirectly() {
-  if (!firebaseInitialized && !admin.apps.length) {
-    try {
-      // Try to load service account from environment variable
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-        ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-        : undefined;
-      
-      // Add validation for required environment variables
-      if (!privateKey) {
-        console.error('Firebase private key is missing or invalid');
-      }
-      
-      if (!process.env.FIREBASE_PROJECT_ID) {
-        console.error('Firebase project ID is missing');
-      }
-      
-      if (!process.env.FIREBASE_CLIENT_EMAIL) {
-        console.error('Firebase client email is missing');
-      }
-      
-      const credential = admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey || '',
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
-      });
-      
-      admin.initializeApp({
-        credential: credential,
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'model-fusion-studio.appspot.com'
-      });
-      
-      firebaseInitialized = true;
-      console.log('Firebase Admin SDK initialized directly in webhook handler');
-    } catch (error) {
-      console.error('Error initializing Firebase directly:', error);
-      throw error;
-    }
-  } else if (firebaseInitialized) {
-    console.log('Using existing Firebase Admin SDK instance');
-  } else if (admin.apps.length) {
-    firebaseInitialized = true;
-    console.log('Using existing Firebase Admin app');
+// Initialize Firebase Admin ONCE
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+      }),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+    });
+    console.log('Firebase Admin initialized successfully in webhook');
+  } catch (error) {
+    console.error('Firebase Admin initialization error:', error);
   }
-  
-  return admin;
 }
 
-// Get the Firestore instance, initializing Firebase if necessary
-function getFirestoreDirectly() {
-  const adminInstance = initializeFirebaseDirectly();
-  return adminInstance.firestore();
-}
+// Initialize Stripe with the secret key
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2023-10-16' as any,
+});
 
 // Define interfaces for type safety
 interface UserData {
@@ -84,12 +47,6 @@ export const config = {
     bodyParser: false, // Disable body parsing, needed for Stripe webhook verification
   },
 };
-
-// Initialize Stripe with the secret key
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
-const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2023-10-16' as any,
-});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const rawBody = await buffer(req);
@@ -154,7 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           // Initialize Firestore early
           console.log('9. Initializing Firestore');
-          const db = getFirestoreDirectly();
+          const db = admin.firestore();
           console.log('9a. Got Firestore instance:', !!db);
           const userRef = db.collection('users').doc(userId);
           console.log('9b. Created document reference for user:', userId);
@@ -205,7 +162,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           // Find user by Stripe customer ID
           console.log('13. Getting Firestore instance');
-          const db = getFirestoreDirectly();
+          const db = admin.firestore();
           console.log('13a. Got Firestore instance:', !!db);
           
           console.log('14. Querying for user with stripeCustomerId:', subscription.customer);
@@ -264,7 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           // Find user by Stripe customer ID
-          const db = getFirestoreDirectly();
+          const db = admin.firestore();
           const snapshot = await db
             .collection('users')
             .where('stripeCustomerId', '==', subscription.customer)

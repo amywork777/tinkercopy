@@ -127,6 +127,21 @@ if (!fs.existsSync(stlFilesDir)) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Function to find an available port
+const findAvailablePort = (startPort) => {
+  return new Promise((resolve) => {
+    const server = require('net').createServer();
+    server.listen(startPort, () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+    server.on('error', () => {
+      // Port is in use, try the next one
+      resolve(findAvailablePort(startPort + 1));
+    });
+  });
+};
+
 // Configure allowed origins for CORS
 const allowedOrigins = [
   'http://localhost:5173',      // Local Vite dev server
@@ -1382,35 +1397,179 @@ app.get('/api/order-details', async (req, res) => {
 });
 
 // Webhook handling for Stripe events
-app.post('/api/webhook', async (req, res) => {
+app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  
+  console.log('Webhook received, verifying signature with secret starting with:', webhookSecret ? webhookSecret.substring(0, 8) + '...' : 'undefined');
+  
+  let event;
   
   try {
-    // Verify the event came from Stripe
-    const event = stripe.webhooks.constructEvent(
-      req.body,
+    // Ensure we have the raw request body for signature verification
+    const payload = req.body;
+    event = stripe.webhooks.constructEvent(
+      payload,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test'
+      webhookSecret
     );
     
-    // Handle the event based on its type
+    console.log(`Webhook event verified successfully: ${event.type}`);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+  
+  // Handle the event based on its type
+  try {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        console.log('Payment successful for session:', session.id);
+        console.log('Processing checkout.session.completed for session:', session.id);
         
-        // Process the completed checkout session
-        await handleSuccessfulPayment(session);
+        if (session.mode === 'subscription') {
+          // This is a subscription checkout, update the user's membership
+          console.log('Subscription checkout completed, updating user membership');
+          
+          // Get the subscription to check its status
+          const subscription = await stripe.subscriptions.retrieve(session.subscription);
+          console.log('Subscription status:', subscription.status);
+          
+          // Get the customer ID from the session
+          const customerId = session.customer;
+          
+          if (firestore) {
+            // First try to find user by customer ID
+            const usersRef = firestore.collection('users');
+            let userSnapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
+            
+            // If no user found by customer ID, try using metadata
+            let userId;
+            if (userSnapshot.empty) {
+              // Look for userId in session metadata
+              if (session.metadata && session.metadata.userId) {
+                userId = session.metadata.userId;
+                console.log(`User not found by customer ID, using userId from metadata: ${userId}`);
+              } else {
+                // Look for userId in customer metadata
+                const customer = await stripe.customers.retrieve(customerId);
+                if (customer && customer.metadata && customer.metadata.userId) {
+                  userId = customer.metadata.userId;
+                  console.log(`User not found by customer ID, using userId from customer metadata: ${userId}`);
+                } else {
+                  console.error('No user found with customer ID and no userId in metadata');
+                  break;
+                }
+              }
+            } else {
+              userId = userSnapshot.docs[0].id;
+              console.log(`User found by customer ID: ${userId}`);
+            }
+            
+            // Now update the user's subscription status
+            try {
+              const userRef = firestore.collection('users').doc(userId);
+              await userRef.set({
+                isPro: true,
+                stripeCustomerId: customerId,
+                stripeSubscriptionId: subscription.id,
+                subscriptionStatus: subscription.status,
+                subscriptionEndDate: new Date(subscription.current_period_end * 1000),
+                modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
+                subscriptionPlan: 'monthly', // Only monthly plan is available now
+                trialActive: false,
+                lastUpdated: new Date()
+              }, { merge: true });
+              
+              console.log(`Successfully updated user ${userId} to PRO status`);
+            } catch (updateError) {
+              console.error('Error updating user in Firestore:', updateError);
+            }
+          } else {
+            console.log('Firestore not available, skipping user update');
+          }
+        } else {
+          // This is a one-time payment checkout (not subscription)
+          await handleSuccessfulPayment(session);
+        }
         break;
       }
-      // Add more cases for other events you want to handle
+      
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        console.log('Processing subscription update:', subscription.id);
+        
+        // Get the customer ID from the subscription
+        const customerId = subscription.customer;
+        
+        if (firestore) {
+          // Find the user by customer ID
+          const usersRef = firestore.collection('users');
+          const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
+          
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            const userId = userDoc.id;
+            
+            // Check if subscription is active
+            const isActive = ['active', 'trialing'].includes(subscription.status);
+            
+            // Update the user's subscription status
+            await firestore.collection('users').doc(userId).set({
+              isPro: isActive,
+              subscriptionStatus: subscription.status,
+              subscriptionEndDate: new Date(subscription.current_period_end * 1000),
+              modelsRemainingThisMonth: isActive ? Infinity : 0,
+              lastUpdated: new Date()
+            }, { merge: true });
+            
+            console.log(`Updated subscription status for user ${userId} to ${subscription.status}`);
+          } else {
+            console.log('No user found with customer ID:', customerId);
+          }
+        }
+        break;
+      }
+      
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        console.log('Processing subscription deletion:', subscription.id);
+        
+        // Get the customer ID from the subscription
+        const customerId = subscription.customer;
+        
+        if (firestore) {
+          // Find the user by customer ID
+          const usersRef = firestore.collection('users');
+          const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
+          
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            const userId = userDoc.id;
+            
+            // Update the user's subscription status to cancelled
+            await firestore.collection('users').doc(userId).set({
+              isPro: false,
+              subscriptionStatus: 'canceled',
+              modelsRemainingThisMonth: 0,
+              lastUpdated: new Date()
+            }, { merge: true });
+            
+            console.log(`Marked subscription as canceled for user ${userId}`);
+          } else {
+            console.log('No user found with customer ID:', customerId);
+          }
+        }
+        break;
+      }
     }
-    
-    res.json({received: true});
-  } catch (err) {
-    console.error('Webhook Error:', err.message);
-    res.status(400).send(`Webhook Error: ${err.message}`);
+  } catch (error) {
+    console.error('Error processing webhook event:', error);
+    // Don't return error status to Stripe - acknowledge receipt but log the error
   }
+  
+  // Return a 200 response to acknowledge receipt of the event
+  res.json({ received: true });
 });
 
 // Add an endpoint to download a stored STL file from Firebase Storage
@@ -2664,496 +2823,19 @@ app.all('*', (req, res) => {
 });
 
 // Start the server
-app.listen(PORT, () => {
-  console.log(`Simple checkout server running at http://localhost:${PORT}`);
-}); 
-
-// MOVE THIS HANDLER HERE - BEFORE the catchall route and app.listen()
-// Special handler for the www domain path that was returning 405 errors
-app.get('/pricing/create-checkout-session', async (req, res) => {
-  console.log('Received GET request to /pricing/create-checkout-session with query params:', req.query);
-  
-  // Set headers explicitly to ensure JSON response
-  res.setHeader('Content-Type', 'application/json');
-  
-  // If this is a query string format, extract parameters
-  const priceId = req.query.priceId;
-  const userId = req.query.userId;
-  const email = req.query.email;
-  
-  if (!priceId || !userId || !email) {
-    console.log('Missing required parameters in GET request:', req.query);
-    return res.status(400).json({ 
-      error: 'Missing required parameters', 
-      message: 'This endpoint requires priceId, userId, and email parameters',
-      received: req.query
-    });
-  }
-  
-  console.log('Processing checkout with parameters:', { priceId, userId, email });
-  
+(async () => {
   try {
-    // Always create a new customer for simplicity
-    const customer = await stripe.customers.create({
-      email: email,
-      metadata: {
-        userId: userId,
-      },
+    // Try to use the specified port, or find an available one
+    const availablePort = await findAvailablePort(PORT);
+    
+    app.listen(availablePort, () => {
+      console.log(`Simple checkout server running at http://localhost:${availablePort}`);
     });
-    const customerId = customer.id;
-    console.log(`Created new Stripe customer: ${customerId}`);
-    
-    // Update Firestore if available
-    if (firestore) {
-      try {
-        const userRef = firestore.collection('users').doc(userId);
-        await userRef.set({
-          stripeCustomerId: customerId,
-        }, { merge: true });
-        console.log('Updated Firestore with new customer ID');
-      } catch (firestoreError) {
-        console.error('Error updating Firestore:', firestoreError);
-        // Continue anyway
-      }
-    }
-    
-    // Create a checkout session with the customer
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${req.headers.origin || 'https://www.fishcad.com'}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin || 'https://www.fishcad.com'}/pricing`,
-      metadata: {
-        userId: userId,
-      },
-    });
-    
-    console.log('Checkout session created with URL:', session.url);
-    
-    // Return the session URL as JSON
-    return res.status(200).json({ url: session.url });
   } catch (error) {
-    console.error('Error creating checkout session:', error);
-    return res.status(500).json({ 
-      error: 'Failed to create checkout session', 
-      details: error.message 
-    });
+    console.error('Failed to start server:', error);
+    process.exit(1);
   }
-}); 
+})();
 
-// POST handler for creating a checkout session
-app.post('/pricing/create-checkout-session', async (req, res) => {
-  try {
-    // ... existing code ...
-  } catch (error) {
-    console.error('Error creating checkout session:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET handler for creating a checkout session - should be here, BEFORE app.listen
-app.get('/pricing/create-checkout-session', async (req, res) => {
-  try {
-    console.log('GET handler for checkout session called');
-    
-    // Get parameters from query string
-    const { priceId, userId, email } = req.query;
-    
-    if (!priceId) {
-      return res.status(400).json({ error: 'Missing required parameter: priceId' });
-    }
-    
-    // Create a checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${req.headers.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin}/pricing`,
-      client_reference_id: userId,
-      customer_email: email,
-    });
-    
-    // Return the checkout session URL
-    res.json({ url: session.url });
-  } catch (error) {
-    console.error('Error in GET create-checkout-session:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Cancel subscription
-app.post('/pricing/cancel-subscription', async (req, res) => {
-  // ... existing code ...
-});
-
-// GET handler for user subscription
-app.get('/pricing/user-subscription', async (req, res) => {
-  // ... existing code ...
-});
-
-// Verify subscription
-app.post('/pricing/verify-subscription', async (req, res) => {
-  // ... existing code ...
-});
-
-// Handle any other routes
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not found' });
-});
-
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-}); 
-
-// Add a REST API endpoint for the new client
-app.get('/api/pricing/create-checkout-session', async (req, res) => {
-  try {
-    console.log('GET API handler for checkout session called');
-    
-    // Get parameters from query string
-    const { priceId, userId, email } = req.query;
-    
-    if (!priceId) {
-      return res.status(400).json({ error: 'Missing required parameter: priceId' });
-    }
-    
-    console.log('Creating checkout session with:', { priceId, userId, email });
-    
-    // Create a checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${req.headers.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin}/pricing`,
-      client_reference_id: userId || undefined,
-      customer_email: email || undefined,
-    });
-    
-    console.log('Checkout session created:', session.id);
-    
-    // Return the checkout session URL
-    res.json({ url: session.url });
-  } catch (error) {
-    console.error('Error in GET API create-checkout-session:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Add a POST endpoint for the same functionality
-app.post('/api/pricing/create-checkout-session', async (req, res) => {
-  try {
-    console.log('POST API handler for checkout session called');
-    
-    // Get parameters from request body
-    const { priceId, userId, email } = req.body;
-    
-    if (!priceId) {
-      return res.status(400).json({ error: 'Missing required parameter: priceId' });
-    }
-    
-    console.log('Creating checkout session with:', { priceId, userId, email });
-    
-    // Create a checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${req.headers.origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin}/pricing`,
-      client_reference_id: userId || undefined,
-      customer_email: email || undefined,
-    });
-    
-    console.log('Checkout session created:', session.id);
-    
-    // Return the checkout session URL
-    res.json({ url: session.url });
-  } catch (error) {
-    console.error('Error in POST API create-checkout-session:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Keep the existing routes for backward compatibility
+// The rest of the code after app.listen should remain as is
 // ... existing code ...
-
-// Add a simple direct checkout endpoint
-app.get('/simple-checkout', async (req, res) => {
-  try {
-    console.log('Simple checkout endpoint called with query:', req.query);
-    
-    // Get parameters from query string
-    const { plan = 'monthly' } = req.query;
-    
-    // Determine price ID based on plan
-    const priceId = plan === 'monthly' 
-      ? process.env.STRIPE_PRICE_MONTHLY 
-      : process.env.STRIPE_PRICE_ANNUAL;
-    
-    console.log('Using price ID:', priceId);
-    
-    if (!priceId) {
-      console.error('Price ID not configured in server environment');
-      return res.status(500).send(`
-        <html>
-          <head><title>Configuration Error</title></head>
-          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-            <h1>Configuration Error</h1>
-            <p>Price ID not configured in server environment.</p>
-            <p>Check server .env file for STRIPE_PRICE_MONTHLY and STRIPE_PRICE_ANNUAL.</p>
-            <p><a href="/pricing">Return to pricing page</a></p>
-          </body>
-        </html>
-      `);
-    }
-    
-    // Get the host from the request
-    const host = req.get('host');
-    const protocol = req.protocol || 'https';
-    const origin = `${protocol}://${host}`;
-    
-    console.log(`Creating checkout session for ${plan} plan (${priceId}) with origin: ${origin}`);
-    
-    try {
-      // Create checkout session
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [{ price: priceId, quantity: 1 }],
-        mode: 'subscription',
-        success_url: `${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/pricing`,
-        // No customer_email or client_reference_id - keeping it simple
-      });
-      
-      console.log('Checkout session created successfully:', session.id);
-      console.log('Redirecting to:', session.url);
-      
-      // Redirect directly to the session URL
-      return res.redirect(303, session.url);
-    } catch (stripeError) {
-      console.error('Stripe session creation failed:', stripeError);
-      
-      // Handle Stripe errors with more specific messages
-      let errorMessage = 'Error creating checkout session.';
-      let technicalDetails = stripeError.message || 'Unknown Stripe error';
-      
-      if (stripeError.type === 'StripeInvalidRequestError') {
-        if (stripeError.message.includes('No such price')) {
-          errorMessage = 'The price ID does not exist in your Stripe account.';
-          technicalDetails = `Price ID "${priceId}" was not found in your Stripe account. Check your Stripe Dashboard.`;
-        }
-      }
-      
-      // Return a user-friendly error page
-      return res.status(500).send(`
-        <html>
-          <head><title>Checkout Error</title></head>
-          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-            <h1>Checkout Error</h1>
-            <p>${errorMessage}</p>
-            <p>Technical details: ${technicalDetails}</p>
-            <p><a href="/pricing">Return to pricing page</a></p>
-            <div style="margin-top: 50px; padding: 20px; background: #f5f5f5; border-radius: 5px; text-align: left;">
-              <h3>Debug Information (for site administrator)</h3>
-              <p>Plan type: ${plan}</p>
-              <p>Price ID: ${priceId}</p>
-              <p>Host: ${host}</p>
-              <p>Stripe API key configured: ${!!process.env.STRIPE_SECRET_KEY}</p>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-  } catch (error) {
-    console.error('Error in simple-checkout:', error);
-    
-    // Provide user-friendly error page
-    res.status(500).send(`
-      <html>
-        <head><title>Checkout Error</title></head>
-        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-          <h1>Something went wrong</h1>
-          <p>We encountered an error setting up your checkout session.</p>
-          <p>Error details: ${error.message}</p>
-          <p><a href="/pricing">Return to pricing page</a></p>
-        </body>
-      </html>
-    `);
-  }
-});
-
-// Add a REST API endpoint for the new client
-// ... existing code ...
-
-// Direct checkout web page
-app.get('/direct-checkout', async (req, res) => {
-  // Always use monthly plan regardless of what is requested
-  const plan = 'monthly';
-  
-  // Get the price ID for the plan (only monthly available)
-  const priceId = process.env.STRIPE_PRICE_MONTHLY;
-  
-  const priceLabel = '$20 monthly';
-  const publicKey = process.env.STRIPE_PUBLISHABLE_KEY;
-  
-  // Send an HTML page with a direct checkout button
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>FishCAD Pro Checkout</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          line-height: 1.6;
-          padding: 40px 20px;
-          max-width: 600px;
-          margin: 0 auto;
-          text-align: center;
-        }
-        h1 { margin-bottom: 10px; }
-        .price { 
-          font-size: 2rem; 
-          font-weight: bold; 
-          margin: 20px 0;
-        }
-        .btn {
-          display: inline-block;
-          background: #556cd6;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 12px 24px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-          margin-top: 20px;
-          text-decoration: none;
-        }
-        .debug {
-          margin-top: 40px;
-          text-align: left;
-          background: #f5f5f5;
-          padding: 15px;
-          border-radius: 4px;
-          font-size: 13px;
-          color: #666;
-        }
-      </style>
-      <script src="https://js.stripe.com/v3/"></script>
-    </head>
-    <body>
-      <h1>FishCAD Pro Subscription</h1>
-      <p>You're subscribing to the FishCAD Pro monthly plan</p>
-      <div class="price">${priceLabel}</div>
-      
-      <button class="btn" id="checkout-button">Subscribe Now</button>
-      
-      <p><a href="/">Return to FishCAD</a></p>
-      
-      <div class="debug">
-        <strong>Debug Info:</strong>
-        <div>Plan: ${plan}</div>
-        <div>Price ID: ${priceId}</div>
-        <div>Stripe Key Available: ${!!publicKey}</div>
-      </div>
-      
-      <script>
-        document.getElementById('checkout-button').addEventListener('click', function() {
-          // Create the checkout directly with Stripe.js
-          const stripe = Stripe('${publicKey}');
-          
-          fetch('/create-checkout', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              priceId: '${priceId}',
-              plan: '${plan}'
-            })
-          })
-          .then(function(response) {
-            return response.json();
-          })
-          .then(function(session) {
-            return stripe.redirectToCheckout({ sessionId: session.id });
-          })
-          .then(function(result) {
-            if (result.error) {
-              alert(result.error.message);
-            }
-          })
-          .catch(function(error) {
-            console.error('Error:', error);
-            alert('There was an error processing your payment. Please try again.');
-          });
-        });
-      </script>
-    </body>
-    </html>
-  `);
-});
-
-// API endpoint for creating checkout sessions via fetch
-app.post('/create-checkout', async (req, res) => {
-  try {
-    console.log('Create checkout API called', req.body);
-    
-    const { priceId } = req.body;
-    
-    if (!priceId) {
-      console.error('No price ID provided');
-      return res.status(400).json({ error: 'Missing priceId parameter' });
-    }
-    
-    // Get the host from the request
-    const host = req.get('host');
-    const protocol = req.protocol || 'https';
-    const origin = `${protocol}://${host}`;
-    
-    // Create the checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      mode: 'subscription',
-      success_url: `${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/pricing`
-    });
-    
-    console.log('Checkout session created:', session.id);
-    
-    // Return the session ID
-    res.json({ id: session.id });
-  } catch (error) {
-    console.error('Error creating checkout session:', error);
-    res.status(500).json({ error: error.message });
-  }
-});

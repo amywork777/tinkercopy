@@ -59,6 +59,7 @@ export default function PricingPage() {
       console.log(`User info - Email: ${userEmail}, ID: ${userId}`);
       
       // Call our super simple direct checkout function
+      // Always use live mode (false for testMode parameter)
       directStripeCheckout(plan, userEmail, userId);
       
       // Keep loading state for a bit to show something is happening
@@ -69,7 +70,7 @@ export default function PricingPage() {
     } catch (error) {
       console.error('Error during subscription process:', error);
       setIsLoading(false);
-      toast('Error starting checkout. Please try again.', {
+      toast('Error starting checkout. Please try again or contact support.', {
         type: 'error',
       });
     }

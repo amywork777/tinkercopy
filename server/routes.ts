@@ -13,6 +13,7 @@ import dotenv from 'dotenv';
 import { sendOrderNotificationEmail, sendCustomerConfirmationEmail } from './email-service.js';
 import { storeSTLInFirebase, cleanupTempSTLFile, storeTempSTLFile } from './file-service.js';
 import { firestore } from './firebase-admin.js';
+import { resolveProjectPath } from '../utils/path-helper.js';
 
 // Load environment variables
 dotenv.config();
@@ -1283,7 +1284,7 @@ ${feedback}
 
   // Add an endpoint to store and retrieve STL files
   // Create a directory for STL files if it doesn't exist
-  const stlFilesDir = path.join(__dirname, '../stl-files');
+  const stlFilesDir = resolveProjectPath('stl-files');
   if (!fs.existsSync(stlFilesDir)) {
     fs.mkdirSync(stlFilesDir, { recursive: true });
     console.log(`Created STL files directory: ${stlFilesDir}`);
@@ -1449,6 +1450,33 @@ ${feedback}
         message: 'Error fetching order details',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  });
+
+  // Handle file download for stored STL files
+  app.get('/api/stl-files/:fileName', (req, res) => {
+    try {
+      const { fileName } = req.params;
+      
+      // Security check to prevent directory traversal attacks
+      if (fileName.includes('..') || fileName.includes('/')) {
+        return res.status(400).send('Invalid file name');
+      }
+      
+      // Use path helper to resolve the path properly in ES modules
+      const stlFilesDir = resolveProjectPath('stl-files');
+      const filePath = path.join(stlFilesDir, fileName);
+      
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).send('File not found');
+      }
+      
+      // Send the file
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error('Error serving STL file:', error);
+      res.status(500).send('Error serving file');
     }
   });
 

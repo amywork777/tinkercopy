@@ -6,6 +6,7 @@ import axios from 'axios';
 import { Server as SocketIOServer } from 'socket.io';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
+import { resolveProjectPath } from '../../utils/path-helper.js';
 
 // For ES modules compatibility - replicate __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -36,7 +37,7 @@ const router = Router();
 let io: SocketIOServer;
 
 // Configure multer for file uploads
-const uploadsDir = path.join(__dirname, '..', 'uploads');
+const uploadsDir = resolveProjectPath('uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -270,7 +271,6 @@ async function processSTLImport(importId: string, stlUrl: string): Promise<void>
     updateJobStatus(importId, 'processing');
     
     // Create the uploads directory if it doesn't exist
-    const uploadsDir = path.join(__dirname, '..', 'uploads');
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }

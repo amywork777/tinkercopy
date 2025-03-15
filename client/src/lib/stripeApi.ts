@@ -1,18 +1,22 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables or use localhost in development
 
-// Add TypeScript definitions
+// Fix TypeScript definitions for Vite's import.meta.env
+// Using a module augmentation approach
 declare global {
   interface Window {
     Stripe?: any;
   }
-  
-  interface ImportMeta {
-    env: {
-      VITE_API_URL?: string;
-      [key: string]: any;
-    }
-  }
+}
+
+// Augment the ImportMeta interface from Vite
+interface ImportMetaEnv {
+  VITE_API_URL?: string;
+  [key: string]: any;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
 }
 
 // Function to get the appropriate API URL based on the environment

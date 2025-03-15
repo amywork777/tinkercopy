@@ -1,9 +1,9 @@
 // API for interacting with Stripe through our backend
 // Get API URL from environment variables or use localhost in development
 const isDevelopment = window.location.hostname === 'localhost';
-// Use fishcad.com domain explicitly for production to fix the checkout issue
+// Use relative URLs in development and explicit domain in production
 const API_URL = isDevelopment 
-  ? 'http://localhost:3001/api' 
+  ? '/api'  // Use a relative URL that works with any port via Vite's proxy
   : (import.meta.env.VITE_API_URL || 'https://fishcad.com/api');
 
 // Stripe price IDs from environment variables
@@ -21,6 +21,7 @@ const addCacheBuster = (url: string): string => {
 // Check if the server is responding properly
 export const checkServerStatus = async (): Promise<boolean> => {
   try {
+    // Use the consistent API_URL for all requests
     const endpoint = addCacheBuster(`${API_URL}/status`);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
@@ -53,38 +54,64 @@ export const checkServerStatus = async (): Promise<boolean> => {
 export const createCheckoutSession = async (
   priceId: string,
   userId: string,
-  email: string
+  email: string,
+  testMode: boolean = false,
+  discountCode?: string
 ): Promise<{ url: string }> => {
   try {
-    // Use fishcad.com domain explicitly if we're on that domain
-    const isFishCad = window.location.hostname.includes('fishcad.com');
-    const endpoint = addCacheBuster(`${isFishCad ? 'https://fishcad.com/api' : API_URL}/pricing/create-checkout-session`);
-    
-    console.log(`Making checkout request to ${endpoint} for user ${userId} with price ${priceId}`);
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      },
-      body: JSON.stringify({
-        priceId,
-        userId,
-        email,
-        domain: window.location.hostname // Send the current domain to ensure correct redirect URLs
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Checkout session creation failed:', errorData);
-      throw new Error(errorData.error || 'Failed to create checkout session');
+    // First check if the server is reachable
+    const isServerUp = await checkServerStatus();
+    if (!isServerUp) {
+      console.error('Server status check failed - server may be unreachable');
+      throw new Error('Cannot connect to payment server. Please try again later or contact support.');
     }
+    
+    // Use relative API URL to work with any port in development and explicit domain in production
+    // This works with Vite's proxy configuration
+    const endpoint = addCacheBuster(`${API_URL}/pricing/create-checkout-session`);
+    
+    console.log(`Making checkout request to ${endpoint} for user ${userId} with price ${priceId}, testMode: ${testMode}${discountCode ? `, discountCode: ${discountCode}` : ''}`);
+    
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        body: JSON.stringify({
+          priceId,
+          userId,
+          email,
+          testMode,
+          domain: window.location.hostname, // Send the current domain to ensure correct redirect URLs
+          discountCode // Include discount code if provided
+        }),
+      });
 
-    return await response.json();
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // If response is not JSON, use the status text
+          errorData = { error: `Server responded with status ${response.status}: ${response.statusText}` };
+        }
+        console.error('Checkout session creation failed:', errorData);
+        throw new Error(errorData.error || `Failed to create checkout session (HTTP ${response.status})`);
+      }
+
+      return await response.json();
+    } catch (fetchError: any) {
+      // Handle network errors specifically
+      if (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch')) {
+        console.error('Network error connecting to checkout server:', fetchError);
+        throw new Error(`Cannot connect to payment server (${API_URL}). Please check your internet connection.`);
+      }
+      throw fetchError;
+    }
   } catch (error) {
     console.error('Error creating checkout session:', error);
     throw error;

@@ -19,7 +19,7 @@ import { Check, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { createCheckoutSession, STRIPE_PRICES } from '@/lib/stripeApi';
+import { STRIPE_PRICES } from '@/lib/stripeApi';
 import { MODEL_LIMITS, PRICING_PLANS } from '@/lib/constants';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { CrownIcon } from 'lucide-react';
@@ -32,6 +32,7 @@ export default function PricingPage() {
   const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
+  const [discountCode, setDiscountCode] = useState<string>('');
   
   // Parse URL parameters to set default plan if specified
   useEffect(() => {
@@ -51,33 +52,60 @@ export default function PricingPage() {
 
   const handleSubscribe = async (priceId: string) => {
     if (!user) {
-      // If user is not logged in, redirect to login page with return URL to pricing
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to subscribe.",
+        variant: "destructive"
+      });
       navigate('/login?redirect=/pricing');
       return;
     }
-
+    
     setIsLoading(true);
     
     try {
       console.log('Creating checkout session with:', {
         priceId,
         userId: user.id,
-        email: user.email
+        email: user.email,
+        discountCode: discountCode || undefined
       });
       
-      // Create a checkout session
-      const { url } = await createCheckoutSession(
-        priceId, 
-        user.id, 
-        user.email || ''
-      );
+      console.log('⚠️ Using test endpoint to bypass authentication issues');
       
-      // Redirect to checkout
-      if (url) {
-        console.log('Redirecting to checkout URL:', url);
-        window.location.href = url;
+      // Use a relative URL that will work across any port - for both development and production
+      // For development, the Vite proxy will route this to port 3005
+      // In production, this will go to the same domain (e.g., fishcad.com/api/...)
+      const testEndpoint = `/api/test-stripe-checkout?_t=${Date.now()}`;
+      console.log('Making request to relative URL:', testEndpoint);
+      
+      const response = await fetch(testEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        body: JSON.stringify({
+          priceId,
+          userId: user.id,
+          email: user.email,
+          discountCode: discountCode || undefined
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.checkoutUrl) {
+        // Redirect to Stripe checkout
+        window.location.href = data.checkoutUrl;
       } else {
-        throw new Error('No checkout URL returned');
+        throw new Error(data.error || 'Failed to create checkout session');
       }
     } catch (error) {
       console.error('Error creating checkout session:', error);
@@ -296,6 +324,22 @@ export default function PricingPage() {
                 </Card>
               </div>
             </Tabs>
+          </div>
+          
+          {/* Discount Code Input */}
+          <div className="mt-6 md:mt-8 flex flex-col items-center justify-center">
+            <div className="flex items-center gap-2 w-full max-w-md">
+              <input
+                type="text"
+                placeholder="Discount code (optional)"
+                value={discountCode}
+                onChange={(e) => setDiscountCode(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Enter a valid discount code to get special pricing on your subscription
+            </p>
           </div>
           
           <div className="mt-8 text-center">

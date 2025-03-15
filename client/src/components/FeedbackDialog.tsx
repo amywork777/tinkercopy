@@ -66,8 +66,8 @@ export function FeedbackDialog() {
       const hostname = window.location.hostname;
       
       if (hostname === 'localhost') {
-        // Local development environment
-        serverUrl = 'http://localhost:3001';
+        // Local development environment - use relative URL with Vite proxy
+        serverUrl = '';
       } else if (hostname === 'fishcad.com') {
         // Production environment
         serverUrl = 'https://fishcad.com';

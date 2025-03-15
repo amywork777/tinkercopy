@@ -120,150 +120,164 @@ if (!fs.existsSync(stlFilesDir)) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configure middleware
-app.use(cors());
+// Configure middleware with enhanced CORS options
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow any localhost, fishcad.com, or no origin (for non-browser clients)
+    if (!origin || origin.match(/^https?:\/\/localhost(:\d+)?$/) || origin.includes('fishcad.com')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires'],
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Special case for Stripe webhook to handle raw body
 app.use('/api/webhook', express.raw({ type: 'application/json' }));
 
+// Handle OPTIONS requests for webhook endpoint
+app.options('/api/webhook', cors());
+
 // Add pricing API endpoint for subscription checkout
 app.post('/api/pricing/create-checkout-session', async (req, res) => {
   try {
-    const { priceId, userId, email } = req.body;
+    const { priceId, userId, email, testMode, domain, discountCode } = req.body;
     
-    console.log('Received subscription checkout request:', { priceId, userId, email });
+    console.log('Received subscription checkout request:', { 
+      priceId, 
+      userId, 
+      email, 
+      testMode,
+      domain,
+      discountCode,
+      headers: req.headers,
+      path: req.path,
+      url: req.url
+    });
     
     if (!priceId || !userId || !email) {
+      console.error('Missing required parameters in checkout request:', { priceId, userId, email });
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     
+    // Determine if we should use test mode
+    const useTestMode = testMode === true || process.env.USE_STRIPE_TEST_MODE === 'true';
+    
+    // Create a separate Stripe instance with the test key if needed
+    let stripeClient = stripe;
+    if (useTestMode) {
+      console.log('Using Stripe test mode');
+      // Use the test key if available, otherwise use the original key
+      const testKey = process.env.STRIPE_TEST_SECRET_KEY || 'sk_test_51QIaT9CLoBz9jXRloJd72JCoCU27mPbMlxMpxVrKdBMQ5sS5hm8JWOWXNBl9Wxk2UenAYxYOQurMlyISnlqCz7QC00gC1pI0dq';
+      stripeClient = new Stripe(testKey);
+      console.log('Created new Stripe client with test mode key');
+    }
+    
+    // Use the right Stripe price ID
+    console.log(`Using price ID: ${priceId}`);
+    
     let customerId = null;
     
-    // Handle Stripe customer
-    if (firestore) {
-      try {
-        const userRef = firestore.collection('users').doc(userId);
-        const userDoc = await userRef.get();
-        
+    try {
+      // Check if user already has a Stripe customer ID
+      if (firestore) {
+        const userDoc = await firestore.collection('users').doc(userId).get();
         if (userDoc.exists && userDoc.data().stripeCustomerId) {
           customerId = userDoc.data().stripeCustomerId;
           console.log(`Using existing Stripe customer ID: ${customerId}`);
-        } else {
-          // Create a new customer
-          const customer = await stripe.customers.create({
-            email: email,
-            metadata: {
-              userId: userId,
-            },
-          });
-          customerId = customer.id;
-          console.log(`Created new Stripe customer: ${customerId}`);
-          
-          // Create or update user document with Stripe customer ID
-          if (userDoc.exists) {
-            // If document exists, update it
-            await userRef.update({
-              stripeCustomerId: customerId,
-            });
-            console.log(`Updated existing user document with Stripe customer ID`);
-          } else {
-            // If document doesn't exist, create it
-            await userRef.set({
-              uid: userId,
-              email: email,
-              stripeCustomerId: customerId,
-              createdAt: new Date(),
-              isPro: false,
-              subscriptionStatus: 'none',
-              modelsRemainingThisMonth: 0,
-              lastResetDate: new Date().toISOString().substring(0, 7),
-            });
-            console.log(`Created new user document with Stripe customer ID`);
-          }
-        }
-      } catch (firestoreError) {
-        console.error('Firestore error:', firestoreError);
-        
-        // Check if this is a "not found" error for the user document
-        if (firestoreError.code === 5 && firestoreError.details && firestoreError.details.includes('No document to update')) {
-          // Create a new user document
-          try {
-            const userRef = firestore.collection('users').doc(userId);
-            
-            // Create a new customer first
-            const customer = await stripe.customers.create({
-              email: email,
-              metadata: {
-                userId: userId,
-              },
-            });
-            customerId = customer.id;
-            
-            // Then create the user document
-            await userRef.set({
-              uid: userId,
-              email: email,
-              stripeCustomerId: customerId,
-              createdAt: new Date(),
-              isPro: false,
-              subscriptionStatus: 'none',
-              modelsRemainingThisMonth: 0,
-              lastResetDate: new Date().toISOString().substring(0, 7),
-            });
-            console.log(`Created new user document for ID: ${userId}`);
-          } catch (createError) {
-            console.error('Error creating user document:', createError);
-            // Continue with Stripe checkout anyway
-          }
-        } else {
-          // For other errors, continue with Stripe checkout without updating Firestore
-          const customer = await stripe.customers.create({
-            email: email,
-            metadata: {
-              userId: userId,
-            },
-          });
-          customerId = customer.id;
-          console.log(`Created new Stripe customer (Firestore failed): ${customerId}`);
         }
       }
-    } else {
-      // Fallback if Firestore is not available
-      const customer = await stripe.customers.create({
-        email: email,
-        metadata: {
-          userId: userId,
-        },
-      });
-      customerId = customer.id;
-      console.log(`Created new Stripe customer (no Firestore): ${customerId}`);
+    } catch (error) {
+      console.error('Error checking for existing Stripe customer:', error);
     }
     
-    // Create the checkout session
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
+    // If no customer ID found, create a new Stripe customer
+    if (!customerId) {
+      try {
+        const customer = await stripeClient.customers.create({
+          email: email,
+          metadata: {
+            userId: userId,
+          }
+        });
+        customerId = customer.id;
+        console.log(`Created new Stripe customer: ${customerId}`);
+        
+        // Save the customer ID to Firestore
+        if (firestore) {
+          await firestore.collection('users').doc(userId).update({
+            stripeCustomerId: customerId,
+          });
+          console.log(`Updated Firestore with new Stripe customer ID: ${customerId}`);
+        }
+      } catch (error) {
+        console.error('Error creating Stripe customer:', error);
+        return res.status(500).json({ error: 'Failed to create Stripe customer' });
+      }
+    }
+    
+    // Determine the domain for success and cancel URLs
+    const host = req.headers.origin || `http://${req.headers.host}`;
+    
+    // Apply discount if provided
+    let discountOptions = {};
+    if (discountCode) {
+      console.log(`Applying discount code: ${discountCode}`);
+      discountOptions.coupon = discountCode;
+    }
+    
+    // Create a checkout session with the Stripe customer ID
+    try {
+      const session = await stripeClient.checkout.sessions.create({
+        customer: customerId,
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        success_url: `${host}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${host}/pricing`,
+        customer_update: {
+          address: 'auto',
+          shipping: 'auto',
         },
-      ],
-      mode: 'subscription',
-      success_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing`,
-      subscription_data: {
+        automatic_tax: { enabled: false },
+        subscription_data: {
+          metadata: {
+            userId: userId,
+          },
+          // Add discount if provided
+          ...(discountCode ? { coupon: discountCode } : {})
+        },
         metadata: {
           userId: userId,
-        },
-      },
-    });
-    
-    res.json({ url: session.url });
+        }
+      });
+      
+      console.log(`Checkout session created: ${session.id}`);
+      console.log(`Checkout URL: ${session.url}`);
+      
+      res.json({
+        success: true,
+        sessionId: session.id,
+        checkoutUrl: session.url,
+      });
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      res.status(error.statusCode || 500).json({ 
+        error: error.message || 'Failed to create checkout session' 
+      });
+    }
   } catch (error) {
-    console.error('Error creating checkout session:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error in checkout request:', error);
+    res.status(500).json({ error: 'Server error processing checkout request' });
   }
 });
 
@@ -1007,34 +1021,25 @@ app.post('/api/create-checkout-session', async (req, res) => {
     console.log('Creating Stripe checkout session...');
     
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      customer: customerId,
       line_items: [
         {
           price: price.id,
-          quantity: 1, // We already factored quantity into the price
+          quantity: 1,
         },
       ],
-      mode: 'payment',
+      mode: 'subscription',
       success_url: `${host}/checkout-confirmation?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${host}/`,
-      metadata: {
-        modelName,
-        color,
-        quantity: quantity.toString(),
-        finalPrice: finalPrice.toString(),
-        stlFileName: stlFileName || 'unknown.stl',
-        hasStlDownloadUrl: !!finalStlDownloadUrl,
-        hasStlPublicUrl: !!finalStlPublicUrl,
-        hasStlStoragePath: !!finalStlStoragePath,
-        stlFileSize: stlFileSize.toString(),
-        stlFileUploaded: stlFileUploaded.toString(),
-        orderTempId: stlFileData && !stlFileUploaded ? `temp-${Date.now()}` : '', 
-        stlDataPreview: stlDataString || ''
+      customer_update: {
+        address: 'auto',
+        shipping: 'auto'
       },
-      // Enable billing address collection to get email and address for shipping
-      billing_address_collection: 'required',
-      shipping_address_collection: {
-        allowed_countries: ['US', 'CA', 'GB', 'AU'], // Add the countries you ship to
+      automatic_tax: { enabled: false },
+      subscription_data: {
+        metadata: {
+          userId: userId,
+        },
       },
     });
     console.log('Stripe checkout session created:', session.id);
@@ -1299,34 +1304,197 @@ app.get('/api/order-details', async (req, res) => {
 });
 
 // Webhook handling for Stripe events
-app.post('/api/webhook', async (req, res) => {
-  const sig = req.headers['stripe-signature'];
+app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const signature = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  
+  if (!signature || !webhookSecret) {
+    console.error('Missing Stripe signature or webhook secret', { 
+      hasSignature: !!signature, 
+      hasSecret: !!webhookSecret,
+      webhookSecretFirstChars: webhookSecret ? webhookSecret.substring(0, 10) + '...' : 'none'
+    });
+    return res.status(400).send('Missing signature or webhook secret');
+  }
+  
+  let event;
   
   try {
-    // Verify the event came from Stripe
-    const event = stripe.webhooks.constructEvent(
+    console.log('Verifying webhook signature with secret starting with:', webhookSecret.substring(0, 10) + '...');
+    event = stripe.webhooks.constructEvent(
       req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test'
+      signature,
+      webhookSecret
     );
-    
-    // Handle the event based on its type
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        console.log('Payment successful for session:', session.id);
+  } catch (error) {
+    console.error('Webhook signature verification failed:', error.message);
+    return res.status(400).send(`Webhook Error: ${error.message}`);
+  }
+  
+  console.log(`✅ Received webhook event: ${event.type}`, {
+    eventId: event.id,
+    apiVersion: event.api_version,
+    livemode: event.livemode
+  });
+  
+  // Handle the event based on type
+  try {
+    if (firestore) {
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object;
+          console.log('Processing checkout.session.completed:', {
+            sessionId: session.id,
+            customerId: session.customer,
+            hasSubscription: !!session.subscription,
+            paymentStatus: session.payment_status,
+            mode: session.mode
+          });
+          
+          if (!session.subscription) {
+            console.log('No subscription found in the session');
+            return res.status(200).send('No subscription to process');
+          }
+          
+          const subscription = await stripe.subscriptions.retrieve(session.subscription);
+          const customerId = session.customer;
+          
+          console.log('Retrieved subscription details:', {
+            subscriptionId: subscription.id,
+            status: subscription.status,
+            customerId: customerId,
+            currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+          });
+          
+          // Find the user by customer ID
+          const usersRef = firestore.collection('users');
+          const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
+          
+          if (snapshot.empty) {
+            console.error('No user found with customerId:', customerId);
+            
+            // Let's try to find the user by metadata
+            if (subscription.metadata && subscription.metadata.userId) {
+              const userId = subscription.metadata.userId;
+              console.log('Trying to find user by userId from metadata:', userId);
+              const userDoc = await firestore.collection('users').doc(userId).get();
+              
+              if (userDoc.exists) {
+                // Update the user with subscription details
+                await firestore.collection('users').doc(userId).update({
+                  isPro: true,
+                  stripeCustomerId: customerId,  // Set the customer ID
+                  stripeSubscriptionId: subscription.id,
+                  subscriptionStatus: subscription.status,
+                  subscriptionEndDate: new Date(subscription.current_period_end * 1000),
+                  modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
+                  // Keep track of the subscription plan
+                  subscriptionPlan: subscription.items.data[0].price.id === process.env.STRIPE_PRICE_ANNUAL ? 'annual' : 'monthly',
+                  // Clear any trial status
+                  trialActive: false,
+                  // Last updated timestamp
+                  lastUpdated: new Date()
+                });
+                
+                console.log(`✅ Updated user ${userId} with subscription ${subscription.id} using metadata`);
+                return res.status(200).send('User updated using metadata');
+              }
+            }
+            
+            return res.status(400).send('User not found');
+          }
+          
+          // Get the first matching document
+          const userDoc = snapshot.docs[0];
+          const userId = userDoc.id;
+          
+          // Update the user's subscription status
+          await firestore.collection('users').doc(userId).update({
+            isPro: true,
+            stripeSubscriptionId: subscription.id,
+            subscriptionStatus: subscription.status,
+            subscriptionEndDate: new Date(subscription.current_period_end * 1000),
+            modelsRemainingThisMonth: Infinity, // Pro users get unlimited generations
+            // Keep track of the subscription plan
+            subscriptionPlan: subscription.items.data[0].price.id === process.env.STRIPE_PRICE_ANNUAL ? 'annual' : 'monthly',
+            // Clear any trial status
+            trialActive: false,
+            // Last updated timestamp
+            lastUpdated: new Date()
+          });
+          
+          console.log(`✅ Updated user ${userId} with subscription ${subscription.id}`);
+          break;
+        }
         
-        // Process the completed checkout session
-        await handleSuccessfulPayment(session);
-        break;
+        case 'customer.subscription.updated': {
+          const subscription = event.data.object;
+          const customerId = subscription.customer;
+          
+          // Find the user by customer ID
+          const usersRef = firestore.collection('users');
+          const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
+          
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            
+            // Check if subscription is active
+            const isActive = ['active', 'trialing'].includes(subscription.status);
+            
+            // Update the user's subscription status
+            await firestore.collection('users').doc(userDoc.id).update({
+              isPro: isActive,
+              subscriptionStatus: subscription.status,
+              subscriptionEndDate: new Date(subscription.current_period_end * 1000),
+              // Update plan if it changed
+              subscriptionPlan: subscription.items.data[0].price.id === process.env.STRIPE_PRICE_ANNUAL ? 'annual' : 'monthly',
+              // Clear any trial status if they have a paid subscription
+              trialActive: false,
+              // Last updated timestamp
+              lastUpdated: new Date()
+            });
+            
+            console.log(`Updated subscription status for user ${userDoc.id}: ${subscription.status}`);
+          }
+          
+          break;
+        }
+        
+        case 'customer.subscription.deleted': {
+          const subscription = event.data.object;
+          const customerId = subscription.customer;
+          
+          // Find the user by customer ID
+          const usersRef = firestore.collection('users');
+          const snapshot = await usersRef.where('stripeCustomerId', '==', customerId).get();
+          
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            
+            // Downgrade user to free tier
+            await firestore.collection('users').doc(userDoc.id).update({
+              isPro: false,
+              subscriptionStatus: 'canceled',
+              modelsRemainingThisMonth: 0, // Free tier with no generations
+              subscriptionPlan: 'free',
+              // Last updated timestamp
+              lastUpdated: new Date()
+            });
+            
+            console.log(`Downgraded user ${userDoc.id} to free tier after subscription canceled`);
+          }
+          
+          break;
+        }
       }
-      // Add more cases for other events you want to handle
+    } else {
+      console.log('Firestore not available, cannot process webhook');
     }
     
-    res.json({received: true});
-  } catch (err) {
-    console.error('Webhook Error:', err.message);
-    res.status(400).send(`Webhook Error: ${err.message}`);
+    res.status(200).send('Webhook processed successfully');
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    res.status(500).send('Error processing webhook');
   }
 });
 
@@ -2008,124 +2176,71 @@ app.post('/api/pricing/verify-subscription', async (req, res) => {
 // Add an endpoint to get user subscription status
 app.get('/api/pricing/user-subscription/:userId', async (req, res) => {
   try {
-    const userId = req.params.userId;
-    console.log(`Getting subscription status for user: ${userId}`);
+    const { userId } = req.params;
     
-    // Get user document from Firestore
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    if (!firestore) {
+      return res.status(503).json({ error: 'Firestore is not available' });
+    }
+    
+    // Get user data from Firestore
     const userRef = firestore.collection('users').doc(userId);
     const userDoc = await userRef.get();
     
     if (!userDoc.exists) {
-      console.log(`User not found: ${userId}`);
-      return res.status(200).json({
-        isPro: false,
-        modelsRemainingThisMonth: 2, // Default limit for free users
-        modelsGeneratedThisMonth: 0,
-        downloadsThisMonth: 0,
-        subscriptionStatus: 'none',
-        subscriptionEndDate: null,
-        subscriptionPlan: 'free',
-        trialActive: false,
-        trialEndDate: null
-      });
+      return res.status(404).json({ error: 'User not found' });
     }
     
     const userData = userDoc.data();
-    console.log(`Found user in Firestore:`, userData);
     
-    // Check if the trial has expired (if user is on trial)
-    let isPro = userData.isPro === true;
-    let trialActive = userData.trialActive === true;
+    // If there's a Stripe subscription ID, get the latest data from Stripe
     let subscriptionStatus = userData.subscriptionStatus || 'none';
-    let subscriptionPlan = userData.subscriptionPlan || 'free';
+    let subscriptionEndDate = userData.subscriptionEndDate;
+    let isProUser = userData.isPro === true;
     
-    // DEBUGGING: Print detailed subscription information
-    console.log(`SUBSCRIPTION DEBUG for ${userId}:
-      isPro: ${isPro}
-      trialActive: ${trialActive}
-      subscriptionStatus: ${subscriptionStatus}
-      subscriptionPlan: ${subscriptionPlan}
-      Original isPro value type: ${typeof userData.isPro} value: ${userData.isPro}
-    `);
-    
-    // If user is on trial, check if it has expired
-    if (trialActive && userData.trialEndDate) {
-      // Convert Firebase Timestamp to JavaScript Date
-      let trialEndDate;
-      
-      // Handle different Timestamp formats
-      if (userData.trialEndDate._seconds !== undefined) {
-        // It's a Firestore Timestamp object from the server
-        trialEndDate = new Date(userData.trialEndDate._seconds * 1000);
-        console.log(`Parsed trialEndDate from _seconds: ${trialEndDate}`);
-      } else if (userData.trialEndDate.seconds !== undefined) {
-        // It's a Firestore Timestamp object from the client
-        trialEndDate = new Date(userData.trialEndDate.seconds * 1000);
-        console.log(`Parsed trialEndDate from seconds: ${trialEndDate}`);
-      } else if (userData.trialEndDate.toDate) {
-        // It's a Firestore Timestamp with toDate method
-        trialEndDate = userData.trialEndDate.toDate();
-        console.log(`Used toDate method: ${trialEndDate}`);
-      } else {
-        // Assume it's already a date string or timestamp
-        trialEndDate = new Date(userData.trialEndDate);
-        console.log(`Created date from value: ${trialEndDate}`);
-      }
-      
-      const now = new Date();
-      console.log(`Current time: ${now}, Trial end time: ${trialEndDate}`);
-      console.log(`Trial expired? ${now > trialEndDate ? 'YES' : 'NO'}`);
-      
-      // IMPORTANT: Force the correct behavior for testing non-pro users
-      const forceNonPro = true; // Set to true to force all users to be non-pro for testing
-      
-      if (now > trialEndDate || forceNonPro) {
-        console.log(`Trial has expired for user ${userId} ${forceNonPro ? '(FORCED)' : ''}`);
-        // Trial has expired
-        isPro = false;
-        trialActive = false;
-        subscriptionStatus = 'none';
-        subscriptionPlan = 'free';
+    if (userData.stripeSubscriptionId) {
+      try {
+        // Get the subscription from Stripe
+        const subscription = await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
         
-        // Update user in Firestore
+        // Update subscription status from Stripe
+        subscriptionStatus = subscription.status;
+        subscriptionEndDate = new Date(subscription.current_period_end * 1000);
+        
+        // Determine if user is pro based on subscription status
+        isProUser = ['active', 'trialing'].includes(subscription.status);
+        
+        // Update the user document with the latest subscription data
         await userRef.update({
-          isPro: false,
-          trialActive: false,
-          subscriptionStatus: 'none',
-          subscriptionPlan: 'free',
-          modelsRemainingThisMonth: 2 // Reset to free tier
+          subscriptionStatus,
+          subscriptionEndDate,
+          isPro: isProUser,
+          lastUpdated: new Date()
         });
-        console.log(`Updated user ${userId} - trial expired, downgraded to free`);
+      } catch (stripeError) {
+        console.error('Error retrieving subscription from Stripe:', stripeError);
+        // Continue with the data we have from Firestore
       }
     }
     
-    // Check paid subscription status if not on trial
-    if (!trialActive && isPro && userData.subscriptionStatus === 'active') {
-      // User has a paid subscription
-      console.log(`User ${userId} has an active paid subscription`);
-    } else if (!trialActive && !isPro) {
-      // User is a free user
-      console.log(`User ${userId} is a free user`);
-    }
-    
-    // Return subscription information with possibly updated trial status
-    const result = {
-      isPro: isPro,
-      modelsRemainingThisMonth: isPro ? Infinity : (userData.modelsRemainingThisMonth || 2),
+    // Return the subscription data
+    return res.json({
+      isPro: isProUser,
+      modelsRemainingThisMonth: userData.modelsRemainingThisMonth || 0,
       modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
       downloadsThisMonth: userData.downloadsThisMonth || 0,
-      subscriptionStatus: subscriptionStatus,
-      subscriptionEndDate: userData.subscriptionEndDate || null,
-      subscriptionPlan: subscriptionPlan,
-      trialActive: trialActive,
-      trialEndDate: userData.trialEndDate || null
-    };
-    
-    console.log(`Returning subscription data for ${userId}:`, result);
-    return res.status(200).json(result);
+      subscriptionStatus,
+      subscriptionEndDate: subscriptionEndDate ? subscriptionEndDate.toDate().toISOString() : null,
+      subscriptionPlan: userData.subscriptionPlan || 'free',
+      trialActive: userData.trialActive === true,
+      trialEndDate: userData.trialEndDate ? userData.trialEndDate.toDate().toISOString() : null
+    });
   } catch (error) {
-    console.error('Error getting user subscription:', error);
-    return res.status(500).json({ error: 'Failed to get user subscription', details: error.message });
+    console.error('Error getting user subscription data:', error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -2462,7 +2577,291 @@ app.get('/api/test-trial-expiration/:userId', async (req, res) => {
   });
 });
 
+// Add test endpoint for Stripe checkout
+app.get('/api/test-stripe-checkout', async (req, res) => {
+  try {
+    console.log('Testing Stripe checkout with specific product and price IDs');
+    
+    // Use a valid price ID that works with the current Stripe key
+    // These should be your actual Stripe price IDs
+    const priceId = 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ'; // Monthly price ID from .env
+    
+    console.log(`Using Stripe with price ID: ${priceId}`);
+    
+    // Create a test customer 
+    const customer = await stripe.customers.create({
+      email: 'test@example.com',
+      metadata: {
+        userId: 'test-user-123',
+      },
+    });
+    
+    console.log(`Created test customer: ${customer.id}`);
+    
+    // Create checkout session options
+    const sessionOptions = {
+      customer: customer.id,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing`,
+      customer_update: {
+        address: 'auto',
+        shipping: 'auto'
+      },
+      automatic_tax: { enabled: false }, // Disable automatic tax for now
+      subscription_data: {
+        metadata: {
+          userId: 'test-user-123',
+        },
+      },
+    };
+    
+    // Create the checkout session
+    const session = await stripe.checkout.sessions.create(sessionOptions);
+    
+    console.log(`Test checkout session created: ${session.id}`);
+    console.log(`Checkout URL: ${session.url}`);
+    
+    res.json({ 
+      success: true, 
+      message: 'Stripe checkout test session created successfully',
+      sessionId: session.id,
+      checkoutUrl: session.url,
+      priceId
+    });
+  } catch (error) {
+    console.error('Error testing Stripe checkout:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Error creating test checkout session',
+      errorType: error.type || 'Unknown'
+    });
+  }
+});
+
+// Add POST version of test endpoint for Stripe checkout that accepts parameters
+app.post('/api/test-stripe-checkout', async (req, res) => {
+  try {
+    // Get parameters from request body
+    const { priceId: requestedPriceId, userId, email, discountCode } = req.body;
+    
+    console.log('Testing Stripe checkout with parameters:', { 
+      requestedPriceId, 
+      userId, 
+      email, 
+      discountCode 
+    });
+    
+    // Use the requested price ID if provided, otherwise fallback to default
+    const priceId = requestedPriceId || 'price_1QzyJ0CLoBz9jXRlwdxlAQKZ';
+    
+    console.log(`Using Stripe with price ID: ${priceId}`);
+    
+    // Create a test customer with the provided email or fallback to test email
+    const customer = await stripe.customers.create({
+      email: email || 'test@example.com',
+      metadata: {
+        userId: userId || 'test-user-123',
+      },
+    });
+    
+    console.log(`Created test customer: ${customer.id}`);
+    
+    // Create checkout session options
+    const sessionOptions = {
+      customer: customer.id,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.DOMAIN || 'http://localhost:5173'}/pricing`,
+      customer_update: {
+        address: 'auto',
+        shipping: 'auto'
+      },
+      automatic_tax: { enabled: false },
+      subscription_data: {
+        metadata: {
+          userId: userId || 'test-user-123',
+        },
+      },
+    };
+    
+    // Add discount code if provided
+    if (discountCode) {
+      try {
+        console.log(`Attempting to apply discount code: ${discountCode}`);
+        // Look up the coupon to validate it
+        const coupon = await stripe.coupons.retrieve(discountCode);
+        
+        if (coupon && coupon.valid) {
+          console.log(`Valid coupon found: ${discountCode}, applying to checkout`);
+          sessionOptions.discounts = [
+            {
+              coupon: discountCode,
+            },
+          ];
+        } else {
+          console.log(`Coupon found but not valid: ${discountCode}`);
+        }
+      } catch (couponError) {
+        console.log(`Error applying discount code: ${discountCode}`, couponError);
+        // Continue without the discount if there's an error
+      }
+    }
+    
+    // Create the checkout session
+    const session = await stripe.checkout.sessions.create(sessionOptions);
+    
+    console.log(`Test checkout session created: ${session.id}`);
+    console.log(`Checkout URL: ${session.url}`);
+    
+    res.json({ 
+      success: true, 
+      message: 'Stripe checkout test session created successfully',
+      sessionId: session.id,
+      checkoutUrl: session.url,
+      priceId
+    });
+  } catch (error) {
+    console.error('Error testing Stripe checkout:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Error creating test checkout session',
+      errorType: error.type || 'Unknown'
+    });
+  }
+});
+
+// Endpoint to optimize subscription data fetching
+app.get('/api/pricing/optimize-subscription/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    if (!firestore) {
+      return res.status(503).json({ error: 'Firestore is not available' });
+    }
+    
+    // Get user data from Firestore
+    const userRef = firestore.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    
+    // Check if subscription needs to be retrieved from Stripe
+    const isPro = userData.isPro === true;
+    const subscriptionId = userData.stripeSubscriptionId;
+    const subscriptionStatus = userData.subscriptionStatus;
+    
+    // Return optimized data
+    return res.json({
+      isPro,
+      modelsRemainingThisMonth: userData.modelsRemainingThisMonth || 0,
+      modelsGeneratedThisMonth: userData.modelsGeneratedThisMonth || 0,
+      downloadsThisMonth: userData.downloadsThisMonth || 0,
+      subscriptionStatus: subscriptionStatus || 'none',
+      subscriptionEndDate: userData.subscriptionEndDate ? userData.subscriptionEndDate.toDate().toISOString() : null,
+      subscriptionPlan: userData.subscriptionPlan || 'free',
+      trialActive: userData.trialActive === true,
+      trialEndDate: userData.trialEndDate ? userData.trialEndDate.toDate().toISOString() : null
+    });
+  } catch (error) {
+    console.error('Error getting optimized subscription data:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Simple checkout server running at http://localhost:${PORT}`);
+});
+
+// Add a simple status endpoint for connectivity testing
+app.get('/api/status', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Test endpoint for Stripe checkout
+app.post('/api/test-stripe-checkout', async (req, res) => {
+  try {
+    const { priceId, userId, email, discountCode } = req.body;
+    
+    console.log('Testing Stripe checkout with specific product and price IDs', { priceId, userId, email, discountCode });
+    
+    // Create a Stripe customer for testing
+    const customer = await stripe.customers.create({
+      email: email || 'test@example.com',
+      name: 'Test Customer',
+      metadata: {
+        userId: userId || 'test-user-id',
+      }
+    });
+    
+    console.log('Created test customer:', customer.id);
+    
+    // Determine the domain for success and cancel URLs
+    const host = req.headers.origin || `http://${req.headers.host}`;
+    
+    // Create a Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      customer: customer.id,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId || process.env.STRIPE_PRICE_MONTHLY,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${host}/pricing-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${host}/pricing`,
+      automatic_tax: { enabled: false },
+      customer_update: {
+        address: 'auto',
+        shipping: 'auto',
+      },
+      subscription_data: {
+        metadata: {
+          userId: userId || 'test-user-id',
+        },
+        // Apply discount if code provided
+        ...(discountCode ? { coupon: discountCode } : {})
+      },
+      metadata: {
+        userId: userId || 'test-user-id',
+      }
+    });
+    
+    console.log('Test checkout session created:', session.id);
+    console.log('Checkout URL:', session.url);
+    
+    res.json({
+      success: true,
+      message: 'Stripe checkout test session created successfully',
+      sessionId: session.id,
+      checkoutUrl: session.url,
+      priceId: priceId || process.env.STRIPE_PRICE_MONTHLY
+    });
+  } catch (error) {
+    console.error('Error testing Stripe checkout:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 }); 

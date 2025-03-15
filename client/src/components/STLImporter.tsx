@@ -14,7 +14,7 @@ const ALLOWED_ORIGINS = ["https://magic.taiyaki.ai", "https://library.taiyaki.ai
 // Define the API endpoint
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
   ? 'https://fishcad.com/api' 
-  : 'http://localhost:3001/api';
+  : '/api';  // Use relative URL with Vite proxy
 
 // Define import job status types
 type ImportJobStatus = 'pending' | 'downloading' | 'processing' | 'completed' | 'failed';

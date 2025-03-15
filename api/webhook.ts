@@ -92,318 +92,128 @@ const stripe = new Stripe(stripeSecretKey, {
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Debug: Log the request information
-  console.log(`Webhook received: ${req.method} ${req.url}`);
-  
-  // Special handling for OPTIONS requests (CORS)
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, stripe-signature');
-    res.status(200).end();
-    return;
-  }
-  
-  // Only allow POST for webhooks
+  const rawBody = await buffer(req);
+  console.log('1. Received webhook event:', {
+    method: req.method,
+    headers: req.headers,
+    bodyLength: rawBody.length
+  });
+
   if (req.method !== 'POST') {
-    console.error(`Invalid method: ${req.method}`);
-    return res.status(405).json({ success: false, message: 'Method not allowed' });
+    console.log('2. Invalid method:', req.method);
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Get the raw request body for Stripe webhook signature verification
-  let rawBody: Buffer;
-  try {
-    rawBody = await buffer(req);
-    console.log(`Raw body received, length: ${rawBody.length} bytes`);
-  } catch (error) {
-    console.error('Error getting raw request body:', error);
-    return res.status(400).json({ success: false, message: 'Error reading request body' });
+  const signature = req.headers['stripe-signature'];
+  if (!signature) {
+    console.error('3. Missing Stripe signature');
+    return res.status(400).json({ error: 'Missing stripe-signature header' });
   }
-
-  const sig = req.headers['stripe-signature'] as string;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-  if (!webhookSecret) {
-    console.error('Missing STRIPE_WEBHOOK_SECRET environment variable');
-    return res.status(500).json({ success: false, message: 'Webhook secret not configured' });
-  }
-
-  if (!sig) {
-    console.error('Missing stripe-signature header');
-    return res.status(400).json({ success: false, message: 'Missing signature header' });
-  }
-
-  let event: Stripe.Event;
 
   try {
-    // Verify the event came from Stripe using raw body
-    event = stripe.webhooks.constructEvent(
-      rawBody.toString(),
-      sig,
-      webhookSecret
+    console.log('4. Attempting to construct Stripe event with signature:', signature);
+    const event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET!
     );
-    console.log(`✅ Stripe signature verified for event: ${event.type}, id: ${event.id}`);
-  } catch (err: any) {
-    console.error(`⚠️ Webhook signature verification failed: ${err.message}`);
-    return res.status(400).json({ success: false, message: `Webhook Error: ${err.message}` });
-  }
 
-  // Get Firebase Admin and Firestore instances directly
-  try {
-    const adminSdk = initializeFirebaseDirectly();
-    const db = getFirestoreDirectly();
-    
-    console.log(`Processing webhook event: ${event.type}, id: ${event.id}`);
+    console.log('5. Successfully constructed event:', {
+      type: event.type,
+      id: event.id
+    });
 
-    // Handle the event based on its type
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
-        console.log(`Processing completed checkout session: ${session.id}`);
-        
-        // Only handle subscription checkouts
-        if (session.mode !== 'subscription') {
-          console.log('Not a subscription checkout, skipping');
-          break;
-        }
-        
-        // Make sure we have a subscription ID
-        if (!session.subscription) {
-          console.error('No subscription ID in completed session');
-          break;
-        }
-        
-        // Fetch more details about the subscription
-        const subscriptionId = typeof session.subscription === 'string' 
-          ? session.subscription 
-          : session.subscription.id;
-          
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-        console.log(`Retrieved subscription: ${subscription.id}, status: ${subscription.status}`);
-        
-        // Get user ID from session metadata or customer metadata
-        let userId = session.metadata?.userId;
-        console.log(`Initial userId from session metadata: ${userId || 'not found'}`);
-        
-        // If no user ID in session metadata, try to get it from customer metadata
-        if (!userId && session.customer) {
-          console.log(`Looking up customer metadata for customer: ${session.customer}`);
-          const customerId = typeof session.customer === 'string' 
-            ? session.customer 
-            : session.customer.id;
-            
-          const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
-          
-          userId = customer.metadata?.userId;
-          console.log(`UserId from customer metadata: ${userId || 'not found'}`);
-        }
-        
-        if (!userId) {
-          console.error('No user ID found in session or customer metadata');
-          break;
-        }
-        
-        console.log(`Updating subscription status for user: ${userId}`);
-        
-        // Get subscription plan info - add null checks
-        const priceId = subscription.items.data && 
-                       subscription.items.data.length > 0 && 
-                       subscription.items.data[0].price ? 
-          subscription.items.data[0].price.id : 
-          'unknown';
-        
-        // Get customer ID - add null checks
-        const customerId = typeof session.customer === 'string' 
-          ? session.customer 
-          : session.customer?.id;
-          
-        // Calculate end date - add null checks
-        const endDate = subscription.current_period_end
-          ? new Date(subscription.current_period_end * 1000)
-          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
-        
-        // Log the update we're about to make
-        console.log(`Setting user ${userId} to isPro=true, with subscription ID ${subscription.id}, status ${subscription.status}`);
-        
-        // Update user subscription status in Firestore
-        const userDocRef = db.collection('users').doc(userId);
-        const updateData: UserData = {
-          isPro: true,
-          stripeCustomerId: customerId,
-          stripeSubscriptionId: subscription.id,
-          subscriptionStatus: subscription.status,
-          subscriptionEndDate: endDate.toISOString(),
-          subscriptionPlan: priceId,
-          modelsRemainingThisMonth: 999999, // Effectively unlimited
-          updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
-        };
-        
-        console.log(`Updating Firestore document for user ${userId} with:`, JSON.stringify(updateData));
-        
-        // Check if the user exists first
-        try {
-          const userDoc = await userDocRef.get();
-          if (!userDoc.exists) {
-            console.log(`User ${userId} doesn't exist in Firestore, creating new document`);
-            
-            // Get customer email - add null checks
-            let customerEmail = '';
-            if (typeof session.customer === 'string') {
-              try {
-                const customerData = await stripe.customers.retrieve(session.customer) as Stripe.Customer;
-                customerEmail = customerData.email || '';
-              } catch (error) {
-                console.error('Error retrieving customer email:', error);
-              }
-            } else if (session.customer) {
-              customerEmail = (session.customer as Stripe.Customer)?.email || '';
-            }
-            
-            await userDocRef.set({
-              ...updateData,
-              createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
-              email: customerEmail
-            });
-          } else {
-            console.log(`User ${userId} exists in Firestore, updating document`);
-            await userDocRef.update(updateData);
-            
-            // Double-check that the update was applied
-            const updatedDoc = await userDocRef.get();
-            const updatedData = updatedDoc.data();
-            if (updatedData && (!updatedData.isPro || updatedData.subscriptionStatus !== subscription.status)) {
-              console.error(`Update may not have been applied correctly. Current data:`, updatedData);
-              // Try to update again with a different approach
-              await userDocRef.set(updateData, { merge: true });
-            }
-          }
-          
-          console.log(`✅ Successfully updated subscription status for user ${userId}`);
-        } catch (firestoreError) {
-          console.error(`⚠️ Error updating Firestore for user ${userId}:`, firestoreError);
-        }
-        break;
+    // Handle the checkout.session.completed event
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      console.log('6. Processing completed checkout session:', {
+        sessionId: session.id,
+        customerId: session.customer,
+        subscriptionId: session.subscription,
+        metadata: session.metadata
+      });
+
+      // Get the subscription
+      console.log('7. Retrieving subscription details');
+      const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+      console.log('8. Subscription details:', {
+        id: subscription.id,
+        status: subscription.status,
+        currentPeriodEnd: subscription.current_period_end
+      });
+      
+      // Get the customer
+      console.log('9. Retrieving customer details');
+      const customer = await stripe.customers.retrieve(session.customer as string);
+      console.log('10. Customer details:', {
+        id: customer.id,
+        email: (customer as any).email
+      });
+
+      // Get the user ID from metadata
+      const userId = session.metadata?.userId;
+      if (!userId) {
+        console.error('11. No userId found in session metadata');
+        return res.status(400).json({ error: 'No userId in metadata' });
+      }
+
+      console.log('12. Initializing Firestore');
+      const db = getFirestoreDirectly();
+      
+      console.log('13. Attempting to access user document at path:', `users/${userId}`);
+      const userRef = db.collection('users').doc(userId);
+      
+      // First check if the document exists
+      const existingDoc = await userRef.get();
+      console.log('13a. User document exists:', existingDoc.exists);
+      if (existingDoc.exists) {
+        console.log('13b. Current user data:', existingDoc.data());
       }
       
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription;
-        console.log(`Processing subscription update: ${subscription.id}, status: ${subscription.status}`);
-        
-        // Get user ID from subscription metadata
-        let userId = subscription.metadata?.userId;
-        
-        // If no user ID in subscription metadata, try to get it from customer metadata
-        if (!userId && subscription.customer) {
-          const customerId = typeof subscription.customer === 'string' 
-            ? subscription.customer 
-            : subscription.customer.id;
-            
-          try {
-            const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
-            userId = customer.metadata?.userId;
-          } catch (error) {
-            console.error('Error retrieving customer:', error);
-          }
-        }
-        
-        if (!userId) {
-          console.error('No user ID found in subscription or customer metadata');
-          break;
-        }
-        
-        const userRef = db.collection('users').doc(userId);
-        
-        try {
-          // Get current user data
-          const userDoc = await userRef.get();
-          if (!userDoc.exists) {
-            console.error(`User ${userId} not found in Firestore`);
-            break;
-          }
-          
-          const userData = userDoc.data() || {};
-          
-          // Update status based on subscription status
-          const isPro = subscription.status === 'active' || 
-                        subscription.status === 'trialing';
-                        
-          // Calculate end date
-          const endDate = subscription.current_period_end
-            ? new Date(subscription.current_period_end * 1000)
-            : null;
-            
-          const updateData: any = {
-            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp(),
-            subscriptionStatus: subscription.status,
-            isPro: isPro,
-          };
-          
-          if (endDate) {
-            updateData.subscriptionEndDate = endDate.toISOString();
-          }
-          
-          // Update Firestore
-          await userRef.update(updateData);
-          console.log(`Updated subscription status for user ${userId} to ${subscription.status}, isPro=${isPro}`);
-          
-        } catch (firestoreError) {
-          console.error('Error updating user subscription status:', firestoreError);
-        }
-        break;
-      }
+      const updateData = {
+        isPro: true,
+        stripeCustomerId: customer.id,
+        stripeSubscriptionId: subscription.id,
+        subscriptionStatus: subscription.status,
+        subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+        subscriptionPlan: subscription.items.data[0].price.id,
+        modelsRemainingThisMonth: 999999,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
       
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
-        console.log(`Processing subscription deletion: ${subscription.id}`);
-        
-        // Get user ID from subscription metadata
-        let userId = subscription.metadata?.userId;
-        
-        // If no user ID in subscription metadata, try to get it from customer metadata
-        if (!userId && subscription.customer) {
-          const customerId = typeof subscription.customer === 'string' 
-            ? subscription.customer 
-            : subscription.customer.id;
-            
-          try {
-            const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
-            userId = customer.metadata?.userId;
-          } catch (error) {
-            console.error('Error retrieving customer:', error);
-          }
-        }
-        
-        if (!userId) {
-          console.error('No user ID found in subscription or customer metadata');
-          break;
-        }
-        
-        const userRef = db.collection('users').doc(userId);
-        
-        try {
-          // Update subscription status
-          await userRef.update({
-            isPro: false,
-            subscriptionStatus: 'canceled',
-            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
-          });
-          
-          console.log(`Updated subscription status for user ${userId} to canceled, isPro=false`);
-        } catch (firestoreError) {
-          console.error('Error updating user subscription status:', firestoreError);
-        }
-        break;
-      }
+      console.log('14. Attempting to update user document with:', updateData);
       
-      default:
-        console.log(`Unhandled event type: ${event.type}`);
+      try {
+        await userRef.update(updateData);
+        
+        // Verify the write
+        const updatedDoc = await userRef.get();
+        console.log('15a. Verified user document after update:', updatedDoc.data());
+        console.log('15b. Subscription status in Firebase:', updatedDoc.data()?.subscriptionStatus);
+        console.log('15c. isPro flag in Firebase:', updatedDoc.data()?.isPro);
+        
+        console.log('15. Successfully updated user document');
+      } catch (updateError: any) {
+        console.error('16. Error updating user document:', {
+          error: updateError.message,
+          code: updateError.code,
+          userId,
+          path: userRef.path
+        });
+        throw updateError;
+      }
     }
-    
-    // Return a response to acknowledge receipt of the event
-    return res.status(200).json({ received: true, id: event.id });
-    
-  } catch (error) {
-    console.error('Error processing webhook:', error);
-    return res.status(500).json({ success: false, message: 'Error processing webhook' });
+
+    return res.json({ received: true });
+  } catch (error: any) {
+    console.error('17. Error processing webhook:', {
+      message: error.message,
+      code: error.code,
+      type: error.type
+    });
+    return res.status(400).json({
+      error: 'Webhook error',
+      details: error.message
+    });
   }
 }

@@ -67,6 +67,12 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  console.log('1. Received checkout session request:', {
+    body: req.body,
+    headers: req.headers,
+    method: req.method
+  });
+
   // Set appropriate CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
@@ -89,88 +95,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { priceId, userId, email } = req.body;
     
-    if (!priceId || !userId || !email) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required parameters',
-        message: 'priceId, userId, and email are all required'
-      });
+    if (!priceId || !userId) {
+      console.error('2. Missing required parameters:', { priceId, userId, email });
+      return res.status(400).json({ error: 'Missing required parameters' });
     }
     
-    console.log(`Creating subscription checkout for user: ${userId}, email: ${email}, priceId: ${priceId}`);
-    
-    // Initialize Firebase directly - ignore any import errors
-    const adminSdk = initializeFirebaseDirectly();
+    console.log('3. Getting Firestore instance');
     const db = getFirestoreDirectly();
+    const userRef = db.collection('users').doc(userId);
     
-    // Look up user in Firestore
-    let customerId: string | undefined = undefined;
-    try {
-      const userDoc = await db.collection('users').doc(userId).get();
-      
-      if (userDoc.exists && userDoc.data()?.stripeCustomerId) {
-        customerId = userDoc.data()?.stripeCustomerId;
-        console.log(`Found existing customer ID for user ${userId}: ${customerId}`);
-      }
-    } catch (error) {
-      console.error('Error fetching user from Firestore:', error);
-      // Continue without customerId - we'll create a new one
+    console.log('4. Fetching user document from path:', `users/${userId}`);
+    const userDoc = await userRef.get();
+    console.log('4a. User document exists:', userDoc.exists);
+    if (userDoc.exists) {
+      console.log('4b. Current user data:', userDoc.data());
     }
     
-    // If no customer ID found, create a new customer
-    if (!customerId) {
+    // Get or create customer
+    let customerId;
+    if (userDoc.exists && userDoc.data()?.stripeCustomerId) {
+      customerId = userDoc.data()?.stripeCustomerId;
+      console.log('5. Found existing Stripe customer:', customerId);
+    } else {
+      console.log('6. Creating new Stripe customer');
       try {
         const customer = await stripe.customers.create({
           email,
           metadata: {
-            userId, // Store user ID in Stripe customer metadata
+            userId,
           },
         });
         customerId = customer.id;
-        console.log(`Created new Stripe customer for user ${userId}: ${customerId}`);
+        console.log('7. Created new Stripe customer:', customerId);
         
-        // Update user record with new customer ID
-        await db.collection('users').doc(userId).set({
+        const userData = {
           email,
           stripeCustomerId: customerId,
-          createdAt: adminSdk.firestore.FieldValue.serverTimestamp(),
-          updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        console.log('8. Attempting to update user document with:', userData);
         
-        console.log(`Updated user ${userId} with Stripe customer ID: ${customerId}`);
+        await userRef.set(userData, { merge: true });
+        
+        // Verify the write
+        const updatedDoc = await userRef.get();
+        console.log('8a. Verified user document after update:', updatedDoc.data());
       } catch (error) {
-        console.error('Error creating Stripe customer:', error);
-        // Continue without updating Firestore - the webhook will handle it
+        console.error('9. Error creating Stripe customer:', error);
+        throw error;
       }
     }
     
-    // IMMEDIATE FIX: Pre-set the user as Pro after checkout creation
-    try {
-      // This is a temporary fix to ensure users get upgraded immediately
-      // to work around any webhook issues
-      const userRef = db.collection('users').doc(userId);
-      const endDate = new Date();
-      endDate.setFullYear(endDate.getFullYear() + 1);
-      
-      await userRef.set({
-        email,
-        isPro: true,
-        stripeCustomerId: customerId,
-        subscriptionStatus: 'active',
-        subscriptionPlan: priceId,
-        subscriptionEndDate: endDate.toISOString(),
-        modelsRemainingThisMonth: 999999,
-        updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-      
-      console.log(`EMERGENCY FIX: Pre-activated Pro status for user ${userId}`);
-    } catch (error) {
-      console.error('Error in emergency Pro status activation:', error);
-    }
-    
-    // Create the checkout session with user ID in metadata
+    console.log('10. Creating checkout session');
     const session = await stripe.checkout.sessions.create({
-      customer: customerId || undefined,
+      customer: customerId,
       payment_method_types: ['card'],
       line_items: [
         {
@@ -182,51 +161,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success_url: `${req.headers.origin || 'https://www.fishcad.com'}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.headers.origin || 'https://www.fishcad.com'}/pricing`,
       metadata: {
-        userId, // IMPORTANT: Store user ID in session metadata for webhook
+        userId,
         source: 'pricing_page'
       },
       subscription_data: {
         metadata: {
-          userId, // Store user ID in subscription metadata as well
+          userId,
           source: 'pricing_page'
         }
-        // No trial by default
       },
-      allow_promotion_codes: true, // Allow promotion codes 
+      allow_promotion_codes: true,
     });
     
-    console.log(`Checkout session created with ID: ${session.id}, for user: ${userId}`);
-    
-    // Double-check that the user document was updated and has Pro status
-    try {
-      const userDoc = await db.collection('users').doc(userId).get();
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        console.log(`User status after checkout: isPro=${userData?.isPro}, status=${userData?.subscriptionStatus}`);
-        
-        if (!userData?.isPro) {
-          console.log('User still not marked as Pro, applying one more update...');
-          await db.collection('users').doc(userId).update({
-            isPro: true,
-            subscriptionStatus: 'active',
-            updatedAt: adminSdk.firestore.FieldValue.serverTimestamp()
-          });
-        }
-      }
-    } catch (verifyError) {
-      console.error('Error verifying user status:', verifyError);
-    }
+    console.log('11. Checkout session created:', {
+      sessionId: session.id,
+      url: session.url
+    });
     
     return res.status(200).json({ 
       success: true,
       url: session.url,
       sessionId: session.id
     });
-  } catch (error: any) {
-    console.error('Error creating checkout session:', error);
+  } catch (error) {
+    console.error('12. Error in checkout session creation:', error);
     return res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Failed to create checkout session'
+      error: 'Internal server error',
+      details: error.message 
     });
   }
 } 

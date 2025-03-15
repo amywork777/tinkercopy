@@ -48,24 +48,39 @@ export default function PricingPage() {
 
   const handleSubscribe = async () => {
     try {
+      console.log('1. Subscribe button clicked');
       setIsLoading(true);
       
       // Log the plan type for debugging
-      console.log(`Subscribing to monthly plan...`);
+      console.log('2. User info:', {
+        email: user?.email || 'no email',
+        userId: user?.id || 'no id',
+        isAuthenticated: !!user
+      });
       
       // Get user information if available
       const userEmail = user?.email || '';
       const userId = user?.id || '';
       
-      console.log(`User info - Email: ${userEmail}, ID: ${userId}`);
+      if (!userId || !userEmail) {
+        console.error('3. Missing user information:', { userId, userEmail });
+        toast('Please log in to subscribe');
+        return;
+      }
       
       // Get the correct price ID
       const priceId = STRIPE_PRICES.MONTHLY;
-      
-      console.log(`Using price ID: ${priceId} for monthly plan`);
+      console.log('4. Using price ID:', priceId);
       
       // Simple, direct checkout approach
       try {
+        console.log('5. Creating checkout session with:', {
+          priceId,
+          userId,
+          userEmail,
+          promoCode: promoCode || 'none'
+        });
+
         const { url } = await createCheckoutSession(
           priceId, 
           userId, 
@@ -74,16 +89,20 @@ export default function PricingPage() {
         );
         
         if (url) {
-          console.log('Redirecting to checkout URL:', url);
+          console.log('6. Received checkout URL:', url);
+          console.log('7. Attempting redirect...');
           window.location.href = url;
           return;
+        } else {
+          console.error('8. No URL received from checkout session');
+          throw new Error('No checkout URL received');
         }
       } catch (error) {
-        console.error('Checkout failed:', error);
+        console.error('9. Checkout creation failed:', error);
         throw error;
       }
     } catch (error) {
-      console.error('Error during subscription process:', error);
+      console.error('10. Error during subscription process:', error);
       toast('Error starting checkout. Please try again.');
     } finally {
       setIsLoading(false);

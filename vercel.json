@@ -1,7 +1,6 @@
 {
   "version": 2,
   "framework": null,
-  // Force fresh build - cache buster
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "dist",
   "env": {

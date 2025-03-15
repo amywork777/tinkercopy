@@ -7,35 +7,34 @@ let firebaseInitialized = false;
 
 // Initialize Firebase Admin if needed
 function initializeFirebaseDirectly() {
-  if (!firebaseInitialized && !admin.apps.length) {
+  if (!admin.apps || !admin.apps.length) {
     try {
       // Try to load service account from environment variable
       const privateKey = process.env.FIREBASE_PRIVATE_KEY 
         ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
         : undefined;
       
-      // Add validation for required environment variables
       if (!privateKey) {
-        console.error('Firebase private key is missing or invalid');
+        throw new Error('Firebase private key is missing or invalid');
       }
       
       if (!process.env.FIREBASE_PROJECT_ID) {
-        console.error('Firebase project ID is missing');
+        throw new Error('Firebase project ID is missing');
       }
       
       if (!process.env.FIREBASE_CLIENT_EMAIL) {
-        console.error('Firebase client email is missing');
+        throw new Error('Firebase client email is missing');
       }
       
       const credential = admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID || '',
-        privateKey: privateKey || '',
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       });
       
       admin.initializeApp({
         credential: credential,
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'taiyaki-test1.firebasestorage.app'
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'model-fusion-studio.appspot.com'
       });
       
       firebaseInitialized = true;
@@ -44,11 +43,6 @@ function initializeFirebaseDirectly() {
       console.error('Error initializing Firebase directly:', error);
       throw error;
     }
-  } else if (firebaseInitialized) {
-    console.log('Using existing Firebase Admin SDK instance');
-  } else if (admin.apps.length) {
-    firebaseInitialized = true;
-    console.log('Using existing Firebase Admin app');
   }
   
   return admin;

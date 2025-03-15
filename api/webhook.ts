@@ -133,100 +133,129 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       id: event.id
     });
 
-    // Handle the checkout.session.completed event
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      console.log('7. Processing completed checkout session:', {
-        sessionId: session.id,
-        customerId: session.customer,
-        subscriptionId: session.subscription,
-        metadata: session.metadata
-      });
+    // Handle different event types
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        console.log('7. Processing completed checkout session:', {
+          sessionId: session.id,
+          customerId: session.customer,
+          subscriptionId: session.subscription,
+          metadata: session.metadata
+        });
 
-      try {
-        // Get the user ID from metadata first
-        const userId = session.metadata?.userId;
-        if (!userId) {
-          console.error('8. No userId found in session metadata');
-          return res.status(400).json({ error: 'No userId in metadata' });
-        }
+        try {
+          // Get the user ID from metadata first
+          const userId = session.metadata?.userId;
+          if (!userId) {
+            console.error('8. No userId found in session metadata');
+            return res.status(400).json({ error: 'No userId in metadata' });
+          }
 
-        // Initialize Firestore early
-        console.log('9. Initializing Firestore');
-        const db = getFirestoreDirectly();
-        const userRef = db.collection('users').doc(userId);
+          // Initialize Firestore early
+          console.log('9. Initializing Firestore');
+          const db = getFirestoreDirectly();
+          const userRef = db.collection('users').doc(userId);
 
-        // Get the subscription if it exists
-        let subscription;
-        let subscriptionData = {};
-        if (session.subscription) {
-          console.log('10. Retrieving subscription details');
-          subscription = await stripe.subscriptions.retrieve(session.subscription as string);
-          console.log('11. Subscription details:', {
-            id: subscription.id,
-            status: subscription.status,
-            currentPeriodEnd: subscription.current_period_end
+          // Get the customer
+          console.log('10. Retrieving customer details');
+          const customer = await stripe.customers.retrieve(session.customer as string);
+          console.log('11. Customer details:', {
+            id: customer.id,
+            email: (customer as any).email
           });
-          
-          subscriptionData = {
+
+          // Update basic customer info immediately
+          const initialUpdate = {
+            stripeCustomerId: customer.id,
+            email: (customer as any).email,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          };
+
+          console.log('12. Updating initial customer info:', initialUpdate);
+          await userRef.set(initialUpdate, { merge: true });
+        } catch (error) {
+          console.error('Error processing checkout session:', error);
+          throw error;
+        }
+        break;
+      }
+
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        console.log(`Processing subscription ${event.type}:`, {
+          id: subscription.id,
+          customer: subscription.customer,
+          status: subscription.status
+        });
+
+        try {
+          // Find user by Stripe customer ID
+          const db = getFirestoreDirectly();
+          const snapshot = await db
+            .collection('users')
+            .where('stripeCustomerId', '==', subscription.customer)
+            .limit(1)
+            .get();
+
+          if (snapshot.empty) {
+            console.error('No user found with customer ID:', subscription.customer);
+            return res.status(400).json({ error: 'User not found' });
+          }
+
+          const userDoc = snapshot.docs[0];
+          const updateData = {
+            isPro: true,
             subscriptionId: subscription.id,
             subscriptionStatus: subscription.status,
             subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
-            subscriptionPlan: subscription.items?.data?.[0]?.price?.id || 'pro'
+            subscriptionPlan: subscription.items?.data?.[0]?.price?.id || 'pro',
+            modelsRemainingThisMonth: 999999,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
           };
-        }
-        
-        // Get the customer
-        console.log('12. Retrieving customer details');
-        const customer = await stripe.customers.retrieve(session.customer as string);
-        console.log('13. Customer details:', {
-          id: customer.id,
-          email: (customer as any).email
-        });
 
-        // First check if the document exists
-        const existingDoc = await userRef.get();
-        console.log('14. User document exists:', existingDoc.exists);
-        if (existingDoc.exists) {
-          console.log('15. Current user data:', existingDoc.data());
+          console.log('Updating user subscription data:', updateData);
+          await userDoc.ref.set(updateData, { merge: true });
+
+          // Verify the update
+          const updatedDoc = await userDoc.ref.get();
+          console.log('Updated user data:', updatedDoc.data());
+        } catch (error) {
+          console.error('Error processing subscription:', error);
+          throw error;
         }
-        
-        const updateData = {
-          isPro: true,
-          stripeCustomerId: customer.id,
-          modelsRemainingThisMonth: 999999,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          ...subscriptionData  // Spread in subscription data if it exists
-        };
-        
-        console.log('16. Attempting to update user document with:', updateData);
-        
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        console.log('Processing subscription deletion:', subscription.id);
+
         try {
-          await userRef.set(updateData, { merge: true });
-          
-          // Verify the write
-          const updatedDoc = await userRef.get();
-          console.log('17. Verified user document after update:', updatedDoc.data());
-          console.log('18. Subscription status in Firebase:', updatedDoc.data()?.subscriptionStatus);
-          console.log('19. isPro flag in Firebase:', updatedDoc.data()?.isPro);
-          
-          console.log('20. Successfully updated user document');
-        } catch (updateError: any) {
-          console.error('21. Error updating user document:', {
-            error: updateError.message,
-            code: updateError.code,
-            userId,
-            path: userRef.path
-          });
-          throw updateError;
+          // Find user by Stripe customer ID
+          const db = getFirestoreDirectly();
+          const snapshot = await db
+            .collection('users')
+            .where('stripeCustomerId', '==', subscription.customer)
+            .limit(1)
+            .get();
+
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            await userDoc.ref.set({
+              isPro: false,
+              subscriptionStatus: 'none',
+              subscriptionPlan: 'free',
+              modelsRemainingThisMonth: 2,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+          }
+        } catch (error) {
+          console.error('Error processing subscription deletion:', error);
+          throw error;
         }
-      } catch (stripeError: any) {
-        console.error('22. Error processing Stripe data:', {
-          message: stripeError.message,
-          type: stripeError.type,
-          code: stripeError.code
-        });
-        throw stripeError;
+        break;
       }
     }
 

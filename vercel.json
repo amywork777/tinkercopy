@@ -8,18 +8,19 @@
       "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
-        "zeroConfig": true
+        "zeroConfig": true,
+        "installCommand": "npm install --legacy-peer-deps"
       }
     },
     {
-      "src": "api/**/*.ts",
+      "src": "server/simple-checkout-server.cjs",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "dest": "/server/simple-checkout-server.cjs"
     },
     {
       "src": "^/assets/(.*)",
@@ -34,5 +35,8 @@
       "src": "/(.*)",
       "dest": "/"
     }
-  ]
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
 } 

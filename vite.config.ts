@@ -37,6 +37,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, "client/index.html"),
       },
+      external: [],
       output: {
         manualChunks: {
           'vendor': [
